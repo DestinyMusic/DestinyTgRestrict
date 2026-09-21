@@ -1,0 +1,14 @@
+aiohttp
+motor
+numpy
+scipy
+Pillow
+mutagen
+pyloudnorm
+psutil
+python-dotenv
+telegraph
+speedtest-cli
+pyromod
+pyrofork
+uvloop
