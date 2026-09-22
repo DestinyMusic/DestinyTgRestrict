@@ -26,48 +26,41 @@ async def get_client_msg(client, chat_id, msg_id):
         return msg
 
 async def fetch_single_chunk(client, chat_id, msg_id, offset, limit):
-    """Fetches a chunk using precise Pyrogram limits, safe for 4GB files."""
+    """Fetches a chunk using precise iter_download, safe for 4GB files."""
     import asyncio
     
     for attempt in range(6): 
         if not getattr(client, "is_connected", False):
-            try: 
-                await client.connect()
-            except Exception: 
-                pass
+            try: await client.connect()
+            except Exception: pass
 
         try:
             msg = await get_client_msg(client, chat_id, msg_id)
-            media = msg.document or msg.video or msg.audio
-            if not media:
+            media_obj = msg.document or msg.video or msg.audio or msg.photo or msg.animation or msg.voice
+            if not media_obj:
                 raise ValueError("No media found in message")
                 
             data = bytearray()
             
             async def fetch_continuous():
-                # 1. Use the file_id directly so Pyrogram handles the 2GB+ MTProto shift automatically
-                # 2. Drop the 'limit' parameter from iter_download, letting it stream naturally
-                # 3. We manually break the loop once we collect the exact bytes the browser asked for
-                async for chunk in client.iter_download(media.file_id, offset=offset):
+                # Uses pure byte offsets natively!
+                async for chunk in client.iter_download(media_obj.file_id, offset=offset):
                     data.extend(chunk)
                     if len(data) >= limit:
                         break
                         
-            # Allow enough time for large blocks (e.g. 3MB chunk = 15 seconds max)
             dynamic_timeout = max(15.0, (limit / 1024 / 1024) * 5.0)
             await asyncio.wait_for(fetch_continuous(), timeout=dynamic_timeout)
                     
             if not data: 
                 raise ValueError("EOF Reached or Empty Chunk")
                 
-            # Slice exactly to the limit just to be safe
             return bytes(data[:limit])
             
         except FloodWait as e:
             await asyncio.sleep(e.value + 1)
         except Exception as e:
-            if attempt == 5: 
-                raise e
+            if attempt == 5: raise e
             await asyncio.sleep(1.5 + attempt) 
             
     raise TimeoutError("Exceeded max retries for chunk")
