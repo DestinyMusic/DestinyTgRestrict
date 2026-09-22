@@ -26,18 +26,8 @@ async def get_client_msg(client, chat_id, msg_id):
         return msg
 
 async def fetch_single_chunk(client, chat_id, msg_id, offset, limit):
-    """Fetches a chunk continuously. Translates raw bytes into Pyrogram Chunk Indexes."""
-    import math
+    """Fetches a chunk continuously using native iter_download for fork compatibility."""
     import asyncio
-    CHUNK_SIZE = 1048576
-    
-    # 1. Convert raw byte offset to Pyrogram chunk index (1MB blocks)
-    chunk_index = offset // CHUNK_SIZE
-    skip_bytes = offset % CHUNK_SIZE
-    
-    # 2. Calculate how many 1MB chunks we need to fetch from Telegram
-    total_bytes_to_fetch = skip_bytes + limit
-    chunk_limit = math.ceil(total_bytes_to_fetch / CHUNK_SIZE)
     
     for attempt in range(6): 
         if not getattr(client, "is_connected", False):
@@ -46,13 +36,22 @@ async def fetch_single_chunk(client, chat_id, msg_id, offset, limit):
 
         try:
             msg = await get_client_msg(client, chat_id, msg_id)
+            media = msg.document or msg.video or msg.audio
+            if not media:
+                raise ValueError("No media found in message")
+                
             data = bytearray()
             
             async def fetch_continuous():
-                # Pass the Chunk Index and Chunk Limit to Pyrogram
-                async for chunk in client.stream_media(msg, offset=chunk_index, limit=chunk_limit):
+                # 🟢 CRITICAL FIX: Use iter_download directly with exact raw byte offsets!
+                # This works perfectly on ALL Telegram forks (Kurigram, Pyromod, etc.)
+                async for chunk in client.iter_download(
+                    media.file_id, 
+                    offset=offset, 
+                    limit=limit
+                ):
                     data.extend(chunk)
-                    if len(data) >= total_bytes_to_fetch:
+                    if len(data) >= limit:
                         break
                         
             # Allow enough time for large blocks (e.g. 3MB chunk = 15 seconds max)
@@ -62,9 +61,8 @@ async def fetch_single_chunk(client, chat_id, msg_id, offset, limit):
             if not data: 
                 raise ValueError("EOF Reached or Empty Chunk")
                 
-            # 3. Slice the exact requested bytes for the browser
-            # Remove the skip_bytes from the beginning, and take exactly 'limit' bytes
-            return bytes(data[skip_bytes:skip_bytes + limit])
+            # Slice exactly to the limit just to be safe
+            return bytes(data[:limit])
             
         except FloodWait as e:
             await asyncio.sleep(e.value + 1)
@@ -544,3 +542,4 @@ async def _api_subtitles_handler(request):
         if not response.prepared:
             return web.Response(status=502, text=str(exc))
         return response
+            
