@@ -1,3 +1,8 @@
+import mimetypes
+import math
+import re
+import asyncio
+
 async def get_client_msg(client, chat_id, msg_id):
     """Cache Telegram messages and coalesce simultaneous metadata requests."""
     key = (id(client), chat_id, int(msg_id))
@@ -21,40 +26,50 @@ async def get_client_msg(client, chat_id, msg_id):
         return msg
 
 async def fetch_single_chunk(client, chat_id, msg_id, offset, limit):
-    """Fetches a chunk continuously using precise byte offsets."""
+    """Fetches a chunk continuously. Translates raw bytes into Pyrogram Chunk Indexes."""
+    import math
     import asyncio
+    CHUNK_SIZE = 1048576
+    
+    # 1. Convert raw byte offset to Pyrogram chunk index (1MB blocks)
+    chunk_index = offset // CHUNK_SIZE
+    skip_bytes = offset % CHUNK_SIZE
+    
+    # 2. Calculate how many 1MB chunks we need to fetch from Telegram
+    total_bytes_to_fetch = skip_bytes + limit
+    chunk_limit = math.ceil(total_bytes_to_fetch / CHUNK_SIZE)
     
     for attempt in range(6): 
         if not getattr(client, "is_connected", False):
-            try: 
-                await client.connect()
-            except Exception: 
-                pass
+            try: await client.connect()
+            except Exception: pass
 
         try:
             msg = await get_client_msg(client, chat_id, msg_id)
             data = bytearray()
             
             async def fetch_continuous():
-                # Pass raw bytes directly to offset
-                async for chunk in client.stream_media(msg, offset=offset, limit=0):
+                # Pass the Chunk Index and Chunk Limit to Pyrogram
+                async for chunk in client.stream_media(msg, offset=chunk_index, limit=chunk_limit):
                     data.extend(chunk)
-                    if len(data) >= limit:
+                    if len(data) >= total_bytes_to_fetch:
                         break
                         
+            # Allow enough time for large blocks (e.g. 3MB chunk = 15 seconds max)
             dynamic_timeout = max(15.0, (limit / 1024 / 1024) * 5.0)
             await asyncio.wait_for(fetch_continuous(), timeout=dynamic_timeout)
                     
             if not data: 
                 raise ValueError("EOF Reached or Empty Chunk")
-            
-            return bytes(data[:limit])
+                
+            # 3. Slice the exact requested bytes for the browser
+            # Remove the skip_bytes from the beginning, and take exactly 'limit' bytes
+            return bytes(data[skip_bytes:skip_bytes + limit])
             
         except FloodWait as e:
             await asyncio.sleep(e.value + 1)
         except Exception as e:
-            if attempt == 5: 
-                raise e
+            if attempt == 5: raise e
             await asyncio.sleep(1.5 + attempt) 
             
     raise TimeoutError("Exceeded max retries for chunk")
@@ -529,9 +544,3 @@ async def _api_subtitles_handler(request):
         if not response.prepared:
             return web.Response(status=502, text=str(exc))
         return response
-            
-import mimetypes
-import math
-import re
-import asyncio
-
