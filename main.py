@@ -526,16 +526,14 @@ async def main():
     cursor = await db.get_all_watchers()
     async for w in cursor:
         active_watcher_users.add(w['user_id'])
-        GLOBAL_WATCHER_SOURCES.add(w['source_id']) # 🟢 POPULATE FAST CACHE
+        GLOBAL_WATCHER_SOURCES.add(w['source_id'])
 
-    for user_id in active_watcher_users:
+    async def _init_single_watcher(user_id):
         user_session = await db.get_session(user_id)
-        if not user_session:
-            continue
+        if not user_session or user_id in USER_CLIENTS:
+            return
             
         try:
-            if user_id in USER_CLIENTS: continue
-
             logger.info(f"👤 Starting Watcher Session for: {user_id}")
             
             u_api = await db.get_api_id(user_id) or API_ID
@@ -557,11 +555,16 @@ async def main():
             USER_CLIENTS[user_id] = user_client
             logger.info(f"✅ Active: {user_id}")
             
-        except (AuthKeyUnregistered, UserDeactivated, UserDeactivatedBan):
+        except (AuthKeyUnregistered, UserDeactivated):
             logger.warning(f"❌ Session {user_id} was revoked. Auto-deleting...")
             await auto_wipe_dead_session(user_client, user_id)
         except Exception as e:
             logger.error(f"❌ Failed to load {user_id}: {e}")
+
+    watcher_tasks = [_init_single_watcher(uid) for uid in active_watcher_users]
+    if watcher_tasks:
+        logger.info(f"⚡ Igniting {len(watcher_tasks)} watcher sessions concurrently...")
+        await asyncio.gather(*watcher_tasks)
 
     logger.info(f"🔥 Total Live Listeners: {len(USER_CLIENTS)}")
 
@@ -621,7 +624,8 @@ async def main():
     # ==========================================
     logger.info("🔄 Checking database for interrupted batch tasks...")
     pending_tasks = await db.get_all_active_tasks()
-    async for task in pending_tasks:
+    
+    async def _resume_single_task(task):
         t_user_id = task["user_id"]
         t_uuid = task["task_uuid"]
         
@@ -633,18 +637,16 @@ async def main():
             f"▶️ **Resuming From ID:** `{task['current_msg_id']}`"
         )
         
-        # Send logs to Server and User!
         await send_log(log_msg)
         try:
             await app.send_message(t_user_id, log_msg)
         except Exception:
             pass
             
-        # Spawn the task directly in the background
         asyncio.create_task(
             process_links_logic(
                 client=app,
-                message=None, # Headless execution!
+                message=None,
                 text=task["link"],
                 dest_chat_id=task["dest_chat_id"],
                 dest_thread_id=task["dest_thread_id"],
@@ -659,6 +661,13 @@ async def main():
             )
         )
         logger.info(f"▶️ Auto-Resumed task {t_uuid} for User {t_user_id}")
+
+    resuming_tasks = []
+    async for task in pending_tasks:
+        resuming_tasks.append(_resume_single_task(task))
+        
+    if resuming_tasks:
+        await asyncio.gather(*resuming_tasks)
 
     await idle()
     
