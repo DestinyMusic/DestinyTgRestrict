@@ -299,29 +299,41 @@ async def _api_tg_stream_handler(request):
                         break
                 return bytes(buf[:length])
 
-            playlist = await get_zip_playlist(zip_read, virtual_size)
-            if playlist:
-                target_entry = playlist[0]
-                if zip_idx.isdigit():
-                    for track in playlist:
-                        if track["original_index"] == int(zip_idx):
-                            target_entry = track
-                            break
-                entry = await resolve_specific_zip_entry(zip_read, target_entry)
-                if entry:
-                    # 🟢 CRITICAL SPEED FIX: Instead of treating the whole ZIP as the file,
-                    # we narrow the virtual scope to ONLY the bytes of the selected track!
-                    virtual_size = entry["comp_size"]  # Only the size of the specific file
-                    virtual_data_offset = entry["data_offset"] # The exact byte where the file starts
-                    mime_type = mimetypes.guess_type(entry["name"])[0] or "application/octet-stream"
+            try:
+                # 🟢 FAST MAGIC NUMBER CHECK: Prevent 30-second timeouts on fake ZIPs!
+                # If an uploader renamed an MKV to .zip.001 to bypass copyright, this detects it instantly.
+                magic_bytes = await zip_read(0, 4)
+                
+                # 'PK' is the universal standard header for actual ZIP files
+                if magic_bytes.startswith(b'PK'):
+                    playlist = await get_zip_playlist(zip_read, virtual_size)
+                    if playlist:
+                        target_entry = playlist[0]
+                        if zip_idx.isdigit():
+                            for track in playlist:
+                                if track["original_index"] == int(zip_idx):
+                                    target_entry = track
+                                    break
+                        entry = await resolve_specific_zip_entry(zip_read, target_entry)
+                        if entry:
+                            # 🟢 CRITICAL SPEED FIX: Narrow scope to specific track bytes
+                            virtual_size = entry["comp_size"]  
+                            virtual_data_offset = entry["data_offset"] 
+                            mime_type = mimetypes.guess_type(entry["name"])[0] or "application/octet-stream"
+                            
+                            # FORCE WEB-COMPATIBLE MIME TYPES
+                            if entry["name"].lower().endswith('.mp3'): mime_type = "audio/mpeg"
+                            elif entry["name"].lower().endswith(('.m4a', '.aac')): mime_type = "audio/mp4"
+                            elif entry["name"].lower().endswith('.flac'): mime_type = "audio/flac"
+                            elif entry["name"].lower().endswith('.ogg'): mime_type = "audio/ogg"
+                            
+                            filename = entry["name"]
+                else:
+                    logger.info("🎬 Fake ZIP detected (MKV/MP4 renamed to .zip.001). Bypassing ZIP Engine...")
                     
-                    # 🟢 FORCE WEB-COMPATIBLE AUDIO MIME TYPES
-                    if entry["name"].lower().endswith('.mp3'): mime_type = "audio/mpeg"
-                    elif entry["name"].lower().endswith(('.m4a', '.aac')): mime_type = "audio/mp4"
-                    elif entry["name"].lower().endswith('.flac'): mime_type = "audio/flac"
-                    elif entry["name"].lower().endswith('.ogg'): mime_type = "audio/ogg"
-                    
-                    filename = entry["name"]
+            except Exception as e:
+                # 🟢 CATCH TIMEOUTS & BAD ZIPS: If Telegram rejects the ZIP probe, fallback gracefully!
+                logger.warning(f"ZIP probe failed (Fallback to raw stream): {e}")
 
         if virtual_size <= 0:
             return web.Response(status=502, text="Invalid virtual media size")
