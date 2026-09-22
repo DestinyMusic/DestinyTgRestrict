@@ -3710,9 +3710,15 @@
                     }
                     
                     let activeIdx = -1;
-                    if (subtitleCues[0].start !== -1) { // Only scroll if synced
+                    // 🟢 FIX: Check the entire array for timestamps, not just the first line!
+                    const isSynced = subtitleCues.some(c => c.start > 0); 
+                    
+                    if (isSynced) { // Only scroll if synced
                         for (let i = 0; i < subtitleCues.length; i++) {
-                            if (adjustedTime >= subtitleCues[i].start && adjustedTime < subtitleCues[i].end) {
+                            // 🟢 FIX: Treat unsynced header lines (start: -1) as 0 seconds so they glow at the start
+                            let cStart = subtitleCues[i].start === -1 ? 0 : subtitleCues[i].start;
+                            
+                            if (adjustedTime >= cStart && adjustedTime < subtitleCues[i].end) {
                                 activeIdx = i; break;
                             }
                         }
@@ -3727,7 +3733,7 @@
                                     behavior: 'smooth'
                                 });
                             }
-                        } else if (adjustedTime < subtitleCues[0].start) {
+                        } else if (adjustedTime < 0) {
                             document.querySelectorAll('.lrc-line.active').forEach(el => el.classList.remove('active'));
                             scroller.scrollTo({ top: 0, behavior: 'smooth' });
                         }
