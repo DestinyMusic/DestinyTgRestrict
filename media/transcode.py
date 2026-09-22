@@ -170,10 +170,7 @@ async def _api_stream_handler(request):
         "-fflags", "+nobuffer+flush_packets+genpts"
     ]
 
-    # 2. 🟢 Input URL goes FIRST
-    cmd += ["-i", actual_url]
-
-    # 3. 🟢 Put -ss AFTER -i for Frame-Accurate A/V/S Sync!
+    # 🟢 FAST INPUT SEEKING: Jump directly to the requested timestamp over HTTP
     if start_time is not None:
         try:
             start_float = max(0.0, float(start_time))
@@ -181,6 +178,8 @@ async def _api_stream_handler(request):
                 cmd += ["-ss", f"{start_float:.3f}"]
         except Exception:
             pass
+
+    cmd += ["-i", actual_url]
 
     if is_audio:
         if audio_idx is not None and str(audio_idx).strip():
@@ -234,8 +233,14 @@ async def _api_stream_handler(request):
             # 4. 🟢 HARD SYNC FIX: Force audio to stretch perfectly to the video frame
             cmd += ["-c:a", "aac", "-b:a", "192k", "-ac", "2", "-af", "aresample=async=1000:min_hard_comp=0.100000:first_pts=0"]
 
-        # 5. 🟢 Add muxdelay 0 and remove avoid_negative_ts
-        cmd += ["-max_muxing_queue_size", "9999", "-movflags", "frag_keyframe+empty_moov+default_base_moof", "-muxdelay", "0", "-f", "mp4", "pipe:1"]
+        # 5. 🟢 Align PTS to 0 and mux immediately for zero-latency browser streaming
+        cmd += [
+            "-avoid_negative_ts", "make_zero",
+            "-max_muxing_queue_size", "9999",
+            "-movflags", "frag_keyframe+empty_moov+default_base_moof",
+            "-muxdelay", "0",
+            "-f", "mp4", "pipe:1"
+        ]
 
     logger.info(f"🎬 [STREAMING] User: {user_id} | File: {filename} | Quality: {quality} | AudioIdx: {audio_idx} | StartTime: {start_time}")
     logger.info(f"🎬 [FFMPEG CMD] {' '.join(cmd)}")
