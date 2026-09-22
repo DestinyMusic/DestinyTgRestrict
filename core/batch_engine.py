@@ -109,7 +109,8 @@ async def start_task_final(client: Client, message_context: Message, task_data: 
     batch_temp.ACTIVE_TASKS[user_id] += 1
     batch_temp.IS_BATCH[user_id] = False
 
-    start_msg = f"✅ **Task Started!**\nDestination: `{dest}`\nSpeed: `{delay}s` delay\nTask ID: `{task_uuid[:8]}`"
+    # 🟢 FIX: Explicitly direct users to the Web UI upon registration
+    start_msg = f"✅ **Task Registered!**\nDestination: `{dest}`\nSpeed: `{delay}s` delay\nTask ID: `{task_uuid[:8]}`\n\n🌐 **Please open the Web Dashboard to track live progress.**"
     try:
         if isinstance(message_context, Message):
             if message_context.from_user.is_bot:
@@ -490,7 +491,8 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
                 kwargs_status["message_thread_id"] = message.message_thread_id
 
             status_message = await client.send_message(
-                text=f"🚀 **Batch Task Started!**\n{status_text_header}\n**Source:** {source_title}\n**Destination:** {dest_title}\n**Total Items:** {total_count}\n\n🌐 **Track live progress and speed in the Web Dashboard!**",
+                # 🟢 FIX: Update wording so users know no further TG updates will happen
+                text=f"🚀 **Batch Task Started!**\n{status_text_header}\n**Source:** {source_title}\n**Destination:** {dest_title}\n**Total Items:** {total_count}\n\n🌐 **All live progress, speed, and ETA will be shown EXCLUSIVELY in the Web Dashboard.**\n*(To prevent chat spam, no progress bars will be printed here)*",
                 **kwargs_status
             )
             last_update_time = time.time()
@@ -597,7 +599,7 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
                             if task_result == "FALLBACK_RESTRICTED":
                                 task_result = await handle_private(
                                     client, acc, message, chatid, msgid, index, total_count, 
-                                    status_message, dest_chat_id, dest_thread_id, delay, 
+                                    None, dest_chat_id, dest_thread_id, delay, # 🟢 FIX: Passed None to disable TG UI updates
                                     user_id, task_uuid, 
                                     is_restricted=True, header_text=inner_header,
                                     filter_thread_id=filter_thread_id, allowed_types=allowed_types, pre_fetched_msg=pre_fetched_msg
@@ -605,7 +607,7 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
                         else:
                             task_result = await handle_private(
                                 client, acc, message, chatid, msgid, index, total_count, 
-                                status_message, dest_chat_id, dest_thread_id, delay, 
+                                None, dest_chat_id, dest_thread_id, delay, # 🟢 FIX: Passed None to disable TG UI updates
                                 user_id, task_uuid, 
                                 is_restricted=is_restricted, header_text=inner_header,
                                 filter_thread_id=filter_thread_id, allowed_types=allowed_types, pre_fetched_msg=pre_fetched_msg
@@ -712,12 +714,16 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
                 f"└ ❌ **Failed:** `{failed_count}`"
             )
             
+            # 🟢 FIX: Edit the initial static message with the final completion statistics
             try: 
-                kwargs_final = {"chat_id": msg_chat_id, "text": final_text}
-                if msg_id: kwargs_final["reply_to_message_id"] = msg_id
-                await client.send_message(**kwargs_final)
-            except: pass
-            try: await status_message.delete()
-            except: pass
+                kwargs_final = {"text": final_text}
+                await status_message.edit_text(**kwargs_final)
+            except: 
+                try:
+                    kwargs_final = {"chat_id": msg_chat_id, "text": final_text}
+                    if msg_id: kwargs_final["reply_to_message_id"] = msg_id
+                    await client.send_message(**kwargs_final)
+                except: pass
+            # The status message is kept as a permanent log, so delete() is removed
 
 # ==============================================================================
