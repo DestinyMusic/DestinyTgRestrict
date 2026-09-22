@@ -327,8 +327,12 @@ async def _api_add_watcher(request):
         user_client = USER_CLIENTS.get(user_id, app)
         try:
             if parsed["kind"] == "public":
+                try: await user_client.resolve_peer(parsed["join_target"])
+                except Exception: pass
                 chat = await user_client.get_chat(parsed["join_target"])
             else:
+                try: await user_client.resolve_peer(parsed["chat_id"])
+                except Exception: pass
                 chat = await user_client.get_chat(parsed["chat_id"])
             source_id = chat.id
             source_title = chat.title or str(source_id)
@@ -341,6 +345,8 @@ async def _api_add_watcher(request):
         dest_title = "Saved Messages" if dest_chat_id == user_id else str(dest_chat_id)
         if dest_chat_id != user_id:
             try:
+                try: await user_client.resolve_peer(dest_chat_id)
+                except Exception: pass
                 d_chat = await user_client.get_chat(dest_chat_id)
                 dest_title = d_chat.title or d_chat.first_name or str(dest_chat_id)
                 if dest_thread_id: 
@@ -1156,6 +1162,11 @@ async def _api_spectrogram_web_handler(request):
         except: pass
 
 # ==============================================================================
+from collections import defaultdict
+
+USER_STREAM_BOTS = defaultdict(list)
+USER_TASK_BOTS = defaultdict(list)
+
 async def init_worker_bots(user_id=None):
     """Initializes isolated bot clients for streaming vs tasks."""
     user_ids_to_init = [user_id] if user_id else []
