@@ -66,9 +66,12 @@ async def fetch_single_chunk(client, chat_id, msg_id, offset, limit):
                     if len(data) >= target_bytes:
                         break
                         
-            # Allow enough time for large blocks (e.g. 3MB chunk = 15 seconds max)
-            dynamic_timeout = max(15.0, (target_bytes / 1024 / 1024) * 5.0)
-            await asyncio.wait_for(fetch_continuous(), timeout=dynamic_timeout)
+            # 🟢 FIX: Vastly reduced timeout threshold so hung streams die fast and retry instead of freezing
+            dynamic_timeout = max(5.0, (target_bytes / 1024 / 1024) * 2.0)
+            try:
+                await asyncio.wait_for(fetch_continuous(), timeout=dynamic_timeout)
+            except asyncio.TimeoutError:
+                raise TimeoutError("Chunk fetch timed out during transfer")
                     
             if not data: 
                 raise ValueError("EOF Reached or Empty Chunk")
@@ -76,9 +79,14 @@ async def fetch_single_chunk(client, chat_id, msg_id, offset, limit):
             
         except FloodWait as e:
             await asyncio.sleep(e.value + 1)
+        except (TimeoutError, asyncio.TimeoutError):
+            logger.debug(f"Chunk timeout on {getattr(client, 'name', 'bot')}, retrying...")
+            await asyncio.sleep(0.5)
         except Exception as e:
+            if "Connection closed" in str(e):
+                logger.debug(f"Connection dropped by Telegram. Retrying...")
             if attempt == 5: raise e
-            await asyncio.sleep(1.5 + attempt) 
+            await asyncio.sleep(1.0 + attempt) 
             
     raise TimeoutError("Exceeded max retries for chunk")
 
