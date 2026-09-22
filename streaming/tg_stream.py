@@ -94,7 +94,8 @@ async def parallel_stream_generator(fallback_client, chat_id, msg_parts, start_b
             if candidate is fallback_client:
                 user_id = uid; break
 
-    user_worker_bots = list(USER_WORKER_BOTS.get(user_id, []))
+    # 🟢 FIX: Updated to match your new Split Worker Bot architecture
+    user_worker_bots = list(USER_STREAM_BOTS.get(user_id, []))
     for c in user_worker_bots:
         try:
             if getattr(c, "is_connected", False): working_pool.append(c)
@@ -147,6 +148,7 @@ async def parallel_stream_generator(fallback_client, chat_id, msg_parts, start_b
     # 🟢 Multi-Bot Parallel Path with Ghost Task Kill Switch
     cursor_idx = 0
     tasks = []
+    import asyncio # Ensure asyncio is loaded for create_task
     
     try:
         while cursor_idx < len(units):
