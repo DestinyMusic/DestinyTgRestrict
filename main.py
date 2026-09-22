@@ -120,11 +120,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger("BotLogger")
 
-# 🟢 FIX: Completely silence the spammy Uvicorn/Aiohttp 200 OK access logs and Pyrogram's Ping/Session connection spam!
-# Only actual CRITICAL Errors will be printed from them now.
+# 🟢 FIX: Completely silence ALL Pyrogram internal connection, auth, and session spam!
+# Only actual CRITICAL errors will break through.
 logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
-logging.getLogger("pyrogram.session.session").setLevel(logging.ERROR) # 🟢 Hides the harmless "Connection closed" spam
-logging.getLogger("pyrogram.client").setLevel(logging.ERROR)
+logging.getLogger("pyrogram").setLevel(logging.ERROR)
 # ----------------------------
 
 # --- TELEGRAPH SETUP FOR MEDIAINFO ---
