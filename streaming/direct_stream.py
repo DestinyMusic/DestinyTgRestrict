@@ -345,29 +345,32 @@ async def _api_direct_stream_handler(request):
                     headers = {"Range": f"bytes={off}-{off+length-1}", "User-Agent": "Mozilla/5.0"}
                     async with session.get(resolved, headers=headers) as r:
                         return await r.read()
-                        
-                playlist = await get_zip_playlist(zip_read_http, raw_size)
-                if playlist:
-                    target_entry = playlist[0]
-                    if zip_idx.isdigit():
-                        for track in playlist:
-                            if track["original_index"] == int(zip_idx):
-                                target_entry = track
-                                break
-                    entry = await resolve_specific_zip_entry(zip_read_http, target_entry)
-                    if entry:
-                        # 🟢 CRITICAL SPEED FIX FOR DIRECT LINKS:
-                        virtual_size = entry["comp_size"]  # Isolate to only the specific file's bytes
-                        virtual_data_offset = entry["data_offset"]
-                        mime_type = mimetypes.guess_type(entry["name"])[0] or "application/octet-stream"
-                        
-                        # 🟢 FORCE WEB-COMPATIBLE AUDIO MIME TYPES
-                        if entry["name"].lower().endswith('.mp3'): mime_type = "audio/mpeg"
-                        elif entry["name"].lower().endswith(('.m4a', '.aac')): mime_type = "audio/mp4"
-                        elif entry["name"].lower().endswith('.flac'): mime_type = "audio/flac"
-                        elif entry["name"].lower().endswith('.ogg'): mime_type = "audio/ogg"
-                        
-                        filename = entry["name"]
+                
+                # 🟢 MAGIC CHECK FOR DIRECT LINKS
+                magic_bytes = await zip_read_http(0, 4)
+                if magic_bytes.startswith(b'PK'):
+                    playlist = await get_zip_playlist(zip_read_http, raw_size)
+                    if playlist:
+                        target_entry = playlist[0]
+                        if zip_idx.isdigit():
+                            for track in playlist:
+                                if track["original_index"] == int(zip_idx):
+                                    target_entry = track
+                                    break
+                        entry = await resolve_specific_zip_entry(zip_read_http, target_entry)
+                        if entry:
+                            virtual_size = entry["comp_size"]
+                            virtual_data_offset = entry["data_offset"]
+                            mime_type = mimetypes.guess_type(entry["name"])[0] or "application/octet-stream"
+                            
+                            if entry["name"].lower().endswith('.mp3'): mime_type = "audio/mpeg"
+                            elif entry["name"].lower().endswith(('.m4a', '.aac')): mime_type = "audio/mp4"
+                            elif entry["name"].lower().endswith('.flac'): mime_type = "audio/flac"
+                            elif entry["name"].lower().endswith('.ogg'): mime_type = "audio/ogg"
+                            
+                            filename = entry["name"]
+                else:
+                    logger.info("🎬 Fake HTTP ZIP detected. Bypassing ZIP Engine...")
         except Exception as e:
             logger.warning(f"Direct ZIP resolution failed: {e}")
 
