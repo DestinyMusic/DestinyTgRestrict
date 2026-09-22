@@ -183,8 +183,10 @@ async def _api_stream_handler(request):
         "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5",
         "-reconnect_at_eof", "1", "-reconnect_on_network_error", "1", 
         "-seekable", "1", 
-        "-probesize", "5M", "-analyzeduration", "5M", 
-        "-fflags", "+nobuffer+flush_packets+genpts"
+        # 🟢 CRITICAL FIX: Increased buffer size for heavy 10-bit HEVC MKV files!
+        "-probesize", "20M", "-analyzeduration", "20M", 
+        # 🟢 CRITICAL FIX: Removed +nobuffer to stop keyframe starvation and grey smearing!
+        "-fflags", "+genpts+igndts"
     ]
 
     # 🟢 FAST INPUT SEEKING: Jump directly to the requested timestamp over HTTP
