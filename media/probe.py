@@ -134,8 +134,9 @@ async def _probe_tg_client(client, chat_id, msg_id):
                 if isinstance(chat_id, str) and not chat_id.lstrip('-').isdigit():
                     await client.resolve_peer(chat_id)
                     
+                # 🟢 FIX: Yield to the event loop to prevent blocking, and pace the API calls
                 async for _ in client.get_dialogs(limit=20):
-                    pass
+                    await asyncio.sleep(0.05)
                     
                 await get_client_msg(client, chat_id, msg_id)
                 logger.info(f"✅ Client {getattr(client, 'name', 'session')} successfully resolved {chat_id} after scan.")
