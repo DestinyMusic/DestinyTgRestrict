@@ -114,11 +114,26 @@ async def _api_stream_handler(request):
             filename = meta.get("file_name").lower()
 
     # 2. Check container and codec compatibility
-    is_mkv = filename.endswith((".mkv", ".mka"))
-    unsupported_web_codecs = {"hevc", "h265", "hvc1", "x265"}
-    bad_audio = {"dts", "truehd", "ac3", "eac3"}
+    is_mkv = filename.endswith((".mkv", ".mka", ".avi", ".wmv", ".flv", ".ts", ".m2ts"))
+    
+    # 🟢 EXPANDED: Catches HEVC, old MPEGs, Windows Media, Flash, RealVideo, and heavy editing codecs
+    unsupported_web_codecs = {
+        "hevc", "h265", "hvc1", "hev1", "x265", 
+        "mpeg1video", "mpeg2video", "mpeg4", "msmpeg4", "msmpeg4v2", "msmpeg4v3", 
+        "vc1", "wmv1", "wmv2", "wmv3", 
+        "flv1", "rv10", "rv20", "rv30", "rv40", 
+        "prores", "dnxhd", "theora", "mjpeg", "h263"
+    }
+    
+    # 🟢 EXPANDED: Catches DTS, Dolby, Windows Audio, raw uncompressed PCM, and lossless non-web codecs
+    bad_audio = {
+        "dts", "dca", "dts-hd", "truehd", "mlp", "ac3", "eac3", 
+        "wmav1", "wmav2", "wmapro", "wmavoice", 
+        "pcm_s16le", "pcm_s16be", "pcm_s24le", "pcm_s32le", "pcm_f32le", "pcm_bluray", "pcm_dvd",
+        "alac", "ape", "wavpack", "amr_nb", "amr_wb", "ra_144", "ra_288"
+    }
 
-    # File requires FFmpeg if it has incompatible codecs, is an MKV, or has explicit options set
+    # File requires FFmpeg if it has incompatible codecs, is an unsupported container, or has explicit options set
     needs_transcode = (
         is_mkv
         or (video_codec in unsupported_web_codecs)
@@ -331,3 +346,5 @@ async def _api_stream_handler(request):
 CLIENT_MSG_CACHE = {}
 CLIENT_MSG_CACHE_MAX = 2048
 CLIENT_MSG_LOCKS = defaultdict(asyncio.Lock)
+
+
