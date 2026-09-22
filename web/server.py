@@ -1289,14 +1289,24 @@ async def _api_network_stats(request):
         "worker_bots_count": len(USER_STREAM_BOTS.get(uid, [])) + len(USER_TASK_BOTS.get(uid, []))
     })
 
-# --- NEW: NATIVE IMAGE PROXY TO BYPASS HUGGINGFACE CSP ---
+# --- NEW: STEALTH IMAGE PROXY TO BYPASS HUGGINGFACE & TMDB ---
 async def _api_bg_proxy(request):
     url = request.query.get("url", "")
     if not url: return web.Response(status=400)
     import aiohttp
     try:
+        # 🟢 FIX: Mimic Google Chrome perfectly to bypass TMDB's 403 Anti-Bot Protection
+        stealth_headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://www.themoviedb.org/",
+            "Sec-Fetch-Dest": "image",
+            "Sec-Fetch-Mode": "no-cors",
+            "Sec-Fetch-Site": "cross-site"
+        }
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers={"User-Agent": "Mozilla/5.0"}) as resp:
+            async with session.get(url, headers=stealth_headers) as resp:
                 body = await resp.read()
                 return web.Response(body=body, headers={"Content-Type": "image/jpeg", "Cache-Control": "public, max-age=8640000"})
     except Exception:
