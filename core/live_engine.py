@@ -245,15 +245,7 @@ async def watcher_worker_loop(wid_str):
             # Existing heavy-processing path. No new protected-content bypass is
             # introduced here; it uses the file's existing implementation.
             try:
-                log_chat_id, log_topic_id = await get_fallback_log_chat(app, "BOT")
-                kwargs_status = {
-                    "chat_id": log_chat_id,
-                    "text": f"⬇️ **Watcher:** Processing ID `{msg.id}`..."
-                }
-                if log_topic_id:
-                    kwargs_status["message_thread_id"] = log_topic_id
-                dummy_status = await app.send_message(**kwargs_status)
-
+                # 🟢 FIX: Removed dummy_status creation so watchers operate 100% silently in TG
                 task_uuid = uuid.uuid4().hex
                 if owner_id not in ACTIVE_PROCESSES:
                     ACTIVE_PROCESSES[owner_id] = {}
@@ -276,7 +268,7 @@ async def watcher_worker_loop(wid_str):
                         msgid=msg.id,
                         index=1,
                         total_count=1,
-                        status_message=dummy_status,
+                        status_message=None, # 🟢 FIX: Passed None to disable TG UI updates
                         dest_chat_id=dest_id,
                         dest_thread_id=dest_thread,
                         delay=0,
@@ -287,10 +279,6 @@ async def watcher_worker_loop(wid_str):
                     )
                 finally:
                     cleanup_task_memory(owner_id, task_uuid)
-                    try:
-                        await dummy_status.delete()
-                    except Exception:
-                        pass
 
                 if result == "SUCCESS" or result is True:
                     await db.db.watchers.update_one(
