@@ -8,6 +8,42 @@ from collections import defaultdict, OrderedDict
 from urllib.parse import quote, unquote
 from aiohttp import web
 
+async def partial_download_tg(client, message, file_path, limit_mb=15):
+    """Sparse downloads the head and tail of large files using pure byte offsets."""
+    media_obj = message.document or message.video or message.audio or message.photo
+    file_size = getattr(media_obj, 'file_size', 0)
+    limit_bytes = max(1, int(limit_mb * 1024 * 1024))
+    
+    if file_size <= limit_bytes:
+        await client.download_media(message, file_name=str(file_path))
+        return
+        
+    edge_bytes = min(limit_bytes // 2, file_size // 2)
+    
+    with open(file_path, "wb") as f:
+        # 1. Download Head
+        head_downloaded = 0
+        async for chunk in client.iter_download(media_obj.file_id, offset=0):
+            f.write(chunk)
+            head_downloaded += len(chunk)
+            if head_downloaded >= edge_bytes:
+                break
+                
+        # 2. Download Tail
+        tail_offset = file_size - edge_bytes
+        if tail_offset > 0:
+            # Force the OS to allocate a true sparse file jump
+            f.seek(tail_offset)
+            f.write(b'\0' * 1)
+            f.seek(tail_offset)
+            
+            tail_downloaded = 0
+            async for chunk in client.iter_download(media_obj.file_id, offset=tail_offset):
+                f.write(chunk)
+                tail_downloaded += len(chunk)
+                if tail_downloaded >= edge_bytes:
+                    break
+
 async def _run_ffprobe_json(input_url, fast=True, extract_tags=False):
     """Fast probe first; retry with a larger probe only when the small probe fails."""
     probe_pairs = ((10 * 1024 * 1024, 5 * 1024 * 1024), (50 * 1024 * 1024, 25 * 1024 * 1024)) if fast else ((50 * 1024 * 1024, 25 * 1024 * 1024),)
