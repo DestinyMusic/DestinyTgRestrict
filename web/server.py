@@ -375,7 +375,8 @@ async def _api_add_watcher(request):
             if user_session:
                 u_api = await db.get_api_id(user_id) or API_ID
                 u_hash = await db.get_api_hash(user_id) or API_HASH
-                new_client = Client(f"User_{user_id}", session_string=user_session, api_id=u_api, api_hash=u_hash, workers=4, ipv6=False)
+                # 🟢 FIX: Increased workers to 100
+                new_client = Client(f"User_{user_id}", session_string=user_session, api_id=u_api, api_hash=u_hash, workers=100, ipv6=False)
                 new_client.add_handler(MessageHandler(user_watcher_handler, is_watched_chat))
                 await new_client.start()
                 USER_CLIENTS[user_id] = new_client
@@ -696,6 +697,9 @@ async def _api_chats_handler(request):
                         else:
                             u = resolved_users.get(raw_last_id)
                             offset_peer = raw_types.InputPeerUser(user_id=raw_last_id, access_hash=getattr(u, "access_hash", 0)) if u else raw_types.InputPeerEmpty()
+                    
+                    # 🟢 FIX: Pace the pagination requests to prevent FloodWaits
+                    await asyncio.sleep(1.5)
 
                 except FloodWait as e:
                     await asyncio.sleep(e.value + 1)
@@ -874,6 +878,7 @@ async def _api_topics_handler(request):
             try:
                 async for topic in uclient.get_forum_topics(chat_id, limit=300):
                     topics.append({"id": topic.id, "title": topic.title})
+                    await asyncio.sleep(0.01) # 🟢 FIX: Yield event loop to prevent queue blocks
             except Exception as e:
                 # Graceful handling of Pyrogram pagination bug
                 if "'NoneType'" not in str(e):
@@ -968,6 +973,7 @@ async def _api_chat_details_handler(request):
                             "title": t.title,
                             "top_msg": top_msg_val
                         })
+                        await asyncio.sleep(0.01) # 🟢 FIX: Yield event loop to prevent queue blocks
                 except Exception as inner_e:
                     if "'NoneType'" not in str(inner_e):
                         logger.warning(f"[CHAT DETAILS] Topic pagination interrupted: {inner_e}")
@@ -1206,7 +1212,8 @@ async def init_worker_bots(user_id=None):
         # 1. Initialize Stream Bots
         for idx, token in enumerate(stream_tokens, start=1):
             try:
-                bot_client = Client(f"stream_bot_{uid}_{idx}", api_id=API_ID, api_hash=API_HASH, bot_token=token.strip(), workers=4, no_updates=True, ipv6=False)
+                # 🟢 FIX: Increased workers to 100 to stop queue drops
+                bot_client = Client(f"stream_bot_{uid}_{idx}", api_id=API_ID, api_hash=API_HASH, bot_token=token.strip(), workers=100, no_updates=True, ipv6=False)
                 await bot_client.start()
                 USER_STREAM_BOTS[uid].append(bot_client)
                 logger.info(f"🚀 Stream Bot {idx} active for user {uid}")
@@ -1216,7 +1223,8 @@ async def init_worker_bots(user_id=None):
         # 2. Initialize Task Bots
         for idx, token in enumerate(task_tokens, start=1):
             try:
-                bot_client = Client(f"task_bot_{uid}_{idx}", api_id=API_ID, api_hash=API_HASH, bot_token=token.strip(), workers=4, no_updates=True, ipv6=False)
+                # 🟢 FIX: Increased workers to 100 to stop queue drops
+                bot_client = Client(f"task_bot_{uid}_{idx}", api_id=API_ID, api_hash=API_HASH, bot_token=token.strip(), workers=100, no_updates=True, ipv6=False)
                 await bot_client.start()
                 USER_TASK_BOTS[uid].append(bot_client)
                 logger.info(f"🚀 Task Bot {idx} active for user {uid}")
@@ -1620,7 +1628,8 @@ async def _api_edit_media_handler(request):
                             api_hash=u_hash, 
                             ipv6=False,
                             sleep_threshold=120,
-                            **get_transmission_kwargs(workers=4, is_bot=False) # 🟢 Force 1 concurrent
+                            # 🟢 FIX: Scale workers up so the Editor doesn't lock the queue
+                            **get_transmission_kwargs(workers=100, is_bot=False) 
                         )
                         await uclient.start()
                         USER_CLIENTS[uid] = uclient
@@ -1646,6 +1655,9 @@ async def _api_edit_media_handler(request):
                         await safe_send(app, uid, upload_chat_id, task_uuid, True, app.send_document, progress=progress, progress_args=["up", task_uuid], **kwargs)
                         try: os.remove(part)
                         except: pass
+                        
+                        # 🟢 FIX: Pace split uploads to avoid spamming the upload handler
+                        await asyncio.sleep(3.0)
                         
                 elif file_size > split_limit and is_premium:
                     await status_msg.edit_text(f"☁️ **Uploading via Premium Session ({_pretty_bytes(file_size)})...**")
