@@ -9,7 +9,8 @@ from urllib.parse import quote, unquote
 from aiohttp import web
 
 async def partial_download_tg(client, message, file_path, limit_mb=15):
-    """Sparse downloads the head and tail of large files using pure byte offsets."""
+    """Sparse downloads the head and tail of large files using Pyrogram's stream_media."""
+    import math
     media_obj = message.document or message.video or message.audio or message.photo
     file_size = getattr(media_obj, 'file_size', 0)
     limit_bytes = max(1, int(limit_mb * 1024 * 1024))
@@ -18,31 +19,29 @@ async def partial_download_tg(client, message, file_path, limit_mb=15):
         await client.download_media(message, file_name=str(file_path))
         return
         
-    edge_bytes = min(limit_bytes // 2, file_size // 2)
+    chunk_size = 1048576 # Pyrogram's native 1MB chunk size
+    total_chunks = math.ceil(file_size / chunk_size)
+    edge_chunks = max(1, math.ceil((limit_bytes / 2) / chunk_size))
+    edge_chunks = min(edge_chunks, total_chunks // 2)
     
     with open(file_path, "wb") as f:
-        # 1. Download Head
-        head_downloaded = 0
-        async for chunk in client.iter_download(media_obj.file_id, offset=0):
+        # 1. Download Head (using chunk limits)
+        async for chunk in client.stream_media(message, limit=edge_chunks):
             f.write(chunk)
-            head_downloaded += len(chunk)
-            if head_downloaded >= edge_bytes:
-                break
-                
-        # 2. Download Tail
-        tail_offset = file_size - edge_bytes
-        if tail_offset > 0:
-            # Force the OS to allocate a true sparse file jump
-            f.seek(tail_offset)
-            f.write(b'\0' * 1)
-            f.seek(tail_offset)
             
-            tail_downloaded = 0
-            async for chunk in client.iter_download(media_obj.file_id, offset=tail_offset):
-                f.write(chunk)
-                tail_downloaded += len(chunk)
-                if tail_downloaded >= edge_bytes:
-                    break
+        # 2. Download Tail
+        if total_chunks > edge_chunks:
+            offset_chunk = max(edge_chunks, total_chunks - edge_chunks)
+            tail_limit = total_chunks - offset_chunk
+            
+            if tail_limit > 0:
+                # Force OS to allocate a massive sparse file jump instantly
+                f.seek(offset_chunk * chunk_size)
+                f.write(b'\0' * 1)
+                f.seek(offset_chunk * chunk_size)
+                
+                async for chunk in client.stream_media(message, offset=offset_chunk, limit=tail_limit):
+                    f.write(chunk)
 
 async def _run_ffprobe_json(input_url, fast=True, extract_tags=False):
     """Fast probe first; retry with a larger probe only when the small probe fails."""
