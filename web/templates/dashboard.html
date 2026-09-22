@@ -1473,7 +1473,7 @@
                 <div class="section-title">👑 Admin Control Panel</div>
                 <div class="card" style="margin-bottom: 20px;">
                     <h3 style="margin-top: 0; font-size: 16px; color: #fff;">Authorized Users</h3>
-                    <p style="font-size: 12px; color: #94a3b8; margin-bottom: 15px;">Add Telegram User IDs to grant them access to the Bot and Web UI. Below listed users only can access, Everyone else is Blocked. Admins and Sudos are always allowed. </p>
+                    <p style="font-size: 12px; color: #94a3b8; margin-bottom: 15px;">Add Telegram User IDs to grant them access to the Bot and Web UI. Below listed users only can access, Everyone else is blocked. Admins and Sudos are always allowed.</p>
                     
                     <div class="input-group">
                         <label>Add User ID & Role</label>
@@ -3635,16 +3635,26 @@
                 const text = await res.text();
                 if (!text || text.trim().length === 0) return;
                 
-                const lines = text.split('\\n');
+                // 1. Clean up any weird literal newlines from the database
+                let normalizedText = text.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\r\n/g, '\n');
+                
+                // 2. 🟢 CRITICAL FIX: The Blob Splitter
+                // If a file crammed all lyrics into one line, this forces a clean 
+                // line break directly in front of every [mm:ss.xx] timestamp!
+                normalizedText = normalizedText.replace(/(\[\d{2}:\d{2}\.\d{2,3}\])/g, '\n$1');
+                
+                const lines = normalizedText.split('\n');
                 const lrcCues = [];
-                const timeRegex = /\\[(\\d{2}):(\\d{2}\\.\\d{2,3})\\](.*)/;
+                const timeRegex = /\[(\d{2}):(\d{2}\.\d{2,3})\](.*)/; // Fixed double slashes
                 
                 for (let line of lines) {
                     const match = line.match(timeRegex);
                     if (match) {
                         const min = parseInt(match[1], 10);
                         const sec = parseFloat(match[2]);
-                        let textContent = match[3].replace(/<[^>]+>/g, '').replace(/\\[\\d{2}:\\d{2}\\.\\d{2,3}\\]/g, '').trim();
+                        // Clean up karaoke tags safely
+                        let textContent = match[3].replace(/<[^>]+>/g, '').replace(/\[\d{2}:\d{2}\.\d{2,3}\]/g, '').trim();
+                        
                         if (textContent) lrcCues.push({ start: min * 60 + sec, text: textContent, isLrc: true });
                     } else if (line.trim() !== '' && !line.startsWith('[')) {
                         let textContent = line.replace(/<[^>]+>/g, '').trim();
