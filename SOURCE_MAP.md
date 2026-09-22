@@ -1,4 +1,4 @@
-# Original `f3.py` source map
+# Original `restrict_bot.py` source map
 
 Every original Python source line is accounted for below. The dashboard string payload is moved verbatim to `web/templates/dashboard.html`.
 
