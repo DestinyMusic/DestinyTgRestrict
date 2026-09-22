@@ -22,17 +22,17 @@ async def _get_direct_http_session():
     async with DIRECT_HTTP_SESSION_LOCK:
         if DIRECT_HTTP_SESSION is None or DIRECT_HTTP_SESSION.closed:
             connector = aiohttp.TCPConnector(
-                limit=0,          
-                limit_per_host=0, 
-                ttl_dns_cache=300,
-                keepalive_timeout=60,
+                limit=100,          
+                limit_per_host=20, 
+                ttl_dns_cache=60, # 🟢 FIX: Lower DNS cache to clear dead sockets
+                keepalive_timeout=30, # 🟢 FIX: Drop keep-alive to 30s to prevent stale connection errors
                 enable_cleanup_closed=True,
             )
             timeout = aiohttp.ClientTimeout(
                 total=None,
-                connect=15,
-                sock_connect=15,
-                sock_read=None,   
+                connect=8,
+                sock_connect=8,
+                sock_read=15,  # 🟢 FIX: Add explicit sock_read timeout so the async engine never hangs forever
             )
             DIRECT_HTTP_SESSION = aiohttp.ClientSession(
                 connector=connector,
