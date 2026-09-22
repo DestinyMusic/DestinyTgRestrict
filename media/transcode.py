@@ -95,15 +95,7 @@ async def _api_stream_handler(request):
         except Exception as e:
             logger.debug(f"Stream dynamic probe failed: {e}")
 
-    # Always keep the browser on the byte-range path for the original/default
-    # stream. FFmpeg is reserved for explicit track/quality selection or codecs
-    # which the browser cannot decode directly.
-    if quality == "Original" and (audio_idx is None or str(audio_idx).strip() == "") and not force_transcode:
-        if is_tg:
-            raise web.HTTPFound(f"/api/tg_stream?user_id={user_id}&chat_id={quote(str(chat_id), safe='')}&msg_id={msg_id}")
-        raise web.HTTPFound(f"/api/direct_stream?user_id={user_id}&url={quote(link, safe='')}")
-
-    # 🟢 DYNAMIC CODEC RETRIEVAL: Pull cached metadata to ensure we don't blind-copy incompatible streams
+    # 1. Pull cached metadata FIRST
     cache_key = _media_cache_key(user_id, link)
     cached_meta = MEDIA_META_CACHE.get(cache_key)
     video_codec = ""
@@ -113,19 +105,42 @@ async def _api_stream_handler(request):
             audio_codec = meta.get("audio_codec", "").lower()
         video_codec = meta.get("video_codec", "").lower()
         
-        # 🟢 FIX: Accurately detect Audio vs Video based on REAL FFprobe metadata!
         if not video_codec and audio_codec:
             is_audio = True
         elif video_codec:
             is_audio = False
             
-        # 🟢 FIX: Use the fully resolved filename, avoiding generics!
         if meta.get("file_name") and meta.get("file_name").lower() not in ("unknown_media", "direct_stream_media", "download", "file", "media"):
             filename = meta.get("file_name").lower()
 
-    # 🟢 SMART COPY LOGIC: Never copy E-AC3/AC3/DTS/TrueHD into MP4 for browsers
+    # 2. Check container and codec compatibility
+    is_mkv = filename.endswith((".mkv", ".mka"))
     unsupported_web_codecs = {"hevc", "h265", "hvc1", "x265"}
-    needs_video_transcode = video_codec in unsupported_web_codecs or force_x264 or quality != "Original"
+    bad_audio = {"dts", "truehd", "ac3", "eac3"}
+
+    # File requires FFmpeg if it has incompatible codecs, is an MKV, or has explicit options set
+    needs_transcode = (
+        is_mkv
+        or (video_codec in unsupported_web_codecs)
+        or (audio_codec in bad_audio)
+        or force_transcode
+        or force_x264
+        or quality != "Original"
+        or (audio_idx is not None and str(audio_idx).strip() != "")
+    )
+
+    # 3. Allow external players to bypass transcode via a query flag (?external=1)
+    is_external_player = request.query.get("external", "") == "1"
+
+    # Only send direct byte-range if it's an external player OR 100% native web-compatible
+    if (not needs_transcode) or is_external_player:
+        from urllib.parse import quote
+        if is_tg:
+            raise web.HTTPFound(f"/api/tg_stream?user_id={user_id}&chat_id={quote(str(chat_id), safe='')}&msg_id={msg_id}")
+        raise web.HTTPFound(f"/api/direct_stream?user_id={user_id}&url={quote(link, safe='')}")
+
+    # 4. If incompatible, code execution continues down to FFmpeg transcode pipeline
+    needs_video_transcode = video_codec in unsupported_web_codecs or force_x264 or quality != "Original" or is_mkv
 
     bad_audio = {"dts", "truehd", "ac3", "eac3"}
     # 🟢 FIX: If we are transcoding the video for web compatibility, we MUST also force the audio to transcode!
@@ -311,5 +326,3 @@ async def _api_stream_handler(request):
 CLIENT_MSG_CACHE = {}
 CLIENT_MSG_CACHE_MAX = 2048
 CLIENT_MSG_LOCKS = defaultdict(asyncio.Lock)
-
-
