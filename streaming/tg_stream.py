@@ -1,8 +1,3 @@
-import mimetypes
-import math
-import re
-import asyncio
-
 async def get_client_msg(client, chat_id, msg_id):
     """Cache Telegram messages and coalesce simultaneous metadata requests."""
     key = (id(client), chat_id, int(msg_id))
@@ -251,6 +246,239 @@ async def _api_tg_stream_handler(request):
                 if part_size <= 0:
                     return web.Response(status=502, text="Telegram media has no usable file size")
                 parts_map.append({"msg_id": msg_id, "start": 0, "end": part_size, "size": part_size})
+                global_offset = part_size
+
+        if not parts_map:
+            return web.Response(status=404, text="No readable media parts")
+
+        virtual_size = global_offset
+        virtual_data_offset = 0
+        zip_idx = request.query.get("zip_idx", "")
+        
+        # 🟢 FIX: Trigger your virtual concatenator perfectly for .zip AND .zip.001
+        is_zip = bool(re.search(r'\.zip(\.\d{3})?$', filename.lower()))
+        if is_zip:
+            async def zip_read(off, length):
+                buf = bytearray()
+                async for chunk in parallel_stream_generator(primary_client, chat_id, parts_map, off, length):
+                    buf.extend(chunk)
+                    if len(buf) >= length:
+                        break
+                return bytes(buf[:length])
+
+            playlist = await get_zip_playlist(zip_read, virtual_size)
+            if playlist:
+                target_entry = playlist[0]
+                if zip_idx.isdigit():
+                    for track in playlist:
+                        if track["original_index"] == int(zip_idx):
+                            target_entry = track
+                            break
+                entry = await resolve_specific_zip_entry(zip_read, target_entry)
+                if entry:
+                    virtual_size = entry["size"]
+                    virtual_data_offset = entry["data_offset"]
+                    mime_type = mimetypes.guess_type(entry["name"])[0] or "video/x-matroska"
+                    filename = entry["name"]
+
+        if virtual_size <= 0:
+            return web.Response(status=502, text="Invalid virtual media size")
+
+        range_header = request.headers.get("Range", "")
+        start_byte = 0
+        end_byte = virtual_size - 1
+        if range_header:
+            match = re.match(r"bytes=(\d*)-(\d*)", range_header)
+            if match:
+                first, last = match.group(1), match.group(2)
+                if first:
+                    start_byte = int(first)
+                    if last:
+                        end_byte = min(int(last), virtual_size - 1)
+                elif last:
+                    suffix_len = int(last)
+                    if suffix_len > 0:
+                        start_byte = max(0, virtual_size - suffix_len)
+                        end_byte = virtual_size - 1
+
+        if start_byte < 0 or start_byte >= virtual_size or end_byte < start_byte:
+            return web.Response(status=416, headers={"Content-Range": f"bytes */{virtual_size}"})
+
+        chunk_len = end_byte - start_byte + 1
+        
+        if "GLOBAL_STREAM_TASKS" not in globals():
+            global GLOBAL_STREAM_TASKS
+            GLOBAL_STREAM_TASKS = {}
+            
+        # 🟢 FIX: Make the lock key unique with a UUID so simultaneous parallel requests 
+        # from VLC or FFmpeg don't aggressively cancel each other out, 
+        # while still allowing the Web UI "Stop" button to kill them cleanly!
+        import uuid
+        client_ip = request.remote or "unknown_ip"
+        lock_key = f"{user_id}_{chat_id}_{msg_id}_{client_ip}_{uuid.uuid4().hex}"
+        
+        GLOBAL_STREAM_TASKS[lock_key] = asyncio.current_task()
+
+        headers = {
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(chunk_len),
+            "Content-Type": mime_type,
+            "Content-Range": f"bytes {start_byte}-{end_byte}/{virtual_size}",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Expose-Headers": "Content-Length, Content-Range, Accept-Ranges, Content-Type",
+            "Cache-Control": "no-store",
+        }
+
+        if request.method == "HEAD":
+            return web.Response(status=206 if range_header else 200, headers=headers)
+
+        import aiohttp
+        response = web.StreamResponse(status=206 if range_header else 200, headers=headers)
+        
+        adjusted_start = start_byte + virtual_data_offset
+        gen = parallel_stream_generator(primary_client, chat_id, parts_map, adjusted_start, chunk_len)
+        
+        sid = _track_stream(request, filename, user_id)
+        try:
+            await response.prepare(request)
+            async for chunk in gen:
+                await response.write(chunk)
+            await response.write_eof()
+        except (ConnectionResetError, asyncio.CancelledError, aiohttp.client_exceptions.ClientConnectionResetError, BrokenPipeError, ConnectionAbortedError):
+            pass # Normal browser disconnects ignored
+        except Exception as exc:
+            if "Connection closed" not in str(exc) and "BrokenPipeError" not in str(exc):
+                logger.debug(f"Telegram stream disconnect/error: {exc}")
+        finally:
+            _untrack_stream(sid)
+            if hasattr(gen, 'aclose'):
+                try: 
+                    await asyncio.wait_for(gen.aclose(), timeout=1.0)
+                except Exception:
+                    pass
+            
+        if not response.prepared:
+            return web.Response(status=499, text="Client Closed Request")
+        return response
+
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logger.exception(f"Telegram stream failed: {exc}")
+        if response is None or not getattr(response, 'prepared', False):
+            return web.Response(status=502, text="Telegram stream failed")
+        return response
+    finally:
+        if temp_client is not None:
+            try:
+                await temp_client.disconnect()
+            except Exception:
+                pass
+
+SUBTITLE_CACHE = {}
+SUBTITLE_CACHE_TTL = 3600
+SUBTITLE_LOCKS = defaultdict(asyncio.Lock)
+
+async def _api_subtitles_handler(request):
+    """Extract embedded subtitle once, cache the WebVTT, and serve it fast thereafter."""
+    try:
+        user_id = int(request.query.get("user_id", 0))
+    except Exception:
+        user_id = 0
+    link = request.query.get("link", "").strip()
+    sub_idx = request.query.get("sub_idx", "0").strip()
+    zip_idx = request.query.get("zip_idx", "").strip() # 🟢 FIX: Fixes NameError crash
+    if not link:
+        return web.Response(status=400, text="Invalid Link")
+
+    is_tg = _is_tg_link(link)
+    logger.info(f"📝 [SUBTITLES] Extract Request | User: {user_id} | Is TG: {is_tg} | Sub_Idx: {sub_idx} | Link: {link[:60]}...")
+
+    # 🟢 FIX: Include zip_idx in the cache key so different tracks in an album don't overwrite each other!
+    cache_key = f"{user_id}:{link}:{sub_idx}:{zip_idx}"
+    now = time.time()
+    cached = SUBTITLE_CACHE.get(cache_key)
+    if cached and cached[1] > now:
+        body = cached[0]
+        return web.Response(body=body, status=200, headers={
+            "Content-Type": "text/vtt; charset=utf-8",
+            "Content-Length": str(len(body)),
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "public, max-age=3600",
+        })
+
+    actual_url = link
+    if is_tg:
+        parsed = _parse_source_link(link)
+        chat_id = parsed.get("chat_id")
+        msg_id = parsed.get("msg_id")
+        msg_range = parsed.get("msg_range") # 🟢 Extract range
+        if chat_id is None or msg_id is None:
+            return web.Response(status=400, text="Invalid Telegram link")
+        actual_url = f"http://127.0.0.1:{PORT}/api/tg_stream?user_id={user_id}&chat_id={chat_id}&msg_id={msg_id}"
+        if msg_range:
+            actual_url += f"&range={msg_range[0]}-{msg_range[1]}" 
+        if zip_idx:
+            actual_url += f"&zip_idx={zip_idx}" 
+    else:
+        # 🟢 CRITICAL FIX: Route FFmpeg through internal proxy so subtitle extraction doesn't stall on CDNs
+        from urllib.parse import quote
+        if zip_idx:
+            actual_url = f"http://127.0.0.1:{PORT}/api/direct_stream?user_id={user_id}&url={quote(link, safe='')}&zip_idx={zip_idx}"
+        else:
+            actual_url = f"http://127.0.0.1:{PORT}/api/direct_stream?user_id={user_id}&url={quote(link, safe='')}"
+
+    # 🟢 FIX: Extract Embedded Metadata Lyrics directly!
+    if sub_idx == "metadata_lyrics":
+        cmd = [
+            "ffprobe", "-v", "error",
+            "-show_entries", "format_tags=lyrics,LYRICS,Lyrics,UNSYNCEDLYRICS,SYLT",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            actual_url
+        ]
+            
+        try:
+            proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+            stdout, _ = await proc.communicate()
+            # 🟢 FIX: Decode and unescape literal FFprobe string newlines
+            raw_text = stdout.decode('utf-8', errors='ignore')
+            raw_text = raw_text.replace('\\r\\n', '\n').replace('\\n', '\n')
+            body = raw_text.encode('utf-8')
+            
+            if not body.strip():
+                return web.Response(status=404, text="No lyrics found")
+                
+            SUBTITLE_CACHE[cache_key] = (bytes(body), time.time() + SUBTITLE_CACHE_TTL)
+            return web.Response(body=body, status=200, headers={
+                "Content-Type": "text/vtt; charset=utf-8",
+                "Content-Length": str(len(body)),
+                "Access-Control-Allow-Origin": "*",
+                "Cache-Control": "public, max-age=3600",
+            })
+        except Exception as exc:
+            return web.Response(status=502, text=str(exc))
+
+    cmd = [
+        "ffmpeg", "-hide_banner", "-loglevel", "error",
+        "-user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36", 
+        "-rw_timeout", "120000000", 
+        "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "2",
+        "-seekable", "1", "-multiple_requests", "1"
+        # 🟢 CRITICAL FIX: Removed probesize limit so MKV subs are found!
+    ]
+    
+    cmd += [
+        "-i", actual_url,
+        "-map", f"0:{sub_idx}",
+        "-vn", "-an",
+        "-c:s", "webvtt",
+        "-f", "webvtt",
+        "pipe:1"
+    ]
+
+    import aiohttp
+    response = web.StreamResponse(status=200, headers={
+    ": msg_id, "start": 0, "end": part_size, "size": part_size})
                 global_offset = part_size
 
         if not parts_map:
