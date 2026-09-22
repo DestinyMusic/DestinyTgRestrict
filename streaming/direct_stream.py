@@ -1,4 +1,3 @@
-# ==============================================================================
 # --- HIGH-PERFORMANCE STREAMING, TRANSCODING & PROBE ENGINE ---
 # ==============================================================================
 
@@ -356,9 +355,18 @@ async def _api_direct_stream_handler(request):
                                 break
                     entry = await resolve_specific_zip_entry(zip_read_http, target_entry)
                     if entry:
-                        virtual_size = entry["size"]
+                        # 🟢 CRITICAL SPEED FIX FOR DIRECT LINKS:
+                        virtual_size = entry["comp_size"]  # Isolate to only the specific file's bytes
                         virtual_data_offset = entry["data_offset"]
-                        mime_type = mimetypes.guess_type(entry["name"])[0] or "video/x-matroska"
+                        mime_type = mimetypes.guess_type(entry["name"])[0] or "application/octet-stream"
+                        
+                        # 🟢 FORCE WEB-COMPATIBLE AUDIO MIME TYPES
+                        if entry["name"].lower().endswith('.mp3'): mime_type = "audio/mpeg"
+                        elif entry["name"].lower().endswith(('.m4a', '.aac')): mime_type = "audio/mp4"
+                        elif entry["name"].lower().endswith('.flac'): mime_type = "audio/flac"
+                        elif entry["name"].lower().endswith('.ogg'): mime_type = "audio/ogg"
+                        
+                        filename = entry["name"]
         except Exception as e:
             logger.warning(f"Direct ZIP resolution failed: {e}")
 
