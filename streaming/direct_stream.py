@@ -418,11 +418,27 @@ async def _api_direct_stream_handler(request):
         out_headers["Content-Range"] = f"bytes {start_byte}-{end_byte}/{virtual_size}"
         out_status = 206 if client_range else 200
     else:
-        copy_headers = ("Content-Type", "Content-Length", "Content-Range", "Content-Disposition", "ETag", "Last-Modified")
+        copy_headers = ("Content-Length", "Content-Range", "Content-Disposition", "ETag", "Last-Modified")
         for k in copy_headers:
             if remote.headers.get(k) is not None:
                 out_headers[k] = remote.headers[k]
-        out_headers.setdefault("Content-Type", "application/octet-stream")
+                
+        # 🟢 FIX: Forcibly override generic/binary MIME types so web browsers actually play the video
+        # instead of triggering a file download popup!
+        upstream_mime = remote.headers.get("Content-Type", "").lower()
+        if not upstream_mime or "octet-stream" in upstream_mime or "binary" in upstream_mime:
+            import mimetypes
+            guessed_mime = mimetypes.guess_type(filename)[0]
+            if not guessed_mime:
+                if filename.endswith(".mkv"): guessed_mime = "video/x-matroska"
+                elif filename.endswith(".webm"): guessed_mime = "video/webm"
+                elif filename.endswith((".m4a", ".aac")): guessed_mime = "audio/mp4"
+                elif filename.endswith(".flac"): guessed_mime = "audio/flac"
+                else: guessed_mime = "video/mp4"
+            out_headers["Content-Type"] = guessed_mime
+        else:
+            out_headers["Content-Type"] = upstream_mime
+            
         out_status = remote.status
 
     if request.method == "HEAD":
@@ -493,7 +509,8 @@ def _guess_filename_from_url(url, fallback="Direct_Stream_Media"):
 def _guess_browser_compatibility(mime_type, filename, streams):
     """Conservative browser-compatibility check used by the native player path."""
     mime = (mime_type or "").lower().split(";", 1)[0]
-    ext = Path(str(filename or "")).suffix.lower()
+    import os
+    ext = os.path.splitext(str(filename or ""))[1].lower()
     # 🟢 FIX: Ignore cover art so audio files aren't mistakenly treated as videos
     videos = [s for s in (streams or []) if s.get("codec_type") == "video" and s.get("codec_name") not in {"mjpeg", "png", "bmp", "webp"}]
     audios = [s for s in (streams or []) if s.get("codec_type") == "audio"]
