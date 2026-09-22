@@ -195,8 +195,9 @@ def get_transmission_kwargs(workers: int = 8, is_bot: bool = False) -> dict:
     if env_val.isdigit() and int(env_val) > 0:
         val = int(env_val)
     else:
+        # 🟢 FIX: Cap transmissions independently from workers so sockets don't choke and timeout
         cpu_cores = os.cpu_count() or 2
-        val = min(workers, max(2, cpu_cores * 2))
+        val = min(15, max(2, cpu_cores * 2))
 
     return {"max_concurrent_transmissions": val}
 
