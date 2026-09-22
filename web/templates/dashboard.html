@@ -33,6 +33,15 @@
             --anime-bg: url('https://images.unsplash.com/photo-1578632767115-351597cf2477?q=80&w=2560&auto=format&fit=crop'); /* Beautiful Anime/Starry scenery */
         }
 
+        :root { 
+            --liquid-width: 85%; /* Scaled up dynamically for TVs & Tablets */
+            --bg: #0b0f19; --card: rgba(15, 23, 42, 0.6); --card-border: rgba(139, 92, 246, 0.3); 
+            --text: #f8fafc; --subtext: #cbd5e1;
+            --accent: #f472b6; 
+            --glow: rgba(244, 114, 182, 0.5); --danger: #fb7185; --sidebar: rgba(11, 15, 25, 0.8);
+            --anime-bg: linear-gradient(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.6)), url('https://images.unsplash.com/photo-1578632767115-351597cf2477?q=80&w=2560&auto=format&fit=crop'); 
+        }
+
         /* TV & iPad Pro Responsive Variable Overrides */
         @media (min-width: 1024px) { :root { --liquid-width: 75%; } }
         @media (min-width: 1920px) { :root { --liquid-width: 60%; font-size: 1.2rem; } }
@@ -42,18 +51,27 @@
         [data-theme="amoled"] { --bg: #000000; --card: rgba(10,10,10,0.7); --card-border: #1f2937; --text: #f1f5f9; --subtext: #94a3b8; --accent: #38bdf8; --glow: rgba(56, 189, 248, 0.4); --sidebar: rgba(5,5,5,0.9); --anime-bg: none; }
         
         /* --- ⚔️ ANIME MEGA THEMES (PROXY BYPASS) --- */
-        [data-theme="anime-magic"] { --bg: #1a0b2e; --card: rgba(26, 11, 46, 0.6); --card-border: rgba(217, 70, 239, 0.4); --text: #fdf4ff; --subtext: #f0abfc; --accent: #e879f9; --glow: rgba(232, 121, 249, 0.6); --sidebar: rgba(26, 11, 46, 0.85); --anime-bg: url('/api/bg?url=https://image.tmdb.org/t/p/original/mqKyzyTr3BauoLvC1rVonleq2CU.jpg'); }
-        [data-theme="one-piece"] { --bg: #0c1524; --card: rgba(12, 21, 36, 0.75); --card-border: rgba(251, 191, 36, 0.5); --text: #ffffff; --subtext: #fde68a; --accent: #fbbf24; --glow: rgba(251, 191, 36, 0.7); --sidebar: rgba(12, 21, 36, 0.9); --anime-bg: url('/api/bg?url=https://image.tmdb.org/t/p/original/gYOEhfkCRELk99ougH9h6h55vcG.jpg'); }
-        [data-theme="jjk"] { --bg: #09090b; --card: rgba(9, 9, 11, 0.75); --card-border: rgba(139, 92, 246, 0.5); --text: #f8fafc; --subtext: #c4b5fd; --accent: #8b5cf6; --glow: rgba(139, 92, 246, 0.7); --sidebar: rgba(9, 9, 11, 0.9); --anime-bg: url('/api/bg?url=https://image.tmdb.org/t/p/original/g1p1Vx6FgUEY6fDRnOCncQ9V21o.jpg'); }
-        [data-theme="demon-slayer"] { --bg: #0f172a; --card: rgba(15, 23, 42, 0.75); --card-border: rgba(16, 185, 129, 0.5); --text: #f8fafc; --subtext: #a7f3d0; --accent: #10b981; --glow: rgba(16, 185, 129, 0.7); --sidebar: rgba(15, 23, 42, 0.9); --anime-bg: url('/api/bg?url=https://image.tmdb.org/t/p/original/802OyC7ZcSFWYiqIex5sppSNk1q.jpg'); }
-        [data-theme="aot"] { --bg: #1c1917; --card: rgba(28, 25, 23, 0.75); --card-border: rgba(132, 204, 22, 0.4); --text: #fafaf9; --subtext: #d9f99d; --accent: #84cc16; --glow: rgba(132, 204, 22, 0.6); --sidebar: rgba(28, 25, 23, 0.9); --anime-bg: url('/api/bg?url=https://image.tmdb.org/t/p/original/g6zoYfIb2YXE0fiyMOX227adhz2.jpg'); }
-        [data-theme="naruto"] { --bg: #1e1b4b; --card: rgba(30, 27, 75, 0.75); --card-border: rgba(249, 115, 22, 0.5); --text: #fffedd; --subtext: #fdba74; --accent: #f97316; --glow: rgba(249, 115, 22, 0.7); --sidebar: rgba(30, 27, 75, 0.9); --anime-bg: url('/api/bg?url=https://image.tmdb.org/t/p/original/gkCghQ2MyUIAMzXEB2D7POwpbnm.jpg'); }
-        [data-theme="fma"] { --bg: #1a0f0f; --card: rgba(26, 15, 15, 0.8); --card-border: rgba(220, 38, 38, 0.5); --text: #fef2f2; --subtext: #fca5a5; --accent: #dc2626; --glow: rgba(220, 38, 38, 0.7); --sidebar: rgba(26, 15, 15, 0.95); --anime-bg: url('/api/bg?url=https://image.tmdb.org/t/p/original/iAld03IP69UEpqQbVWoRBvjqkqX.jpg'); }
-        [data-theme="geass"] { --bg: #150a1e; --card: rgba(21, 10, 30, 0.75); --card-border: rgba(225, 29, 72, 0.5); --text: #fff1f2; --subtext: #fecdd3; --accent: #e11d48; --glow: rgba(225, 29, 72, 0.7); --sidebar: rgba(21, 10, 30, 0.9); --anime-bg: url('/api/bg?url=https://image.tmdb.org/t/p/original/gVZgJQwwgH6pSdkx7zDLGBSnxg8.jpg'); }
-        [data-theme="solo"] { --bg: #020617; --card: rgba(2, 6, 23, 0.75); --card-border: rgba(56, 189, 248, 0.5); --text: #f0f9ff; --subtext: #bae6fd; --accent: #38bdf8; --glow: rgba(56, 189, 248, 0.7); --sidebar: rgba(2, 6, 23, 0.9); --anime-bg: url('/api/bg?url=https://image.tmdb.org/t/p/original/naM0O9OxYPwdAvhcBeJLurGHxcu.jpg'); }
-        [data-theme="hxh"] { --bg: #064e3b; --card: rgba(6, 78, 59, 0.75); --card-border: rgba(34, 197, 94, 0.5); --text: #f0fdf4; --subtext: #86efac; --accent: #22c55e; --glow: rgba(34, 197, 94, 0.7); --sidebar: rgba(6, 78, 59, 0.9); --anime-bg: url('/api/bg?url=https://image.tmdb.org/t/p/original/5NXUij2vlhKLpTJimDzUU8qGM82.jpg'); }
-        [data-theme="death-note"] { --bg: #000000; --card: rgba(10, 10, 10, 0.85); --card-border: rgba(153, 27, 27, 0.6); --text: #e5e5e5; --subtext: #a3a3a3; --accent: #dc2626; --glow: rgba(220, 38, 38, 0.8); --sidebar: rgba(5, 5, 5, 0.95); --anime-bg: url('/api/bg?url=https://image.tmdb.org/t/p/original/mQABf5KFAMD0hLOdpFrthy00BCh.jpg'); }
-        
+        [data-theme="anime-magic"] { --bg: #1a0b2e; --card: rgba(26, 11, 46, 0.6); --card-border: rgba(217, 70, 239, 0.4); --text: #fdf4ff; --subtext: #f0abfc; --accent: #e879f9; --glow: rgba(232, 121, 249, 0.6); --sidebar: rgba(26, 11, 46, 0.85); --anime-bg: linear-gradient(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.6)), url('/api/bg?url=https://image.tmdb.org/t/p/original/mqKyzyTr3BauoLvC1rVonleq2CU.jpg'); }
+        [data-theme="one-piece"] { --bg: #0c1524; --card: rgba(12, 21, 36, 0.75); --card-border: rgba(251, 191, 36, 0.5); --text: #ffffff; --subtext: #fde68a; --accent: #fbbf24; --glow: rgba(251, 191, 36, 0.7); --sidebar: rgba(12, 21, 36, 0.9); --anime-bg: linear-gradient(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.6)), url('/api/bg?url=https://image.tmdb.org/t/p/original/gYOEhfkCRELk99ougH9h6h55vcG.jpg'); }
+        [data-theme="jjk"] { --bg: #09090b; --card: rgba(9, 9, 11, 0.75); --card-border: rgba(139, 92, 246, 0.5); --text: #f8fafc; --subtext: #c4b5fd; --accent: #8b5cf6; --glow: rgba(139, 92, 246, 0.7); --sidebar: rgba(9, 9, 11, 0.9); --anime-bg: linear-gradient(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.6)), url('/api/bg?url=https://image.tmdb.org/t/p/original/g1p1Vx6FgUEY6fDRnOCncQ9V21o.jpg'); }
+        [data-theme="demon-slayer"] { --bg: #0f172a; --card: rgba(15, 23, 42, 0.75); --card-border: rgba(16, 185, 129, 0.5); --text: #f8fafc; --subtext: #a7f3d0; --accent: #10b981; --glow: rgba(16, 185, 129, 0.7); --sidebar: rgba(15, 23, 42, 0.9); --anime-bg: linear-gradient(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.6)), url('/api/bg?url=https://image.tmdb.org/t/p/original/802OyC7ZcSFWYiqIex5sppSNk1q.jpg'); }
+        [data-theme="aot"] { --bg: #1c1917; --card: rgba(28, 25, 23, 0.75); --card-border: rgba(132, 204, 22, 0.4); --text: #fafaf9; --subtext: #d9f99d; --accent: #84cc16; --glow: rgba(132, 204, 22, 0.6); --sidebar: rgba(28, 25, 23, 0.9); --anime-bg: linear-gradient(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.6)), url('/api/bg?url=https://image.tmdb.org/t/p/original/g6zoYfIb2YXE0fiyMOX227adhz2.jpg'); }
+        [data-theme="naruto"] { --bg: #1e1b4b; --card: rgba(30, 27, 75, 0.75); --card-border: rgba(249, 115, 22, 0.5); --text: #fffedd; --subtext: #fdba74; --accent: #f97316; --glow: rgba(249, 115, 22, 0.7); --sidebar: rgba(30, 27, 75, 0.9); --anime-bg: linear-gradient(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.6)), url('/api/bg?url=https://image.tmdb.org/t/p/original/gkCghQ2MyUIAMzXEB2D7POwpbnm.jpg'); }
+        [data-theme="fma"] { --bg: #1a0f0f; --card: rgba(26, 15, 15, 0.8); --card-border: rgba(220, 38, 38, 0.5); --text: #fef2f2; --subtext: #fca5a5; --accent: #dc2626; --glow: rgba(220, 38, 38, 0.7); --sidebar: rgba(26, 15, 15, 0.95); --anime-bg: linear-gradient(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.6)), url('/api/bg?url=https://image.tmdb.org/t/p/original/iAld03IP69UEpqQbVWoRBvjqkqX.jpg'); }
+        [data-theme="geass"] { --bg: #150a1e; --card: rgba(21, 10, 30, 0.75); --card-border: rgba(225, 29, 72, 0.5); --text: #fff1f2; --subtext: #fecdd3; --accent: #e11d48; --glow: rgba(225, 29, 72, 0.7); --sidebar: rgba(21, 10, 30, 0.9); --anime-bg: linear-gradient(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.6)), url('/api/bg?url=https://image.tmdb.org/t/p/original/gVZgJQwwgH6pSdkx7zDLGBSnxg8.jpg'); }
+        [data-theme="solo"] { --bg: #020617; --card: rgba(2, 6, 23, 0.75); --card-border: rgba(56, 189, 248, 0.5); --text: #f0f9ff; --subtext: #bae6fd; --accent: #38bdf8; --glow: rgba(56, 189, 248, 0.7); --sidebar: rgba(2, 6, 23, 0.9); --anime-bg: linear-gradient(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.6)), url('/api/bg?url=https://image.tmdb.org/t/p/original/naM0O9OxYPwdAvhcBeJLurGHxcu.jpg'); }
+        [data-theme="hxh"] { --bg: #064e3b; --card: rgba(6, 78, 59, 0.75); --card-border: rgba(34, 197, 94, 0.5); --text: #f0fdf4; --subtext: #86efac; --accent: #22c55e; --glow: rgba(34, 197, 94, 0.7); --sidebar: rgba(6, 78, 59, 0.9); --anime-bg: linear-gradient(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.6)), url('/api/bg?url=https://image.tmdb.org/t/p/original/5NXUij2vlhKLpTJimDzUU8qGM82.jpg'); }
+        [data-theme="death-note"] { --bg: #000000; --card: rgba(10, 10, 10, 0.85); --card-border: rgba(153, 27, 27, 0.6); --text: #e5e5e5; --subtext: #a3a3a3; --accent: #dc2626; --glow: rgba(220, 38, 38, 0.8); --sidebar: rgba(5, 5, 5, 0.95); --anime-bg: linear-gradient(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.6)), url('/api/bg?url=https://image.tmdb.org/t/p/original/mQABf5KFAMD0hLOdpFrthy00BCh.jpg'); }
+
+        [data-theme="graphite"] { --bg: #141416; --card: #1c1c20; --card-border: #2e2e36; --text: #f3f4f6; --subtext: #9ca3af; --accent: #f59e0b; --glow: rgba(245, 158, 11, 0.4); --sidebar: #0e0e10; --anime-bg: none; }
+        [data-theme="obsidian"] { --bg: #090e17; --card: #111827; --card-border: #1e293b; --text: #f1f5f9; --subtext: #94a3b8; --accent: #10b981; --glow: rgba(16, 185, 129, 0.4); --sidebar: #070a12; --anime-bg: none; }
+        [data-theme="royal"] { --bg: #0b0914; --card: #151124; --card-border: #2d244a; --text: #f5f3ff; --subtext: #a78bfa; --accent: #8b5cf6; --glow: rgba(139, 92, 246, 0.4); --sidebar: #07050d; --anime-bg: none; }
+        [data-theme="slate"] { --bg: #0f172a; --card: #1e293b; --card-border: #334155; --text: #f8fafc; --subtext: #94a3b8; --accent: #0ea5e9; --glow: rgba(14, 165, 233, 0.4); --sidebar: #090d16; --anime-bg: none; }
+        [data-theme="charcoal"] { --bg: #12140e; --card: #1b1e15; --card-border: #2c3322; --text: #f7fee7; --subtext: #bef264; --accent: #a3e635; --glow: rgba(163, 230, 53, 0.4); --sidebar: #0c0e09; --anime-bg: none; }
+        [data-theme="fresh-canopy"] { --bg: #0c1410; --card: #14201a; --card-border: #20352b; --text: #ecfdf5; --subtext: #6ee7b7; --accent: #bef264; --glow: rgba(190, 242, 100, 0.4); --sidebar: #080d0a; --anime-bg: none; }
+        [data-theme="tiffany-noir"] { --bg: #071415; --card: #0f2022; --card-border: #19383b; --text: #f0fdfa; --subtext: #5eead4; --accent: #2dd4bf; --glow: rgba(45, 212, 191, 0.4); --sidebar: #040d0e; --anime-bg: none; }
+        [data-theme="bridal-blush"] { --bg: #170d12; --card: #24141d; --card-border: #3d1e2e; --text: #fff1f2; --subtext: #fda4af; --accent: #fb7185; --glow: rgba(251, 113, 133, 0.4); --sidebar: #0f080c; --anime-bg: none; }
+
         /* --- ☀️ LIGHT / WHITE THEMES --- */
         [data-theme="rose-quartz"] { --bg: #fff1f3; --card: #ffffff; --card-border: #fecdd3; --text: #4c0519; --subtext: #9f1239; --accent: #f43f5e; --glow: rgba(244, 63, 94, 0.25); --sidebar: #ffe4e6; --anime-bg: none; }
         [data-theme="daylight-sky"] { --bg: #f0f7ff; --card: #ffffff; --card-border: #bfdbfe; --text: #0f172a; --subtext: #1e40af; --accent: #2563eb; --glow: rgba(37, 99, 235, 0.25); --sidebar: #e0f2fe; --anime-bg: none; }
@@ -118,12 +136,12 @@
             background-color: var(--bg); color: var(--text); margin: 0; overflow-x: hidden; 
             transition: background-color 0.5s ease; 
             position: relative; z-index: 0; 
-            background-image: linear-gradient(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.5)), var(--anime-bg);
+            background-image: var(--anime-bg); /* 🟢 FIX: Gradient moved to variables to prevent mobile rendering bugs */
             background-size: cover;
             background-position: center;
             background-attachment: fixed;
         }
-        
+
         body::before, body::after { 
             content: ''; position: fixed; border-radius: 50%; 
             filter: blur(90px); -webkit-filter: blur(90px); z-index: -1; 
