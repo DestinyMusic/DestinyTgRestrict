@@ -1193,7 +1193,8 @@ async def process_custom_destination(client: Client, message: Message):
                 main_bot_access = bot_member.status in [enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER]
             except Exception: pass
 
-            worker_bots = USER_WORKER_BOTS.get(user_id, [])
+            # 🟢 FIX: Changed USER_WORKER_BOTS to USER_TASK_BOTS
+            worker_bots = USER_TASK_BOTS.get(user_id, [])
             worker_access_count = 0
             for wb in worker_bots:
                 try:
