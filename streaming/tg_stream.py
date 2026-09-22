@@ -26,8 +26,10 @@ async def get_client_msg(client, chat_id, msg_id):
         return msg
 
 async def fetch_single_chunk(client, chat_id, msg_id, offset, limit):
-    """Fetches a chunk continuously using native iter_download for fork compatibility."""
+    """Fetches a chunk using raw MTProto requests, bypassing buggy fork downloaders."""
     import asyncio
+    from pyrogram.raw.functions.upload import GetFile
+    from pyrogram.raw.types import InputDocumentFileLocation
     
     for attempt in range(6): 
         if not getattr(client, "is_connected", False):
@@ -36,33 +38,52 @@ async def fetch_single_chunk(client, chat_id, msg_id, offset, limit):
 
         try:
             msg = await get_client_msg(client, chat_id, msg_id)
-            media = msg.document or msg.video or msg.audio
-            if not media:
+            doc = msg.document or msg.video or msg.audio
+            if not doc:
                 raise ValueError("No media found in message")
-                
-            data = bytearray()
+
+            # Create the raw file reference
+            file_location = InputDocumentFileLocation(
+                id=doc.file_id_info.id,
+                access_hash=doc.file_id_info.access_hash,
+                file_reference=doc.file_id_info.file_reference,
+                thumb_size=""
+            )
             
-            async def fetch_continuous():
-                # 🟢 CRITICAL FIX: Use iter_download directly with exact raw byte offsets!
-                # This works perfectly on ALL Telegram forks (Kurigram, Pyromod, etc.)
-                async for chunk in client.iter_download(
-                    media.file_id, 
-                    offset=offset, 
-                    limit=limit
-                ):
-                    data.extend(chunk)
-                    if len(data) >= limit:
-                        break
-                        
-            # Allow enough time for large blocks (e.g. 3MB chunk = 15 seconds max)
-            dynamic_timeout = max(15.0, (limit / 1024 / 1024) * 5.0)
-            await asyncio.wait_for(fetch_continuous(), timeout=dynamic_timeout)
+            data = bytearray()
+            current_offset = offset
+            bytes_left = limit
+            
+            # Telegram accepts max 1MB blocks (1048576 bytes) per MTProto request
+            while bytes_left > 0:
+                fetch_size = min(1048576, bytes_left)
+                
+                async def fetch_block():
+                    return await client.invoke(
+                        GetFile(
+                            location=file_location,
+                            offset=current_offset,
+                            limit=fetch_size
+                        )
+                    )
+                
+                # Allow 15 seconds max per 1MB chunk
+                result = await asyncio.wait_for(fetch_block(), timeout=15.0)
+                
+                if not result or not result.bytes:
+                    break
                     
-            if not data: 
+                data.extend(result.bytes)
+                current_offset += len(result.bytes)
+                bytes_left -= len(result.bytes)
+                
+                if len(result.bytes) < fetch_size:
+                    break # EOF reached
+                    
+            if not data:
                 raise ValueError("EOF Reached or Empty Chunk")
                 
-            # Slice exactly to the limit just to be safe
-            return bytes(data[:limit])
+            return bytes(data)
             
         except FloodWait as e:
             await asyncio.sleep(e.value + 1)
