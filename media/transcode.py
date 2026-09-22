@@ -1,3 +1,4 @@
+import sys
 async def _api_stream_handler(request):
     """Adaptive stream pipeline: native redirect first, minimal FFmpeg fallback."""
     try:
@@ -264,7 +265,7 @@ async def _api_stream_handler(request):
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL, # 🟢 FIX: Prevents OS pipe buffer deadlock
+        stderr=sys.stderr, # 🟢 Prints FFmpeg crash reports directly to the console/logs!
     )
     import aiohttp
     
@@ -347,5 +348,3 @@ async def _api_stream_handler(request):
 CLIENT_MSG_CACHE = {}
 CLIENT_MSG_CACHE_MAX = 2048
 CLIENT_MSG_LOCKS = defaultdict(asyncio.Lock)
-
-
