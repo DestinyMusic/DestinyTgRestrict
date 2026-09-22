@@ -462,20 +462,39 @@ async def _api_subtitles_handler(request):
         else:
             actual_url = f"http://127.0.0.1:{PORT}/api/direct_stream?user_id={user_id}&url={quote(link, safe='')}"
 
-    # 🟢 FIX: Extract Embedded Metadata Lyrics directly!
+    # 🟢 FIX: Extract Embedded Metadata Lyrics directly using Bulletproof JSON!
     if sub_idx == "metadata_lyrics":
         cmd = [
             "ffprobe", "-v", "error",
-            "-show_entries", "format_tags=lyrics,LYRICS,Lyrics,UNSYNCEDLYRICS,SYLT",
-            "-of", "default=noprint_wrappers=1:nokey=1",
+            "-show_entries", "format_tags:stream_tags",
+            "-of", "json",
             actual_url
         ]
             
         try:
             proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
             stdout, _ = await proc.communicate()
-            # 🟢 FIX: Decode and unescape literal FFprobe string newlines
-            raw_text = stdout.decode('utf-8', errors='ignore')
+            import json
+            
+            try:
+                data = json.loads(stdout.decode('utf-8', errors='ignore') or '{}')
+            except Exception:
+                data = {}
+                
+            raw_text = ""
+            
+            # Combine format tags (Container) and stream tags (Audio Track)
+            tags = data.get("format", {}).get("tags", {})
+            for stream in data.get("streams", []):
+                tags.update(stream.get("tags", {}))
+                
+            # Scan all keys to find standard and non-standard Lyrics identifiers
+            for key, val in tags.items():
+                k_upper = key.upper()
+                if "LYRIC" in k_upper or k_upper in ["SYLT", "USLT", "UNSYNCEDLYRICS"]:
+                    raw_text += str(val) + "\n"
+            
+            # Decode literal string newlines correctly
             raw_text = raw_text.replace('\\r\\n', '\n').replace('\\n', '\n')
             body = raw_text.encode('utf-8')
             
