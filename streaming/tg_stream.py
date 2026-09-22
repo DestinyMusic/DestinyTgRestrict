@@ -531,16 +531,16 @@ async def _api_subtitles_handler(request):
         except Exception as exc:
             return web.Response(status=502, text=str(exc))
 
+    import sys
+    
     cmd = [
         "ffmpeg", "-hide_banner", "-loglevel", "error",
         "-user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36", 
         "-rw_timeout", "120000000", 
-        "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "2",
-        "-seekable", "1", "-multiple_requests", "1"
-        # 🟢 CRITICAL FIX: Removed probesize limit so MKV subs are found!
-    ]
-    
-    cmd += [
+        "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5",
+        "-seekable", "1", "-multiple_requests", "1",
+        # 🟢 CRITICAL FIX: Put probesize back! MKV subtitles are often hidden deep in the file.
+        "-probesize", "20M", "-analyzeduration", "20M",
         "-i", actual_url,
         "-map", f"0:{sub_idx}",
         "-vn", "-an",
@@ -549,57 +549,44 @@ async def _api_subtitles_handler(request):
         "pipe:1"
     ]
 
-    import aiohttp
-    response = web.StreamResponse(status=200, headers={
-        "Content-Type": "text/vtt; charset=utf-8",
-        "Access-Control-Allow-Origin": "*",
-        "Cache-Control": "no-cache",
-    })
-    
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stderr=sys.stderr # 🟢 Route errors to your console so you can see them!
         )
         
-        # Read the first chunk to verify the stream is valid text WebVTT
-        first_chunk = await proc.stdout.read(1024)
-        if not first_chunk or b"WEBVTT" not in first_chunk:
-            _, stderr_err = await proc.communicate()
-            # If FFmpeg failed (e.g. image-based PGS/VobSub), return empty valid WebVTT instead of crashing
+        # 🟢 CRITICAL FIX: Wait for FFmpeg to extract the entire text file.
+        # This completely prevents the race-condition where FFmpeg was a millisecond too slow!
+        stdout, _ = await proc.communicate()
+        
+        if proc.returncode != 0 or not stdout.strip():
+            # If it's a PGS/VobSub image subtitle, it will fail text conversion. Return a clean empty VTT.
             return web.Response(
                 body=b"WEBVTT\n\nNOTE Unsupported image-based subtitle format (PGS/VobSub)\n",
                 status=200,
                 headers={"Content-Type": "text/vtt; charset=utf-8", "Access-Control-Allow-Origin": "*"}
             )
 
-        await response.prepare(request)
-        await response.write(first_chunk)
-        
-        body_buffer = bytearray(first_chunk)
-        while True:
-            chunk = await proc.stdout.read(8192)
-            if not chunk:
-                break
-            body_buffer.extend(chunk)
-            await response.write(chunk)
+        # Save to RAM cache for instant loads next time
+        SUBTITLE_CACHE[cache_key] = (stdout, time.time() + SUBTITLE_CACHE_TTL)
+        if len(SUBTITLE_CACHE) > 128:
+            oldest = min(SUBTITLE_CACHE.items(), key=lambda kv: kv[1][1])[0]
+            SUBTITLE_CACHE.pop(oldest, None)
             
-        await response.write_eof()
-        await proc.wait()
-
-        if proc.returncode == 0 and body_buffer:
-            SUBTITLE_CACHE[cache_key] = (bytes(body_buffer), time.time() + SUBTITLE_CACHE_TTL)
-            if len(SUBTITLE_CACHE) > 128:
-                oldest = min(SUBTITLE_CACHE.items(), key=lambda kv: kv[1][1])[0]
-                SUBTITLE_CACHE.pop(oldest, None)
-        return response
-    except (ConnectionResetError, asyncio.CancelledError, aiohttp.client_exceptions.ClientConnectionResetError):
-        return response
+        return web.Response(
+            body=stdout, 
+            status=200, 
+            headers={
+                "Content-Type": "text/vtt; charset=utf-8",
+                "Content-Length": str(len(stdout)),
+                "Access-Control-Allow-Origin": "*",
+                "Cache-Control": "public, max-age=3600"
+            }
+        )
+        
     except Exception as exc:
         try: proc.kill()
         except: pass
-        if not response.prepared:
-            return web.Response(status=502, text=str(exc))
-        return response
+        return web.Response(status=502, text=str(exc))
             
