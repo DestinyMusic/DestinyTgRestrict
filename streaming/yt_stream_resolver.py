@@ -1,73 +1,77 @@
 import asyncio
+import json
 import os
-from yt_dlp import YoutubeDL
-from yt_dlp.networking.impersonate import ImpersonateTarget  # 🟢 NEW: Required for API impersonation
 import logging
-import traceback
 
 logger = logging.getLogger("BotLogger")
 
-def _extract_stream_sync(url: str, use_cookies: bool = True):
-    # Ensure event loop for curl_cffi background thread
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        asyncio.set_event_loop(asyncio.new_event_loop())
-
-    ydl_opts = {
-        "format": "best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best",
-        "quiet": True,
-        "no_warnings": True,
-        "noplaylist": True,
-        
-        # 🟢 THE REAL FIX: Pass the actual ImpersonateTarget object!
-        # This prevents the AssertionError and perfectly spoofs a Chrome TLS handshake.
-        "impersonate": ImpersonateTarget(client="chrome"), 
-        "force_ipv4": True,               
-        "socket_timeout": 15,             
-        "extractor_retries": 1,
-    }
+async def _extract_cli(url: str, use_cookies: bool = True):
+    # 🟢 BULLETPROOF FIX: Run yt-dlp natively via CLI subprocess!
+    # This completely bypasses all Python API thread crashes and AssertionError bugs.
+    cmd = [
+        "python", "-m", "yt_dlp",
+        "--dump-json",
+        "-f", "best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best",
+        "--quiet",
+        "--no-warnings",
+        "--no-playlist",
+        "--force-ipv4",
+        "--impersonate", "chrome",  # Flawless Chrome TLS spoofing via CLI
+        "--socket-timeout", "15",
+        "--extractor-retries", "1"
+    ]
     
     if use_cookies and os.path.exists("cookies.txt"):
-        ydl_opts["cookiefile"] = "cookies.txt"
+        cmd.extend(["--cookies", "cookies.txt"])
+        
+    cmd.append(url)
+    
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    stdout, stderr = await proc.communicate()
+    
+    if proc.returncode != 0:
+        err_text = stderr.decode('utf-8', errors='ignore').strip()
+        raise RuntimeError(f"CLI error: {err_text}")
+        
+    try:
+        info = json.loads(stdout.decode('utf-8', errors='ignore'))
+    except json.JSONDecodeError:
+        raise ValueError(f"Failed to parse JSON. Stderr: {stderr.decode('utf-8', errors='ignore')}")
 
-    with YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
-        if not info:
-            raise ValueError("No video metadata returned")
+    stream_url = info.get("url")
+    if not stream_url and "formats" in info:
+        formats = [f for f in info.get("formats", []) if f.get("url")]
+        if formats:
+            stream_url = formats[-1]["url"]
 
-        stream_url = info.get("url")
-        if not stream_url and "formats" in info:
-            formats = [f for f in info["formats"] if f.get("url")]
-            if formats:
-                stream_url = formats[-1]["url"]
+    if not stream_url:
+        raise ValueError("Direct streamable URL not found in yt-dlp output")
 
-        if not stream_url:
-            raise ValueError("Direct streamable URL not found")
-
-        return {
-            "stream_url": stream_url,
-            "headers": info.get("http_headers") or {},
-            "title": info.get("title", "Direct Stream"),
-            "duration": info.get("duration", 0)
-        }
+    return {
+        "stream_url": stream_url,
+        "headers": info.get("http_headers") or {},
+        "title": info.get("title", "Direct Stream"),
+        "duration": info.get("duration", 0)
+    }
 
 async def resolve_yt_dlp_stream(url: str):
     """Extracts stream URLs. Automatically falls back to cookie-less mode."""
     try:
         # Attempt 1: With Cookies
-        return await asyncio.to_thread(_extract_stream_sync, url, True)
+        return await _extract_cli(url, True)
     except Exception as e:
-        error_details = traceback.format_exc()
-        logger.warning(f"yt-dlp stream resolution failed (Cookies Active):\n{error_details}")
+        logger.warning(f"yt-dlp resolution failed (Cookies Active): {str(e)[:200]}")
         
         # Attempt 2: Unconditional Fallback! 
-        # If it fails for ANY reason with cookies, try instantly without them!
+        # If it fails for ANY reason (dead cookie, SSL drop), retry instantly without them!
         try:
             logger.info("🔄 Retrying yt-dlp without cookies to bypass Auth/TLS drop...")
-            return await asyncio.to_thread(_extract_stream_sync, url, False)
+            return await _extract_cli(url, False)
         except Exception as e2:
-            error_details_2 = traceback.format_exc()
-            logger.warning(f"yt-dlp stream resolution failed (No Cookies):\n{error_details_2}")
-                
-        return None
+            logger.warning(f"yt-dlp resolution failed (No Cookies): {str(e2)[:200]}")
+            
+    return None
