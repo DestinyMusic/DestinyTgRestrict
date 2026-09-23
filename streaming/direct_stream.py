@@ -2,6 +2,16 @@
 # --- HIGH-PERFORMANCE STREAMING, TRANSCODING & PROBE ENGINE ---
 # ==============================================================================
 
+import yarl
+import mimetypes # 🟢 FIX 1: Import globally so it never causes scoping crashes!
+
+def _safe_yarl(u):
+    """Prevents aiohttp from double-encoding Terabox security signatures."""
+    try:
+        return yarl.URL(u, encoded=True) if '%' in u else u
+    except Exception:
+        return u
+        
 def _is_tg_link(link):
     """Strictly separate Telegram Links from Direct Links to prevent intermixing."""
     if not link: return False
@@ -13,15 +23,6 @@ DIRECT_RESOLVE_LOCKS = defaultdict(asyncio.Lock)
 DIRECT_HEADER_CACHE = {}
 DIRECT_HTTP_SESSION = None
 DIRECT_HTTP_SESSION_LOCK = asyncio.Lock()
-
-import yarl
-
-def _safe_yarl(u):
-    """Prevents aiohttp from double-encoding Terabox security signatures."""
-    try:
-        return yarl.URL(u, encoded=True) if '%' in u else u
-    except Exception:
-        return u
 
 async def _get_direct_http_session():
     """Shared HTTP client with keep-alive/DNS reuse for direct media hosts."""
@@ -160,11 +161,12 @@ async def resolve_direct_link(url):
                         result = str(r.url) 
             except Exception: pass
 
+        # 8. Last resort: a single ranged GET resolves redirects and captures useful headers
         if result == original:
             if original not in DIRECT_HEADER_CACHE or "Cookie" not in DIRECT_HEADER_CACHE[original]:
                 try:
                     async with session.get(
-                        original,
+                        _safe_yarl(original), # 🟢 FIX 2: Prevent Terabox 5XX Errors!
                         headers={"Range": "bytes=0-0", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0"},
                         allow_redirects=True,
                     ) as r:
@@ -299,8 +301,8 @@ async def _api_direct_stream_handler(request):
             raw_size = int(cached_h.get("meta_content_length", 0))
             if raw_size <= 0:
                 try:
-                    # 🟢 FAST NATIVE STRING (No _safe_yarl corruption)
-                    async with session.head(resolved, headers=zip_headers, allow_redirects=True) as h_resp:
+                    # 🟢 FIX: Wrap in _safe_yarl
+                    async with session.head(_safe_yarl(resolved), headers=zip_headers, allow_redirects=True) as h_resp:
                         raw_size = int(h_resp.headers.get("Content-Length", 0))
                 except Exception: pass
             
@@ -308,7 +310,8 @@ async def _api_direct_stream_handler(request):
                 try:
                     get_h = zip_headers.copy()
                     get_h["Range"] = "bytes=0-0"
-                    async with session.get(resolved, headers=get_h, allow_redirects=True) as g_resp:
+                    # 🟢 FIX: Wrap in _safe_yarl
+                    async with session.get(_safe_yarl(resolved), headers=get_h, allow_redirects=True) as g_resp:
                         cr = g_resp.headers.get("Content-Range", "")
                         if cr and "/" in cr:
                             raw_size = int(cr.split("/")[-1])
@@ -320,7 +323,8 @@ async def _api_direct_stream_handler(request):
                 async def zip_read_http(off, length):
                     z_req_headers = zip_headers.copy()
                     z_req_headers["Range"] = f"bytes={off}-{off+length-1}"
-                    async with session.get(resolved, headers=z_req_headers) as r:
+                    # 🟢 FIX: Wrap in _safe_yarl
+                    async with session.get(_safe_yarl(resolved), headers=z_req_headers) as r:
                         return await r.read()
                 
                 magic_bytes = await zip_read_http(0, 4)
@@ -337,6 +341,7 @@ async def _api_direct_stream_handler(request):
                         if entry:
                             virtual_size = entry["comp_size"]
                             virtual_data_offset = entry["data_offset"]
+                            # 🟢 FIX: mimetypes is globally imported, no crash!
                             mime_type = mimetypes.guess_type(entry["name"])[0] or "application/octet-stream"
                             
                             if entry["name"].lower().endswith('.mp3'): mime_type = "audio/mpeg"
@@ -385,10 +390,10 @@ async def _api_direct_stream_handler(request):
         if val: req_headers[header] = val
 
     try:
-        # 🟢 FAST NATIVE STRING
+        # 🟢 FIX: Wrap in _safe_yarl
         remote = await session.request(
             method=request.method,
-            url=resolved,
+            url=_safe_yarl(resolved),
             headers=req_headers,
             allow_redirects=True,
         )
@@ -416,7 +421,6 @@ async def _api_direct_stream_handler(request):
                 
         upstream_mime = remote.headers.get("Content-Type", "").lower()
         if not upstream_mime or "octet-stream" in upstream_mime or "binary" in upstream_mime:
-            import mimetypes
             guessed_mime = mimetypes.guess_type(filename)[0]
             if not guessed_mime:
                 if filename.endswith(".mkv"): guessed_mime = "video/x-matroska"
@@ -541,4 +545,3 @@ def _guess_browser_compatibility(mime_type, filename, streams):
         } and ac not in bad_audio
 
     return False
-
