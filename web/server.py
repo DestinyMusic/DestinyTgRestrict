@@ -1684,6 +1684,55 @@ async def _api_edit_media_handler(request):
     asyncio.create_task(background_editor())
     return web.json_response({"status": "success", "task_uuid": task_uuid})
 
+# ==============================================================================
+# --- PER-SITE COOKIES API ---
+# ==============================================================================
+async def _api_cookies_status(request):
+    cookies_doc = await db.get_all_cookies()
+    return web.json_response({
+        "terabox": bool(cookies_doc.get("terabox")),
+        "hxfile": bool(cookies_doc.get("hxfile")),
+        "youtube": bool(cookies_doc.get("youtube"))
+    })
+
+def _get_cookie_filename(site):
+    if site == "terabox": return "terabox.txt"
+    if site == "hxfile": return "hxfile.txt"
+    if site == "youtube": return "cookies.txt"
+    return f"{site}.txt"
+
+async def _api_cookies_upload(request):
+    data = await request.post()
+    site = data.get("site")
+    file_field = data.get("file")
+    if not site or not file_field:
+        return web.Response(status=400, text="Missing site or file payload")
+
+    content = file_field.file.read().decode("utf-8", errors="ignore")
+    await db.save_cookie_file(site, content)
+
+    filename = _get_cookie_filename(site)
+    with open(filename, "w", encoding="utf-8") as f:
+        f.write(content)
+
+    return web.json_response({"status": "success"})
+
+async def _api_cookies_delete(request):
+    data = await request.post()
+    site = data.get("site")
+    if not site:
+        return web.Response(status=400, text="Missing site identifier")
+
+    await db.delete_cookie_file(site)
+    
+    filename = _get_cookie_filename(site)
+    import os
+    if os.path.exists(filename):
+        try: os.remove(filename)
+        except Exception: pass
+
+    return web.json_response({"status": "success"})
+
 async def start_koyeb_health_check(host: str = "0.0.0.0"):
     if web is None: return
     global PORT
@@ -1721,6 +1770,9 @@ async def start_koyeb_health_check(host: str = "0.0.0.0"):
     # Media & Streams
     app_web.router.add_get("/api/chats", _api_chats_handler)
     app_web.router.add_get("/api/topics", _api_topics_handler)
+    app_web.router.add_get("/api/cookies", _api_cookies_status)
+    app_web.router.add_post("/api/cookies/upload", _api_cookies_upload)
+    app_web.router.add_post("/api/cookies/delete", _api_cookies_delete)
     app_web.router.add_post("/api/mediainfo", _api_mediainfo_web_handler)
     app_web.router.add_post("/api/spectrogram", _api_spectrogram_web_handler)
     app_web.router.add_get("/api/media_probe", _api_media_probe_handler)
