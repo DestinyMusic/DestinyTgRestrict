@@ -23,6 +23,9 @@ async def _api_stream_handler(request):
     filename = "media"
     is_audio = False
 
+    # 🟢 GET ZIP IDX EARLY SO IT CAN BE INJECTED INTO BOTH TG AND DIRECT LINKS
+    zip_idx = request.query.get("zip_idx", "").strip()
+
     try:
         if is_tg:
             parsed = _parse_source_link(link)
@@ -40,9 +43,13 @@ async def _api_stream_handler(request):
                 return web.Response(status=404, text="Media not found")
             filename = str(getattr(media, 'file_name', '') or '').lower()
             mime_type = getattr(media, 'mime_type', 'video/mp4') or 'video/mp4'
+            
             actual_url = f"http://127.0.0.1:{PORT}/api/tg_stream?user_id={user_id}&chat_id={chat_id}&msg_id={msg_id}"
             if msg_range:
                 actual_url += f"&range={msg_range[0]}-{msg_range[1]}" # 🟢 Send to stream backend
+            if zip_idx:
+                actual_url += f"&zip_idx={zip_idx}" # 🟢 APPEND TG ZIP IDX
+                
             is_audio = filename.endswith((".flac", ".mp3", ".m4a", ".ogg", ".wav", ".aac", ".wma", ".opus", ".dsf", ".ape", ".mka", ".alac")) or "audio" in mime_type
         else:
             actual_url = await resolve_direct_link(link)
@@ -68,22 +75,18 @@ async def _api_stream_handler(request):
                 )
             )
             # 🟢 CRITICAL FIX: Restore Loopback Proxy for FFmpeg!
-            # FFmpeg's native HTTP client gets stuck when seeking direct links. Route through Python proxy!
             from urllib.parse import quote
             actual_url = f"http://127.0.0.1:{PORT}/api/direct_stream?user_id={user_id}&url={quote(link, safe='')}"
+            if zip_idx:
+                actual_url += f"&zip_idx={zip_idx}" # 🟢 APPEND DIRECT ZIP IDX
+                
             logger.debug(f"🎬 [TRANSCODE] Using Local Proxy for FFmpeg: {actual_url[:100]}...")
     except Exception as exc:
         return web.Response(status=502, text=f"Source resolution failed: {exc}")
 
-    # 🟢 [RESTORED & FIXED] ZIP TRACK HANDLING
-    zip_idx = request.query.get("zip_idx", "")
+    # 🟢 DYNAMIC INTERNAL ZIP PROBE
     if zip_idx:
-        # 🟢 CRITICAL FIX: Append zip_idx directly to actual_url so FFmpeg extracts the track!
-        if "zip_idx=" not in actual_url: 
-            actual_url += f"&zip_idx={zip_idx}"
-            
         try:
-            # 🟢 DYNAMIC INTERNAL ZIP PROBE: Safely detect if an internal ZIP file is an Audio Track!
             pdata = await _run_ffprobe_json(actual_url, fast=True, extract_tags=False)
             streams = pdata.get("streams", [])
             videos = [s for s in streams if s.get("codec_type") == "video" and s.get("codec_name") not in {"mjpeg", "png", "bmp", "webp"}]
