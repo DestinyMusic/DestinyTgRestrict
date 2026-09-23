@@ -1378,17 +1378,28 @@ async def _api_playlist_handler(request):
             playlist = await get_zip_playlist(zip_read_tg, global_offset)
         else:
             actual_url = await resolve_direct_link(link)
-            filename = _guess_filename_from_url(actual_url).lower()
-            is_zip = filename.endswith(".zip") or ".zip." in filename
+            filename = _guess_filename_from_url(actual_url, original_url=link).lower()
+            
+            # 🟢 FIX: Support all archives
+            is_zip = bool(re.search(r'\.(zip|7z|rar|tar|gz)(\.\d{3})?$', filename))
             if not is_zip: return web.json_response({"status": "success", "playlist": []})
             
             session = await _get_direct_http_session()
-            async with session.head(actual_url, allow_redirects=True) as h_resp:
+            
+            # 🟢 FIX: INJECT AUTH HEADERS
+            zip_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+            cached_h = DIRECT_HEADER_CACHE.get(actual_url) or DIRECT_HEADER_CACHE.get(link) or {}
+            for h_key in ["Cookie", "Referer", "Authorization"]:
+                if h_key in cached_h: 
+                    zip_headers[h_key] = cached_h[h_key]
+
+            async with session.head(actual_url, headers=zip_headers, allow_redirects=True) as h_resp:
                 raw_size = int(h_resp.headers.get("Content-Length", 0))
                 
             async def zip_read_http(off, length):
-                headers = {"Range": f"bytes={off}-{off+length-1}", "User-Agent": "Mozilla/5.0"}
-                async with session.get(actual_url, headers=headers) as r:
+                z_req_headers = zip_headers.copy()
+                z_req_headers["Range"] = f"bytes={off}-{off+length-1}"
+                async with session.get(actual_url, headers=z_req_headers) as r:
                     return await r.read()
                     
             playlist = await get_zip_playlist(zip_read_http, raw_size)
