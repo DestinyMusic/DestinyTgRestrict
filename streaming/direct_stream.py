@@ -76,6 +76,14 @@ async def resolve_direct_link(url):
         result = original
         session = await _get_direct_http_session()
 
+        # 0. 🟢 Universal Scraper Bypass (Terabox, Gofile, Shorteners, yt-dlp)
+        unv_url, unv_headers = await resolve_universal_link(original)
+        if unv_url != original:
+            if unv_headers:
+                DIRECT_HEADER_CACHE[unv_url] = unv_headers
+            DIRECT_URL_CACHE[original] = (unv_url, now + DIRECT_URL_CACHE_TTL)
+            return unv_url
+
         # 1. Pixeldrain Auto-Bypass
         pixel_match = re.search(r"pixeldrain\.com/u/([a-zA-Z0-9_-]+)", original)
         if pixel_match:
@@ -309,6 +317,8 @@ def _untrack_stream(sid):
         if len(GLOBAL_NETWORK_STATS["recent"]) > 50: 
             GLOBAL_NETWORK_STATS["recent"].pop()
 
+from streaming.link_resolver import resolve_universal_link
+
 async def _api_direct_stream_handler(request):
     """Native direct-link proxy with full HTTP Range support, keep-alive reuse, and STORED ZIP resolution."""
     # 🟢 FIX: Extract user_id so it doesn't crash the proxy tracker with a NameError!
@@ -404,6 +414,10 @@ async def _api_direct_stream_handler(request):
     for header in ("If-Range", "If-Modified-Since", "If-None-Match", "Cookie", "Referer"):
         val = request.headers.get(header)
         if val: req_headers[header] = val
+
+    # 🟢 Inject upstream host bypass headers (e.g. Terabox/YouTube authentication cookies)
+    if resolved in DIRECT_HEADER_CACHE:
+        req_headers.update(DIRECT_HEADER_CACHE[resolved])
 
     try:
         remote = await session.request(
