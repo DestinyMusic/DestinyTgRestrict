@@ -62,19 +62,15 @@ async def resolve_direct_link(url):
 
     now = time.time()
     
-    # 1. 🟢 SUPER-FAST CACHE BYPASS (Protects already-resolved CDN links!)
-    # If this URL is already in our header cache with a Cookie, it's a raw restricted CDN link. 
-    # DO NOT process it again, just return it instantly so the proxy can use it!
-    if original in DIRECT_HEADER_CACHE and "Cookie" in DIRECT_HEADER_CACHE[original]:
-        DIRECT_URL_CACHE[original] = (original, now + DIRECT_URL_CACHE_TTL)
-        return original
-
+    # 1. 🟢 Normal cache lookup (maps shortlink -> CDN link)
     cached = DIRECT_URL_CACHE.get(original)
     if cached and cached[1] > now:
-        # Check if the cached resolved URL has protected headers. If so, return!
-        if cached[0] in DIRECT_HEADER_CACHE:
-            return cached[0]
         return cached[0]
+        
+    # 2. 🟢 Loopback protection (if the input URL is already a CDN link with saved headers)
+    if original in DIRECT_HEADER_CACHE:
+        DIRECT_URL_CACHE[original] = (original, now + DIRECT_URL_CACHE_TTL)
+        return original
 
     lock = DIRECT_RESOLVE_LOCKS[original]
     async with lock:
@@ -82,12 +78,9 @@ async def resolve_direct_link(url):
         cached = DIRECT_URL_CACHE.get(original)
         if cached and cached[1] > now:
             return cached[0]
-            
-        if original in DIRECT_HEADER_CACHE and "Cookie" in DIRECT_HEADER_CACHE[original]:
-            DIRECT_URL_CACHE[original] = (original, now + DIRECT_URL_CACHE_TTL)
+        if original in DIRECT_HEADER_CACHE:
             return original
 
-        import re
         result = original
         session = await _get_direct_http_session()
 
@@ -97,9 +90,9 @@ async def resolve_direct_link(url):
         
         if unv_url != original:
             if unv_headers:
-                # 🟢 Store under BOTH keys to protect against loopback probe bugs!
+                # 🟢 CRITICAL FIX: Store headers ONLY under the resolved CDN url!
+                # This prevents loopback requests from erasing the cookies.
                 DIRECT_HEADER_CACHE[unv_url] = unv_headers
-                DIRECT_HEADER_CACHE[original] = unv_headers
             DIRECT_URL_CACHE[original] = (unv_url, now + DIRECT_URL_CACHE_TTL)
             return unv_url
 
@@ -316,13 +309,16 @@ async def _api_direct_stream_handler(request):
         try:
             # 🟢 FIX: INJECT AUTH HEADERS TO PREVENT 403 FORBIDDEN ON ZIP PROBES
             zip_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-            cached_h = DIRECT_HEADER_CACHE.get(resolved) or DIRECT_HEADER_CACHE.get(url) or {}
+            cached_h = DIRECT_HEADER_CACHE.get(resolved) or {}
             for h_key in ["Cookie", "Referer", "Authorization"]:
                 if h_key in cached_h: 
                     zip_headers[h_key] = cached_h[h_key]
 
-            async with session.head(resolved, headers=zip_headers, allow_redirects=True) as h_resp:
-                raw_size = int(h_resp.headers.get("Content-Length", 0))
+            # Gofile/Terabox often block HEAD. Try Cache first!
+            raw_size = int(cached_h.get("content_length", 0))
+            if raw_size <= 0:
+                async with session.head(resolved, headers=zip_headers, allow_redirects=True) as h_resp:
+                    raw_size = int(h_resp.headers.get("Content-Length", 0))
             
             if raw_size > 0:
                 async def zip_read_http(off, length):
@@ -493,9 +489,8 @@ def _guess_filename_from_url(url, fallback="Direct_Stream_Media", original_url=N
                     if m:
                         return unquote(m.group(1))
                         
-        # 2. Check query params...
+        # 2. Check query params for explicit file names
         parsed = urlparse(url)
-        # 1. Check query params for explicit file names (Fixes "?path=" or "?filename=")
         qs = dict(parse_qsl(parsed.query))
         for k in ['filename', 'name', 'file', 'title', 'path']:
             if k in qs:
@@ -506,11 +501,11 @@ def _guess_filename_from_url(url, fallback="Direct_Stream_Media", original_url=N
                 elif val and "/" not in val:
                     return val
         
-        # 2. Fallback to standard URL path
+        # 3. Fallback to standard URL path
         name = os.path.basename(parsed.path)
         name = unquote(name) if name else fallback
         
-        # 3. Ignore extremely generic fallback names and force FFprobe to do the work later
+        # 4. Ignore extremely generic fallback names and force FFprobe to do the work later
         if name.lower() in ["download", "video", "media", "stream", "file", "play", fallback.lower()]:
             return fallback
             
@@ -561,4 +556,3 @@ def _guess_browser_compatibility(mime_type, filename, streams):
         } and ac not in bad_audio
 
     return False
-
