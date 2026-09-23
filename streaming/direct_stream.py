@@ -58,7 +58,6 @@ async def _close_direct_http_session():
         except Exception:
             pass
 
-
 async def resolve_direct_link(url):
     """Resolve common file-host pages to a stream URL, with coalesced/cached resolution."""
     original = str(url or '').strip()
@@ -67,12 +66,10 @@ async def resolve_direct_link(url):
 
     now = time.time()
     
-    # 1. 🟢 Normal cache lookup (maps shortlink -> CDN link)
     cached = DIRECT_URL_CACHE.get(original)
     if cached and cached[1] > now:
         return cached[0]
         
-    # 2. 🟢 Loopback protection (if the input URL is already a CDN link with saved headers)
     if original in DIRECT_HEADER_CACHE:
         DIRECT_URL_CACHE[original] = (original, now + DIRECT_URL_CACHE_TTL)
         return original
@@ -89,7 +86,6 @@ async def resolve_direct_link(url):
         result = original
         session = await _get_direct_http_session()
 
-        # 0. 🟢 Universal Scraper Bypass (Terabox, Gofile, Shorteners, yt-dlp)
         from streaming.link_resolver import resolve_universal_link
         unv_url, unv_headers = await resolve_universal_link(original)
         
@@ -101,26 +97,21 @@ async def resolve_direct_link(url):
             DIRECT_URL_CACHE[original] = (unv_url, now + DIRECT_URL_CACHE_TTL)
             return unv_url
 
-        # 1. Pixeldrain Auto-Bypass
         pixel_match = re.search(r"pixeldrain\.com/u/([a-zA-Z0-9_-]+)", original)
         if pixel_match:
             result = f"https://cdn.pixeldrain.eu.cc/{pixel_match.group(1)}"
 
-        # 2. Dropbox Auto-Bypass (Forces direct download)
         if "dropbox.com" in original:
             result = original.replace("?dl=0", "?dl=1").replace("&dl=0", "&dl=1")
             if "?dl=1" not in result and "&dl=1" not in result:
                 result += "?dl=1"
 
-        # 3. OneDrive / SharePoint Auto-Bypass
         if result == original and ("onedrive.live.com" in original or "sharepoint.com" in original):
             result += "&download=1" if "?" in original else "?download=1"
 
-        # 4. HuggingFace Auto-Bypass
         if result == original and "huggingface.co" in original and "/blob/" in original:
             result = original.replace("/blob/", "/resolve/")
 
-        # 5. MediaFire Auto-Bypass
         if result == original and "mediafire.com/file/" in original:
             try:
                 async with session.get(original, allow_redirects=True) as r:
@@ -128,10 +119,8 @@ async def resolve_direct_link(url):
                     m = re.search(r'href="(https?://download[^"]+)"\s+id="downloadButton"', html_text, re.I)
                     if m:
                         result = m.group(1)
-            except Exception as exc:
-                logger.warning(f"Mediafire resolve failed: {exc}")
+            except Exception: pass
 
-        # 6. Google Drive Auto-Bypass (Native Virus-Scan Bypasser)
         if result == original:
             gdrive_match = re.search(r"drive\.google\.com/(?:file/d/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)", original)
             if gdrive_match:
@@ -151,11 +140,8 @@ async def resolve_direct_link(url):
                                 result = f"https://drive.google.com/uc?id={file_id}&export=download&confirm=t"
                         else:
                             result = str(r.url)
-                except Exception as exc:
-                    logger.warning(f"GDrive native bypass failed: {exc}")
-                    result = original
+                except Exception: pass
 
-        # 7. 🟢 UNIVERSAL HTML MEDIA SCRAPER
         if result == original:
             try:
                 u_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
@@ -172,15 +158,13 @@ async def resolve_direct_link(url):
                                 result = m.group(1).replace('&amp;', '&')
                     else:
                         result = str(r.url) 
-            except Exception:
-                pass
+            except Exception: pass
 
-        # 8. Last resort: a single ranged GET resolves redirects and captures useful headers
         if result == original:
             if original not in DIRECT_HEADER_CACHE or "Cookie" not in DIRECT_HEADER_CACHE[original]:
                 try:
                     async with session.get(
-                        _safe_yarl(original),
+                        original,
                         headers={"Range": "bytes=0-0", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0"},
                         allow_redirects=True,
                     ) as r:
@@ -312,20 +296,19 @@ async def _api_direct_stream_handler(request):
                 if h_key in cached_h: 
                     zip_headers[h_key] = cached_h[h_key]
 
-            # 🟢 FAST CACHE
             raw_size = int(cached_h.get("meta_content_length", 0))
             if raw_size <= 0:
                 try:
-                    async with session.head(_safe_yarl(resolved), headers=zip_headers, allow_redirects=True) as h_resp:
+                    # 🟢 FAST NATIVE STRING (No _safe_yarl corruption)
+                    async with session.head(resolved, headers=zip_headers, allow_redirects=True) as h_resp:
                         raw_size = int(h_resp.headers.get("Content-Length", 0))
                 except Exception: pass
             
-            # 🟢 GET FALLBACK FOR GOFILE (Gofile blocks HEAD requests)
             if raw_size <= 0:
                 try:
                     get_h = zip_headers.copy()
                     get_h["Range"] = "bytes=0-0"
-                    async with session.get(_safe_yarl(resolved), headers=get_h, allow_redirects=True) as g_resp:
+                    async with session.get(resolved, headers=get_h, allow_redirects=True) as g_resp:
                         cr = g_resp.headers.get("Content-Range", "")
                         if cr and "/" in cr:
                             raw_size = int(cr.split("/")[-1])
@@ -337,7 +320,7 @@ async def _api_direct_stream_handler(request):
                 async def zip_read_http(off, length):
                     z_req_headers = zip_headers.copy()
                     z_req_headers["Range"] = f"bytes={off}-{off+length-1}"
-                    async with session.get(_safe_yarl(resolved), headers=z_req_headers) as r:
+                    async with session.get(resolved, headers=z_req_headers) as r:
                         return await r.read()
                 
                 magic_bytes = await zip_read_http(0, 4)
@@ -402,9 +385,10 @@ async def _api_direct_stream_handler(request):
         if val: req_headers[header] = val
 
     try:
+        # 🟢 FAST NATIVE STRING
         remote = await session.request(
             method=request.method,
-            url=_safe_yarl(resolved),
+            url=resolved,
             headers=req_headers,
             allow_redirects=True,
         )
@@ -557,3 +541,4 @@ def _guess_browser_compatibility(mime_type, filename, streams):
         } and ac not in bad_audio
 
     return False
+
