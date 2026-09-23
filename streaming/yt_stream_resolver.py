@@ -5,14 +5,19 @@ import logging
 
 logger = logging.getLogger("BotLogger")
 
-def _extract_stream_sync(url: str):
+def _extract_stream_sync(url: str, use_cookies: bool = True):
     ydl_opts = {
         "format": "best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best",
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
+        # 🟢 CRITICAL SSL FIXES
+        "nocheckcertificate": True,  
+        "legacyserverconnect": True, 
+        "extractor_retries": 3,
     }
-    if os.path.exists("cookies.txt"):
+    
+    if use_cookies and os.path.exists("cookies.txt"):
         ydl_opts["cookiefile"] = "cookies.txt"
 
     with YoutubeDL(ydl_opts) as ydl:
@@ -34,6 +39,26 @@ def _extract_stream_sync(url: str):
             "headers": info.get("http_headers") or {},
             "title": info.get("title", "Direct Stream"),
             "duration": info.get("duration", 0)
+        }
+
+async def resolve_yt_dlp_stream(url: str):
+    """Extracts stream URLs. Automatically falls back to cookie-less mode if YouTube drops the SSL connection."""
+    try:
+        # 🟢 Attempt 1: With Cookies (For age-restricted content)
+        return await asyncio.to_thread(_extract_stream_sync, url, True)
+    except Exception as e:
+        err_str = str(e).lower()
+        logger.warning(f"yt-dlp stream resolution failed (Cookies Active): {e}")
+        
+        # 🟢 Attempt 2: If YouTube dropped the SSL tunnel or the cookie is banned, try without cookies!
+        if "ssl" in err_str or "eof" in err_str or "cookie" in err_str or "sign in" in err_str:
+            try:
+                logger.info("🔄 Retrying yt-dlp without cookies to bypass SSL/Auth drop...")
+                return await asyncio.to_thread(_extract_stream_sync, url, False)
+            except Exception as e2:
+                logger.warning(f"yt-dlp stream resolution failed (No Cookies): {e2}")
+                
+        return None
         }
 
 async def resolve_yt_dlp_stream(url: str):
