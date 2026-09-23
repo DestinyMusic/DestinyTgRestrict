@@ -90,7 +90,8 @@ async def _api_stream_handler(request):
                 return web.Response(status=400, text="Compressed solid archives cannot be streamed.")
 
             # Loopback URL for FFmpeg to guarantee auth cookies and range compliance
-            actual_url = f"http://127.0.0.1:{PORT}/api/direct_stream?user_id={user_id}&url={quote(link, safe='')}"
+            # 🟢 CRITICAL FIX: Pass 'resolved_cdn' instead of 'link' to skip the HTML page and strip trailing garbage!
+            actual_url = f"http://127.0.0.1:{PORT}/api/direct_stream?user_id={user_id}&url={quote(resolved_cdn, safe='')}"
             if zip_idx:
                 actual_url += f"&zip_idx={zip_idx}"
             direct_stream_url = actual_url
