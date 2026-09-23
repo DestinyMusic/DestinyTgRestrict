@@ -390,13 +390,31 @@ async def _api_direct_stream_handler(request):
         if val: req_headers[header] = val
 
     try:
-        # 🟢 FIX: Wrap in _safe_yarl
-        remote = await session.request(
-            method=request.method,
-            url=_safe_yarl(resolved),
-            headers=req_headers,
-            allow_redirects=True,
-        )
+        # 🟢 MANUAL REDIRECT FOLLOWER WITH _safe_yarl
+        max_redirects = 3
+        current_url = resolved
+        remote = None
+        
+        for _ in range(max_redirects):
+            remote = await session.request(
+                method=request.method,
+                url=_safe_yarl(current_url), # 🟢 CRITICAL: Wrap here to prevent Terabox 400/403s!
+                headers=req_headers,
+                allow_redirects=False,
+            )
+            if remote.status in (301, 302, 303, 307, 308):
+                new_url = remote.headers.get("Location")
+                remote.release()
+                if not new_url:
+                    break
+                from urllib.parse import urljoin
+                current_url = urljoin(current_url, new_url)
+            else:
+                break
+                
+        if not remote:
+            return web.Response(status=502, text="Direct source connection failed (Redirect Loop)")
+            
     except Exception as exc:
         return web.Response(status=502, text=f"Direct source connection failed: {exc}")
 
