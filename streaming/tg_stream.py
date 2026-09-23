@@ -441,10 +441,13 @@ async def _api_subtitles_handler(request):
     except Exception:
         user_id = 0
     link = request.query.get("link", "").strip()
-    sub_idx = request.query.get("sub_idx", "0").strip()
-    zip_idx = request.query.get("zip_idx", "").strip() # 🟢 FIX: Fixes NameError crash
-    if not link:
-        return web.Response(status=400, text="Invalid Link")
+    
+    # 🟢 CRITICAL FIX: Accept both 'sub_idx' and 'index' to ensure compatibility with all Javascript fetchers
+    sub_idx = request.query.get("sub_idx", request.query.get("index", "0")).strip()
+    
+    zip_idx = request.query.get("zip_idx", "").strip()
+    if not link or not sub_idx:
+        return web.Response(status=400, text="Invalid Link or Subtitle Index")
 
     is_tg = _is_tg_link(link)
     logger.info(f"📝 [SUBTITLES] Extract Request | User: {user_id} | Is TG: {is_tg} | Sub_Idx: {sub_idx} | Link: {link[:60]}...")
