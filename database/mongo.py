@@ -312,4 +312,24 @@ class Database:
             upsert=True
         )
 
+    async def save_cookie_file(self, site_name: str, cookie_text: str):
+        """Persists uploaded Netscape cookie content across server reboots."""
+        await self.db.config.update_one(
+            {"_id": "cookies_manager"},
+            {"$set": {site_name: cookie_text}},
+            upsert=True
+        )
+
+    async def get_all_cookies(self):
+        """Fetches all stored cookie files from MongoDB."""
+        doc = await self.db.config.find_one({"_id": "cookies_manager"})
+        return doc if doc else {}
+
+    async def delete_cookie_file(self, site_name: str):
+        """Removes a cookie entry from MongoDB."""
+        await self.db.config.update_one(
+            {"_id": "cookies_manager"},
+            {"$unset": {site_name: ""}}
+        )
+        
 db = Database(DB_URI, DB_NAME)
