@@ -1380,22 +1380,21 @@ async def _api_playlist_handler(request):
             actual_url = await resolve_direct_link(link)
             filename = _guess_filename_from_url(actual_url, original_url=link).lower()
             
-            # 🟢 Support all archive types
             is_zip = bool(re.search(r'\.(zip|7z|rar|tar|gz)(\.\d{3})?$', filename))
             if not is_zip: return web.json_response({"status": "success", "playlist": []})
             
             session = await _get_direct_http_session()
             
-            # 🟢 INJECT AUTH HEADERS
-            zip_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+            # 🟢 INJECT EXACT HEADERS INCLUDING USER-AGENT
+            zip_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}
             from streaming.direct_stream import DIRECT_HEADER_CACHE
             cached_h = DIRECT_HEADER_CACHE.get(actual_url) or DIRECT_HEADER_CACHE.get(link) or {}
-            for h_key in ["Cookie", "Referer", "Authorization"]:
+            for h_key in ["Cookie", "Referer", "Authorization", "User-Agent"]:
                 if h_key in cached_h: 
                     zip_headers[h_key] = cached_h[h_key]
 
-            # Gofile/Terabox often block HEAD requests. Check cache first!
-            raw_size = int(cached_h.get("content_length", 0))
+            # Fast cache lookup for ZIP size
+            raw_size = int(cached_h.get("meta_content_length", 0))
             if raw_size <= 0:
                 try:
                     async with session.head(actual_url, headers=zip_headers, allow_redirects=True) as h_resp:
@@ -1403,7 +1402,6 @@ async def _api_playlist_handler(request):
                 except: pass
                 
             if raw_size <= 0:
-                # Final fallback: Do a ranged GET request to fetch headers
                 try:
                     get_h = zip_headers.copy()
                     get_h["Range"] = "bytes=0-0"
