@@ -14,6 +14,15 @@ DIRECT_HEADER_CACHE = {}
 DIRECT_HTTP_SESSION = None
 DIRECT_HTTP_SESSION_LOCK = asyncio.Lock()
 
+import yarl
+
+def _safe_yarl(u):
+    """Prevents aiohttp from double-encoding Terabox security signatures."""
+    try:
+        return yarl.URL(u, encoded=True) if '%' in u else u
+    except Exception:
+        return u
+
 async def _get_direct_http_session():
     """Shared HTTP client with keep-alive/DNS reuse for direct media hosts."""
     global DIRECT_HTTP_SESSION
@@ -24,21 +33,17 @@ async def _get_direct_http_session():
             connector = aiohttp.TCPConnector(
                 limit=100,          
                 limit_per_host=20, 
-                ttl_dns_cache=60, # 🟢 FIX: Lower DNS cache to clear dead sockets
-                keepalive_timeout=30, # 🟢 FIX: Drop keep-alive to 30s to prevent stale connection errors
+                ttl_dns_cache=60, 
+                keepalive_timeout=30, 
                 enable_cleanup_closed=True,
             )
-            timeout = aiohttp.ClientTimeout(
-                total=None,
-                connect=8,
-                sock_connect=8,
-                sock_read=15,  # 🟢 FIX: Add explicit sock_read timeout so the async engine never hangs forever
-            )
+            timeout = aiohttp.ClientTimeout(total=None, connect=8, sock_connect=8, sock_read=15)
             DIRECT_HTTP_SESSION = aiohttp.ClientSession(
                 connector=connector,
                 timeout=timeout,
                 headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                    # 🟢 CRITICAL: Must match direct_link_generator.py exactly to prevent Gofile 400 Errors!
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
                 },
             )
     return DIRECT_HTTP_SESSION
@@ -175,13 +180,12 @@ async def resolve_direct_link(url):
             if original not in DIRECT_HEADER_CACHE or "Cookie" not in DIRECT_HEADER_CACHE[original]:
                 try:
                     async with session.get(
-                        original,
-                        headers={"Range": "bytes=0-0", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+                        _safe_yarl(original),
+                        headers={"Range": "bytes=0-0", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0"},
                         allow_redirects=True,
                     ) as r:
                         result = str(r.url)
                         if r.status < 400: 
-                            # 🟢 CRITICAL FIX: Prefix with 'meta_' so these NEVER accidentally get injected into HTTP requests!
                             DIRECT_HEADER_CACHE[original] = {
                                 "meta_content_type": r.headers.get("Content-Type", "").split(';')[0],
                                 "meta_content_length": r.headers.get("Content-Length"),
@@ -278,8 +282,6 @@ def _untrack_stream(sid):
 from streaming.link_resolver import resolve_universal_link
 
 async def _api_direct_stream_handler(request):
-    """Native direct-link proxy with full HTTP Range support, keep-alive reuse, and STORED ZIP resolution."""
-    # 🟢 FIX: Extract user_id so it doesn't crash the proxy tracker with a NameError!
     try:
         user_id = int(request.query.get("user_id", 0))
     except Exception:
@@ -303,25 +305,39 @@ async def _api_direct_stream_handler(request):
     zip_idx = request.query.get("zip_idx", "")
     if is_zip:
         try:
-            zip_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}
+            zip_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0"}
             cached_h = DIRECT_HEADER_CACHE.get(resolved) or DIRECT_HEADER_CACHE.get(url) or {}
             
-            # 🟢 FIX: Explicitly inject User-Agent so Gofile doesn't return 500 Errors!
             for h_key in ["Cookie", "Referer", "Authorization", "User-Agent"]:
                 if h_key in cached_h: 
                     zip_headers[h_key] = cached_h[h_key]
 
-            # Use cache for size to prevent Terabox HEAD blocks
+            # 🟢 FAST CACHE
             raw_size = int(cached_h.get("meta_content_length", 0))
             if raw_size <= 0:
-                async with session.head(resolved, headers=zip_headers, allow_redirects=True) as h_resp:
-                    raw_size = int(h_resp.headers.get("Content-Length", 0))
+                try:
+                    async with session.head(_safe_yarl(resolved), headers=zip_headers, allow_redirects=True) as h_resp:
+                        raw_size = int(h_resp.headers.get("Content-Length", 0))
+                except Exception: pass
+            
+            # 🟢 GET FALLBACK FOR GOFILE (Gofile blocks HEAD requests)
+            if raw_size <= 0:
+                try:
+                    get_h = zip_headers.copy()
+                    get_h["Range"] = "bytes=0-0"
+                    async with session.get(_safe_yarl(resolved), headers=get_h, allow_redirects=True) as g_resp:
+                        cr = g_resp.headers.get("Content-Range", "")
+                        if cr and "/" in cr:
+                            raw_size = int(cr.split("/")[-1])
+                        else:
+                            raw_size = int(g_resp.headers.get("Content-Length", 0))
+                except Exception: pass
             
             if raw_size > 0:
                 async def zip_read_http(off, length):
                     z_req_headers = zip_headers.copy()
                     z_req_headers["Range"] = f"bytes={off}-{off+length-1}"
-                    async with session.get(resolved, headers=z_req_headers) as r:
+                    async with session.get(_safe_yarl(resolved), headers=z_req_headers) as r:
                         return await r.read()
                 
                 magic_bytes = await zip_read_http(0, 4)
@@ -351,13 +367,11 @@ async def _api_direct_stream_handler(request):
         except Exception as e:
             logger.warning(f"Direct ZIP resolution failed: {e}")
 
-    # 🟢 FIX: Flawless Proxy Headers (No Cache Pollution)
     req_headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
         "Accept": "video/webm,video/ogg,video/*;q=0.9,application/ogg;q=0.7,audio/*;q=0.6,*/*;q=0.5",
     }
     
-    # Inject exact Bypass Headers
     cached_h = DIRECT_HEADER_CACHE.get(resolved) or DIRECT_HEADER_CACHE.get(url) or {}
     for h_key in ["Cookie", "Referer", "Authorization", "User-Agent"]:
         if h_key in cached_h:
@@ -383,26 +397,20 @@ async def _api_direct_stream_handler(request):
         if client_range:
             req_headers["Range"] = client_range
 
-    # Forward strict browser headers
     for header in ("If-Range", "If-Modified-Since", "If-None-Match"):
         val = request.headers.get(header)
         if val: req_headers[header] = val
 
-    # 🟢 Inject upstream host bypass headers (e.g. Terabox/YouTube authentication cookies)
-    if resolved in DIRECT_HEADER_CACHE:
-        req_headers.update(DIRECT_HEADER_CACHE[resolved])
-
     try:
         remote = await session.request(
             method=request.method,
-            url=resolved,
+            url=_safe_yarl(resolved),
             headers=req_headers,
             allow_redirects=True,
         )
     except Exception as exc:
         return web.Response(status=502, text=f"Direct source connection failed: {exc}")
 
-    # Stream Headers Formulation
     out_headers = {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Expose-Headers": "Content-Length, Content-Range, Accept-Ranges, Content-Disposition, ETag, Last-Modified, Cache-Control",
@@ -422,8 +430,6 @@ async def _api_direct_stream_handler(request):
             if remote.headers.get(k) is not None:
                 out_headers[k] = remote.headers[k]
                 
-        # 🟢 FIX: Forcibly override generic/binary MIME types so web browsers actually play the video
-        # instead of triggering a file download popup!
         upstream_mime = remote.headers.get("Content-Type", "").lower()
         if not upstream_mime or "octet-stream" in upstream_mime or "binary" in upstream_mime:
             import mimetypes
@@ -445,28 +451,24 @@ async def _api_direct_stream_handler(request):
         return web.Response(status=out_status, headers=out_headers)
 
     response = web.StreamResponse(status=out_status, headers=out_headers)
-    # 🟢 FIX: Track the actual user_id instead of the word "Direct"
     sid = _track_stream(request, filename, user_id)
     try:
         await response.prepare(request)
         async for chunk in remote.content.iter_chunked(524288):
-            if chunk:
-                await response.write(chunk)
+            if chunk: await response.write(chunk)
         await response.write_eof()
         return response
     except (ConnectionResetError, asyncio.CancelledError, aiohttp.ClientConnectionError, aiohttp.client_exceptions.ClientConnectionResetError, BrokenPipeError, ConnectionAbortedError):
         return response
     except Exception as exc:
-        if "Connection closed" not in str(exc):
-            logger.debug(f"Direct stream disconnect/error: {exc}")
+        if "Connection closed" not in str(exc): logger.debug(f"Direct stream disconnect: {exc}")
         return response
     finally:
         _untrack_stream(sid)
-        try:
-            remote.release()
+        try: remote.release()
         except Exception:
             try: remote.close()
-            except: pass
+            except Exception: pass
 
 MEDIA_META_CACHE = {}
 MEDIA_META_TTL = 600
@@ -555,4 +557,3 @@ def _guess_browser_compatibility(mime_type, filename, streams):
         } and ac not in bad_audio
 
     return False
-
