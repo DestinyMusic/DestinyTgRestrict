@@ -254,6 +254,9 @@ async def _api_stream_handler(request):
         ]
         mime_type = "video/mp4"
 
+    # 🟢 Clear structured status output for video and audio
+    logger.info(f"🎬 [VIDEO STATUS] File: {filename} | Codec: {video_codec or 'N/A'} | Copy: {copy_video} | Loaded: YES")
+    logger.info(f"🔊 [AUDIO STATUS] Codec: {audio_codec or 'N/A'} | Copy: {copy_audio} | Loaded: YES")
     logger.info(f"🎬 [DYNAMIC TRANSCODE] Video Copy: {copy_video} | Audio Copy: {copy_audio} | File: {filename}")
     logger.debug(f"🎬 [CMD] {' '.join(cmd)}")
 
