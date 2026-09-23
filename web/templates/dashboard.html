@@ -5024,22 +5024,35 @@
                     }
                 }
 
-                // 4. 🟢 LIVE SYNC DEBUGGER & CONSOLE LOGGER
+                // 4. 🟢 LIVE MEDIA & SYNC INSPECTOR (AUDIOS, VIDEOS, SUBS, LYRICS)
                 if (isSyncDebugEnabled) {
                     const dbg = document.getElementById('sync-debugger');
                     let vTime = absoluteTime.toFixed(3);
                     let aTime = (extAudio && extAudio.src) ? extAudio.currentTime.toFixed(3) : vTime;
                     let subTime = (absoluteTime - subtitleSyncOffset).toFixed(3);
+
+                    // Compute live display states
+                    const isVideoLoaded = vidElem.readyState >= 2;
+                    const isAudioLoaded = (extAudio && extAudio.src) ? extAudio.readyState >= 2 : isVideoLoaded;
+                    const isSubLoaded = activeSubtitleIndex !== 'off' && subtitleCues.length > 0;
                     
+                    const subHits = isSubLoaded ? subtitleCues.filter(c => (absoluteTime - subtitleSyncOffset) >= c.start && (absoluteTime - subtitleSyncOffset) <= c.end) : [];
+                    const isSubShowing = subHits.length > 0;
+                    
+                    const scroller = document.getElementById('lyrics-scroller');
+                    const isLyricsActive = scroller && scroller.style.display !== 'none';
+                    const activeLrcLine = isLyricsActive ? document.querySelector('.lrc-line.active')?.innerText : null;
+
                     if (dbg) {
-                        let logTxt = `[LIVE SYNC TRACKER]\n`;
-                        logTxt += `===================\n`;
-                        logTxt += `Absolute Time : ${vTime}s\n`;
-                        logTxt += `Audio Time : ${aTime}s\n`;
-                        logTxt += `Sub Time   : ${subTime}s\n`;
-                        logTxt += `Ext Drift  : ${extDrift.toFixed(3)}s\n`;
-                        logTxt += `V-Ready    : ${vidElem.readyState}\n`;
-                        logTxt += `Transcoding: ${playerRequiresTranscode}\n`;
+                        let logTxt = `[LIVE MEDIA TELEMETRY]\n`;
+                        logTxt += `=====================\n`;
+                        logTxt += `🎬 VIDEO  : ${isVideoLoaded ? 'YES' : 'NO'} (${vidElem.videoWidth}x${vidElem.videoHeight} | Ready: ${vidElem.readyState})\n`;
+                        logTxt += `🔊 AUDIO  : ${isAudioLoaded ? 'YES' : 'NO'} (Drift: ${extDrift.toFixed(3)}s)\n`;
+                        logTxt += `💬 SUBS   : Loaded: ${isSubLoaded ? 'YES (' + subtitleCues.length + ' cues)' : 'NO'}\n`;
+                        logTxt += `            Showing: ${isSubShowing ? 'YES ("' + subHits[0].text.substring(0, 20) + '...")' : 'NO (Waiting on time)'}\n`;
+                        logTxt += `🎵 LYRICS : Loaded: ${isLyricsActive ? 'YES' : 'NO'}\n`;
+                        logTxt += `            Showing: ${activeLrcLine ? 'YES ("' + activeLrcLine.substring(0, 20) + '...")' : 'NO'}\n`;
+                        logTxt += `⏱ TIME   : ${vTime}s / ${(dur || 0).toFixed(1)}s (Offset: ${playerTimelineOffset.toFixed(1)}s)\n`;
                         dbg.innerText = logTxt;
                     }
                     
