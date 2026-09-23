@@ -30,7 +30,7 @@ async def resolve_universal_link(url: str):
             logger.warning(f"Shortener bypass failed: {e}")
 
     # 2. Extract media streams from web video portals
-    if any(site in domain.lower() for site in KNOWN_STREAM_SITES):
+    if any(domain.lower() == site or domain.lower().endswith("." + site) for site in KNOWN_STREAM_SITES):
         yt_res = await resolve_yt_dlp_stream(url)
         if yt_res and yt_res.get("stream_url"):
             return yt_res["stream_url"], yt_res.get("headers", {})
