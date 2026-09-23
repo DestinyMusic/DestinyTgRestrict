@@ -11,8 +11,12 @@ def _extract_stream_sync(url: str, use_cookies: bool = True):
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
-        # 🟢 FIX: Strict 15-second timeout so dead links don't freeze the bot for 3 minutes!
         "socket_timeout": 15,
+        
+        # 🟢 THE ULTIMATE YOUTUBE BYPASS: 
+        # Forces yt-dlp to use curl_cffi to spoof a real Chrome TLS Fingerprint. 
+        # This completely stops YouTube from dropping the SSL connection!
+        "impersonate": "Chrome", 
     }
     
     if use_cookies and os.path.exists("cookies.txt"):
@@ -42,13 +46,13 @@ def _extract_stream_sync(url: str, use_cookies: bool = True):
 async def resolve_yt_dlp_stream(url: str):
     """Extracts stream URLs. Automatically falls back to cookie-less mode if YouTube drops the SSL connection."""
     try:
-        # 🟢 Attempt 1: With Cookies (For age-restricted content)
+        # Attempt 1: With Cookies (For age-restricted content)
         return await asyncio.to_thread(_extract_stream_sync, url, True)
     except Exception as e:
         err_str = str(e).lower()
         logger.warning(f"yt-dlp stream resolution failed (Cookies Active): {e}")
         
-        # 🟢 Attempt 2: If the cookie is expired or YouTube blocks the IP, retry instantly without it!
+        # Attempt 2: If the cookie is expired, retry instantly without it!
         if "ssl" in err_str or "eof" in err_str or "cookie" in err_str or "sign in" in err_str:
             try:
                 logger.info("🔄 Retrying yt-dlp without cookies to bypass Auth/SSL drop...")
