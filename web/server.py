@@ -1385,38 +1385,44 @@ async def _api_playlist_handler(request):
             
             session = await _get_direct_http_session()
             
-            # 🟢 INJECT EXACT HEADERS INCLUDING USER-AGENT
-            zip_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}
+            zip_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0"}
             from streaming.direct_stream import DIRECT_HEADER_CACHE
             cached_h = DIRECT_HEADER_CACHE.get(actual_url) or DIRECT_HEADER_CACHE.get(link) or {}
             for h_key in ["Cookie", "Referer", "Authorization", "User-Agent"]:
                 if h_key in cached_h: 
                     zip_headers[h_key] = cached_h[h_key]
 
-            # Fast cache lookup for ZIP size
+            import yarl
+            def _safe_yarl(u):
+                try: return yarl.URL(u, encoded=True) if '%' in u else u
+                except Exception: return u
+
             raw_size = int(cached_h.get("meta_content_length", 0))
             if raw_size <= 0:
                 try:
-                    async with session.head(actual_url, headers=zip_headers, allow_redirects=True) as h_resp:
+                    async with session.head(_safe_yarl(actual_url), headers=zip_headers, allow_redirects=True) as h_resp:
                         raw_size = int(h_resp.headers.get("Content-Length", 0))
-                except: pass
+                except Exception: pass
                 
             if raw_size <= 0:
                 try:
                     get_h = zip_headers.copy()
                     get_h["Range"] = "bytes=0-0"
-                    async with session.get(actual_url, headers=get_h, allow_redirects=True) as g_resp:
+                    async with session.get(_safe_yarl(actual_url), headers=get_h, allow_redirects=True) as g_resp:
                         cr = g_resp.headers.get("Content-Range", "")
                         if cr and "/" in cr:
                             raw_size = int(cr.split("/")[-1])
                         else:
                             raw_size = int(g_resp.headers.get("Content-Length", 0))
-                except: pass
+                except Exception: pass
+
+            if raw_size <= 0:
+                return web.json_response({"status": "error", "message": "Failed to determine ZIP size. Host may be blocking requests."})
 
             async def zip_read_http(off, length):
                 z_req_headers = zip_headers.copy()
                 z_req_headers["Range"] = f"bytes={off}-{off+length-1}"
-                async with session.get(actual_url, headers=z_req_headers) as r:
+                async with session.get(_safe_yarl(actual_url), headers=z_req_headers) as r:
                     return await r.read()
                     
             playlist = await get_zip_playlist(zip_read_http, raw_size)
