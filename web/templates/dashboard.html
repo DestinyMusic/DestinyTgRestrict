@@ -4192,13 +4192,9 @@
         function openExternalPlayer(appType) {
             if (!activeMediaLink) return alert("Please load a stream first!");
             
-            let streamUrl = "";
-            // 🟢 CRITICAL FIX: External players get raw CDN link for instant seeking!
-            if (playerSourceKind === 'direct' && window.currentProbeData && window.currentProbeData.resolved_url) {
-                streamUrl = window.currentProbeData.resolved_url;
-            } else {
-                streamUrl = window.location.origin + buildNativeUrl();
-            }
+            // 🟢 CRITICAL FIX: Always route External Players through the server proxy!
+            // Direct CDN links fail in VLC/MX Player because they lack the required Cookies and Browser User-Agents.
+            let streamUrl = window.location.origin + buildNativeUrl();
             
             let title = document.getElementById('cinema-title')?.innerText || "Media Stream";
             let safeTitle = encodeURIComponent(title.replace(/[^a-zA-Z0-9.\-_ ()]/g, '_'));
