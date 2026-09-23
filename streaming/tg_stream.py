@@ -537,14 +537,14 @@ async def _api_subtitles_handler(request):
 
     import sys
     
+    # 🟢 FIX 1: Set 15MB probesize so files with 40+ tracks (like your 44-stream MKV) are completely indexed
     cmd = [
         "ffmpeg", "-hide_banner", "-loglevel", "error",
         "-user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36", 
         "-rw_timeout", "60000000", 
         "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5",
         "-seekable", "1", "-multiple_requests", "1",
-        # 🟢 FIX: Scale down probesize to 2MB specifically for subtitle extraction to eliminate host throttling lag
-        "-probesize", "2000000", "-analyzeduration", "2000000",
+        "-probesize", "15000000", "-analyzeduration", "15000000",
         "-i", actual_url,
         "-map", f"0:{sub_idx}",
         "-vn", "-an",
@@ -554,48 +554,47 @@ async def _api_subtitles_handler(request):
     ]
 
     try:
+        # 🟢 FIX 2: Capture stderr so errors are visible in logs instead of silent failures
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
-            stderr=sys.stderr
+            stderr=asyncio.subprocess.PIPE
         )
         
-        # 🟢 CRITICAL FIX: Stream the output progressively so the browser never times out
-        response = web.StreamResponse(
-            status=200,
+        stdout, stderr = await proc.communicate()
+        stderr_msg = stderr.decode('utf-8', errors='ignore').strip()
+
+        # 🟢 FIX 3: Explicit YES / NO log output with exact error reasons
+        if proc.returncode != 0 or not stdout.strip():
+            logger.error(f"❌ [SUBTITLES STATUS] Track #{sub_idx} | Loaded: NO | Error: {stderr_msg or 'Empty stream or unsupported codec'}")
+            return web.Response(
+                body=b"WEBVTT\n\nNOTE Empty or unsupported subtitle stream\n",
+                status=200,
+                headers={"Content-Type": "text/vtt; charset=utf-8", "Access-Control-Allow-Origin": "*"}
+            )
+
+        logger.info(f"✅ [SUBTITLES STATUS] Track #{sub_idx} | Loaded: YES | Bytes: {len(stdout)} | Status: READY")
+
+        # Save to RAM cache for instant loads
+        SUBTITLE_CACHE[cache_key] = (stdout, time.time() + SUBTITLE_CACHE_TTL)
+        if len(SUBTITLE_CACHE) > 128:
+            oldest = min(SUBTITLE_CACHE.items(), key=lambda kv: kv[1][1])[0]
+            SUBTITLE_CACHE.pop(oldest, None)
+            
+        return web.Response(
+            body=stdout, 
+            status=200, 
             headers={
                 "Content-Type": "text/vtt; charset=utf-8",
+                "Content-Length": str(len(stdout)),
                 "Access-Control-Allow-Origin": "*",
-                "Cache-Control": "no-store"
+                "Cache-Control": "public, max-age=3600"
             }
         )
-        await response.prepare(request)
-
-        buffer = bytearray()
-        while True:
-            chunk = await proc.stdout.read(8192)
-            if not chunk:
-                break
-            buffer.extend(chunk)
-            await response.write(chunk)
-            
-        await response.write_eof()
-        await proc.wait()
-
-        # Save fully extracted track to RAM cache for instant loads next time
-        if buffer and proc.returncode == 0:
-            SUBTITLE_CACHE[cache_key] = (bytes(buffer), time.time() + SUBTITLE_CACHE_TTL)
-            if len(SUBTITLE_CACHE) > 128:
-                oldest = min(SUBTITLE_CACHE.items(), key=lambda kv: kv[1][1])[0]
-                SUBTITLE_CACHE.pop(oldest, None)
-                
-        return response
         
     except Exception as exc:
         try: proc.kill()
         except: pass
-        # Safely handle exceptions if headers are already sent
-        if 'response' in locals() and response.prepared:
-            return response
+        logger.error(f"❌ [SUBTITLES STATUS] Track #{sub_idx} | Loaded: NO | Exception: {exc}")
         return web.Response(status=502, text=str(exc))
             
