@@ -19,6 +19,4 @@ mutagen
 cloudscraper
 niquests
 lxml
-curl_cffi
-yt-dlp
-certifi
+yt-dlp[default,curl-cffi]
