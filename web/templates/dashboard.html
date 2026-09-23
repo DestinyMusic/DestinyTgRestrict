@@ -4142,11 +4142,19 @@
             const audioIdx = audioSelect?.value || '';
             const option = audioSelect?.selectedOptions?.[0];
             const audioCodec = option?.dataset?.codec || '';
+            const caps = getClientMediaCapabilities();
+            
             const params = new URLSearchParams({
                 user_id: String(currentUser || ''),
                 link: activeMediaLink,
                 quality,
-                transcode: playerRequiresTranscode ? '1' : '0'
+                transcode: playerRequiresTranscode ? '1' : '0',
+                hevc: caps.hevc ? '1' : '0',
+                ac3: caps.ac3 ? '1' : '0',
+                opus: caps.opus ? '1' : '0',
+                flac: caps.flac ? '1' : '0',
+                vp9: caps.vp9 ? '1' : '0',
+                av1: caps.av1 ? '1' : '0'
             });
             if (window.forceX264Flag) params.set('force_x264', '1'); 
             if (audioIdx !== '') params.set('audio_idx', audioIdx);
@@ -4269,20 +4277,59 @@
         // ======================================================================
         // MEDIA PROBE + LOAD & HYBRID FALLBACK WATCHDOG
         // ======================================================================
+        function getClientMediaCapabilities() {
+            const v = document.createElement('video');
+            const a = document.createElement('audio');
+            return {
+                hevc: !!(v.canPlayType('video/mp4; codecs="hvc1.1.6.L93.B0"') || v.canPlayType('video/mp4; codecs="hev1.1.6.L93.B0"') || v.canPlayType('video/mp4; codecs="hevc"')),
+                vp9: !!v.canPlayType('video/mp4; codecs="vp09.00.10.08"') || !!v.canPlayType('video/webm; codecs="vp9"'),
+                av1: !!v.canPlayType('video/mp4; codecs="av01.0.05M.08"') || !!v.canPlayType('video/webm; codecs="av01"'),
+                ac3: !!(a.canPlayType('audio/mp4; codecs="ac-3"') || a.canPlayType('audio/mp4; codecs="ec-3"')),
+                opus: !!a.canPlayType('audio/ogg; codecs="opus"') || !!a.canPlayType('audio/mp4; codecs="opus"'),
+                flac: !!a.canPlayType('audio/flac') || !!a.canPlayType('audio/mp4; codecs="flac"')
+            };
+        }
+
         function canBrowserDirectPlay(mimeType, videoCodec, audioCodec, isAudioOnly = false) {
+            const caps = getClientMediaCapabilities();
             const mime = String(mimeType || '').toLowerCase().split(';')[0];
             const v = String(videoCodec || '').toLowerCase();
             const a = String(audioCodec || '').toLowerCase();
-            const definitelyUnsupportedAudio = new Set(['dts','truehd']);
-            const browserAudio = new Set(['aac','mp3','flac','opus','vorbis','alac','pcm_s16le','pcm_s24le','pcm_s32le']);
+
+            const definitelyUnsupportedAudio = new Set(['dts', 'dca', 'truehd', 'mlp', 'wmav1', 'wmav2', 'wmapro', 'ape']);
+            if (definitelyUnsupportedAudio.has(a)) return false;
+
             if (isAudioOnly) {
-                if (definitelyUnsupportedAudio.has(a)) return false;
-                return ['audio/mpeg','audio/mp4','audio/aac','audio/ogg','audio/webm','audio/wav','audio/flac','audio/opus'].includes(mime) || browserAudio.has(a);
+                if (['aac', 'mp3'].includes(a) || ['audio/mpeg', 'audio/mp4', 'audio/aac'].includes(mime)) return true;
+                if (a === 'opus' || mime.includes('opus')) return caps.opus;
+                if (a === 'flac' || mime.includes('flac')) return caps.flac;
+                if (['ac3', 'eac3'].includes(a)) return caps.ac3;
+                if (['vorbis', 'audio/ogg', 'audio/wav'].includes(mime) || ['vorbis', 'pcm_s16le', 'pcm_s24le'].includes(a)) return true;
+                return false;
             }
-            if (!['video/mp4','video/webm','application/mp4'].includes(mime)) return false;
-            if (definitelyUnsupportedAudio.has(a) || ['ac3','eac3'].includes(a)) return false;
-            if (mime === 'video/webm') return ['vp8','vp9','av1'].includes(v || 'vp9');
-            return ['h264','avc1','avc','vp9','av1','hevc','h265','hvc1'].includes(v || 'h264');
+
+            const cleanUrl = String(activeMediaLink || '').toLowerCase().split('?')[0];
+            const isMp4 = ['video/mp4', 'application/mp4'].includes(mime) || cleanUrl.endsWith('.mp4');
+            const isWebm = mime === 'video/webm' || cleanUrl.endsWith('.webm');
+
+            if (!isMp4 && !isWebm) return false;
+
+            if (['ac3', 'eac3'].includes(a) && !caps.ac3) return false;
+            if (a === 'opus' && !caps.opus) return false;
+            if (a === 'flac' && !caps.flac) return false;
+
+            if (isWebm) {
+                if (['vp8', 'vp9'].includes(v)) return true;
+                if (v === 'av1') return caps.av1;
+                return false;
+            }
+
+            if (['h264', 'avc1', 'avc'].includes(v)) return true;
+            if (['hevc', 'h265', 'hvc1', 'hev1'].includes(v)) return caps.hevc;
+            if (v === 'vp9') return caps.vp9;
+            if (['av1', 'av01'].includes(v)) return caps.av1;
+
+            return false;
         }
 
         let playbackWatchdogTimer = null;
@@ -4442,7 +4489,8 @@
                 // 🟢 CRITICAL FIX: Save the probe data globally so the URL builder can bypass the proxy!
                 window.currentProbeData = pdata; 
 
-                playerDirectCompatible = Boolean(pdata.browser_compatible);
+                const isAudioProbe = (pdata.mime_type && pdata.mime_type.startsWith('audio')) || (!pdata.video_codec && Boolean(pdata.audio_codec));
+                playerDirectCompatible = canBrowserDirectPlay(pdata.mime_type, pdata.video_codec, pdata.audio_codec, isAudioProbe);
                 playerTotalDuration = Number(pdata.duration) || 0;
                 window.globalPlaylist = plistData.playlist || [];
                 
