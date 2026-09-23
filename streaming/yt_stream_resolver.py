@@ -13,10 +13,10 @@ def _extract_stream_sync(url: str, use_cookies: bool = True):
         "no_warnings": True,
         "noplaylist": True,
         
-        # 🟢 PROPER IPV4 & BROWSER IMPERSONATION FIXES
-        "force_ipv4": True,               # Correct yt-dlp API argument to force IPv4
-        "impersonate": "chrome",          # Uses curl_cffi to perfectly mimic Chrome TLS fingerprints
-        "socket_timeout": 15,             # 15s is safer for curl_cffi handshakes
+        # 🟢 THE REAL FIX: Force IPv4 natively. 
+        # (Removed 'impersonate' to prevent the curl_cffi AssertionError crash!)
+        "force_ipv4": True,               
+        "socket_timeout": 15,             
         "extractor_retries": 1,
     }
     
@@ -50,8 +50,9 @@ async def resolve_yt_dlp_stream(url: str):
         # 🟢 Attempt 1: With Cookies
         return await asyncio.to_thread(_extract_stream_sync, url, True)
     except Exception as e:
-        # 🟢 FIX: Use repr(e) so OS-level socket errors don't evaluate to a blank string
-        logger.warning(f"yt-dlp stream resolution failed (Cookies Active): {repr(e)}")
+        # 🟢 FIX: Print the FULL traceback so we never get a blind error again!
+        error_details = traceback.format_exc()
+        logger.warning(f"yt-dlp stream resolution failed (Cookies Active):\n{error_details}")
         
         # 🟢 Attempt 2: Unconditional Fallback! 
         # If it fails for ANY reason with cookies, try instantly without them!
@@ -59,6 +60,7 @@ async def resolve_yt_dlp_stream(url: str):
             logger.info("🔄 Retrying yt-dlp without cookies to bypass Auth/TLS drop...")
             return await asyncio.to_thread(_extract_stream_sync, url, False)
         except Exception as e2:
-            logger.warning(f"yt-dlp stream resolution failed (No Cookies): {repr(e2)}")
+            error_details_2 = traceback.format_exc()
+            logger.warning(f"yt-dlp stream resolution failed (No Cookies):\n{error_details_2}")
                 
         return None
