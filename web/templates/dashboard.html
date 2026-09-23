@@ -3616,7 +3616,8 @@
         function parseWebVTT(text) {
             if (!text) return [];
             const cues = [];
-            const lines = String(text).replace(/\\r/g, '').split('\\n');
+            // 🟢 CRITICAL FIX: Removed double backslashes to match actual newline characters!
+            const lines = String(text).replace(/\r/g, '').split('\n');
             let i = 0;
             
             while (i < lines.length) {
@@ -3892,10 +3893,11 @@
                     if (done) break;
                     buffer += decoder.decode(value, { stream: true });
 
-                    const blocks = buffer.split(/\\n\\s*\\n/);
+                    // 🟢 CRITICAL FIX: Split on actual double newlines for progressive rendering
+                    const blocks = buffer.split(/\n\s*\n/);
                     buffer = blocks.pop() || '';
                     for (const block of blocks) {
-                        const cues = parseWebVTT(block + '\\n\\n');
+                        const cues = parseWebVTT(block + '\n\n');
                         if (cues.length) subtitleCues.push(...cues);
                     }
                     subtitleCues.sort((a, b) => a.start - b.start);
@@ -3904,7 +3906,7 @@
 
                 buffer += decoder.decode();
                 if (buffer.trim()) {
-                    const cues = parseWebVTT(buffer + '\\n\\n');
+                    const cues = parseWebVTT(buffer + '\n\n');
                     if (cues.length) subtitleCues.push(...cues);
                 }
                 subtitleCues.sort((a, b) => a.start - b.start);
@@ -4192,14 +4194,25 @@
         function openExternalPlayer(appType) {
             if (!activeMediaLink) return alert("Please load a stream first!");
             
-            // 🟢 CRITICAL FIX: Always route External Players through the server proxy!
-            // Direct CDN links fail in VLC/MX Player because they lack the required Cookies and Browser User-Agents.
-            let streamUrl = window.location.origin + buildNativeUrl();
+            // 🟢 CRITICAL FIX: Build a clean proxy URL to bypass Terabox CDN blocks in external players
+            let proxyUrl = "";
+            if (playerSourceKind === 'tg') {
+                proxyUrl = `/api/tg_stream?user_id=${encodeURIComponent(currentUser)}&link=${encodeURIComponent(activeMediaLink)}`;
+            } else {
+                proxyUrl = `/api/direct_stream?user_id=${encodeURIComponent(currentUser)}&url=${encodeURIComponent(activeMediaLink)}`;
+            }
+            
+            if (window.globalPlaylist && window.globalPlaylist.length > 0) {
+                const track = window.globalPlaylist[window.currentPlayIndex];
+                if (track) proxyUrl += `&zip_idx=${track.original_index}`;
+            }
+
+            let streamUrl = window.location.origin + proxyUrl;
             
             let title = document.getElementById('cinema-title')?.innerText || "Media Stream";
             let safeTitle = encodeURIComponent(title.replace(/[^a-zA-Z0-9.\-_ ()]/g, '_'));
             
-            if (streamUrl.includes(window.location.origin) && !streamUrl.includes('&/')) {
+            if (!streamUrl.includes('&/')) {
                 streamUrl += `&/${safeTitle}`;
             }
 
