@@ -172,8 +172,6 @@ async def resolve_direct_link(url):
 
         # 8. Last resort: a single ranged GET resolves redirects and captures useful headers
         if result == original:
-            # 🟢 CRITICAL FIX: Only execute the naked GET if we don't already have protected headers!
-            # This prevents 403 Forbidden overwrites on restricted domains.
             if original not in DIRECT_HEADER_CACHE or "Cookie" not in DIRECT_HEADER_CACHE[original]:
                 try:
                     async with session.get(
@@ -182,14 +180,14 @@ async def resolve_direct_link(url):
                         allow_redirects=True,
                     ) as r:
                         result = str(r.url)
-                        # ONLY save headers if request succeeded!
                         if r.status < 400: 
+                            # 🟢 CRITICAL FIX: Prefix with 'meta_' so these NEVER accidentally get injected into HTTP requests!
                             DIRECT_HEADER_CACHE[original] = {
-                                "content_type": r.headers.get("Content-Type", "").split(';')[0],
-                                "content_length": r.headers.get("Content-Length"),
-                                "content_range": r.headers.get("Content-Range"),
-                                "accept_ranges": r.headers.get("Accept-Ranges"),
-                                "content_disposition": r.headers.get("Content-Disposition", ""),
+                                "meta_content_type": r.headers.get("Content-Type", "").split(';')[0],
+                                "meta_content_length": r.headers.get("Content-Length"),
+                                "meta_content_range": r.headers.get("Content-Range"),
+                                "meta_accept_ranges": r.headers.get("Accept-Ranges"),
+                                "meta_content_disposition": r.headers.get("Content-Disposition", ""),
                             }
                 except Exception:
                     result = original
@@ -295,7 +293,6 @@ async def _api_direct_stream_handler(request):
     resolved = await resolve_direct_link(url)
     filename = _guess_filename_from_url(resolved, "direct_media", original_url=url).lower()
     
-    # 🟢 FIX: Support ALL archive types (.zip, .7z, .rar) for Direct Links
     is_zip = bool(re.search(r'\.(zip|7z|rar|tar|gz)(\.\d{3})?$', filename))
     
     session = await _get_direct_http_session()
@@ -303,19 +300,19 @@ async def _api_direct_stream_handler(request):
     virtual_data_offset = 0
     mime_type = None
 
-    # [STORED ZIP RESOLUTION] - Maps HTTP bytes to absolute payload boundaries
     zip_idx = request.query.get("zip_idx", "")
     if is_zip:
         try:
-            # 🟢 FIX: INJECT AUTH HEADERS TO PREVENT 403 FORBIDDEN ON ZIP PROBES
-            zip_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-            cached_h = DIRECT_HEADER_CACHE.get(resolved) or {}
-            for h_key in ["Cookie", "Referer", "Authorization"]:
+            zip_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}
+            cached_h = DIRECT_HEADER_CACHE.get(resolved) or DIRECT_HEADER_CACHE.get(url) or {}
+            
+            # 🟢 FIX: Explicitly inject User-Agent so Gofile doesn't return 500 Errors!
+            for h_key in ["Cookie", "Referer", "Authorization", "User-Agent"]:
                 if h_key in cached_h: 
                     zip_headers[h_key] = cached_h[h_key]
 
-            # Gofile/Terabox often block HEAD. Try Cache first!
-            raw_size = int(cached_h.get("content_length", 0))
+            # Use cache for size to prevent Terabox HEAD blocks
+            raw_size = int(cached_h.get("meta_content_length", 0))
             if raw_size <= 0:
                 async with session.head(resolved, headers=zip_headers, allow_redirects=True) as h_resp:
                     raw_size = int(h_resp.headers.get("Content-Length", 0))
@@ -327,7 +324,6 @@ async def _api_direct_stream_handler(request):
                     async with session.get(resolved, headers=z_req_headers) as r:
                         return await r.read()
                 
-                # 🟢 MAGIC CHECK FOR DIRECT LINKS
                 magic_bytes = await zip_read_http(0, 4)
                 if magic_bytes.startswith(b'PK'):
                     playlist = await get_zip_playlist(zip_read_http, raw_size)
@@ -355,12 +351,18 @@ async def _api_direct_stream_handler(request):
         except Exception as e:
             logger.warning(f"Direct ZIP resolution failed: {e}")
 
-    # Construct payload-aligned Range Headers
+    # 🟢 FIX: Flawless Proxy Headers (No Cache Pollution)
     req_headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         "Accept": "video/webm,video/ogg,video/*;q=0.9,application/ogg;q=0.7,audio/*;q=0.6,*/*;q=0.5",
     }
     
+    # Inject exact Bypass Headers
+    cached_h = DIRECT_HEADER_CACHE.get(resolved) or DIRECT_HEADER_CACHE.get(url) or {}
+    for h_key in ["Cookie", "Referer", "Authorization", "User-Agent"]:
+        if h_key in cached_h:
+            req_headers[h_key] = cached_h[h_key]
+            
     client_range = request.headers.get("Range", "")
     start_byte = 0
     end_byte = None
@@ -381,8 +383,8 @@ async def _api_direct_stream_handler(request):
         if client_range:
             req_headers["Range"] = client_range
 
-    # Propagate necessary headers
-    for header in ("If-Range", "If-Modified-Since", "If-None-Match", "Cookie", "Referer"):
+    # Forward strict browser headers
+    for header in ("If-Range", "If-Modified-Since", "If-None-Match"):
         val = request.headers.get(header)
         if val: req_headers[header] = val
 
@@ -480,16 +482,15 @@ def _guess_filename_from_url(url, fallback="Direct_Stream_Media", original_url=N
     import os
     import re
     try:
-        # 1. 🟢 FAST CACHE LOOKUP (Extract exact filename from CDN Headers)
         for check_url in [original_url, url]:
             if check_url and check_url in DIRECT_HEADER_CACHE:
-                cd = DIRECT_HEADER_CACHE[check_url].get("content_disposition", "")
+                # 🟢 Read from the safe meta_ key
+                cd = DIRECT_HEADER_CACHE[check_url].get("meta_content_disposition", "")
                 if cd:
                     m = re.search(r'filename\*?=(?:UTF-8\'\')?["\']?([^;"\']+)', cd, re.I)
                     if m:
                         return unquote(m.group(1))
                         
-        # 2. Check query params for explicit file names
         parsed = urlparse(url)
         qs = dict(parse_qsl(parsed.query))
         for k in ['filename', 'name', 'file', 'title', 'path']:
@@ -501,11 +502,9 @@ def _guess_filename_from_url(url, fallback="Direct_Stream_Media", original_url=N
                 elif val and "/" not in val:
                     return val
         
-        # 3. Fallback to standard URL path
         name = os.path.basename(parsed.path)
         name = unquote(name) if name else fallback
         
-        # 4. Ignore extremely generic fallback names and force FFprobe to do the work later
         if name.lower() in ["download", "video", "media", "stream", "file", "play", fallback.lower()]:
             return fallback
             
@@ -556,3 +555,4 @@ def _guess_browser_compatibility(mime_type, filename, streams):
         } and ac not in bad_audio
 
     return False
+
