@@ -123,7 +123,6 @@ async def _api_stream_handler(request):
     
     # 🟢 EXPANDED: Catches HEVC, old MPEGs, Windows Media, Flash, RealVideo, and heavy editing codecs
     unsupported_web_codecs = {
-        "hevc", "h265", "hvc1", "hev1", "x265", 
         "mpeg1video", "mpeg2video", "mpeg4", "msmpeg4", "msmpeg4v2", "msmpeg4v3", 
         "vc1", "wmv1", "wmv2", "wmv3", 
         "flv1", "rv10", "rv20", "rv30", "rv40", 
