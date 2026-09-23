@@ -554,40 +554,45 @@ async def _api_subtitles_handler(request):
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
-            stderr=sys.stderr # 🟢 Route errors to your console so you can see them!
+            stderr=sys.stderr
         )
         
-        # 🟢 CRITICAL FIX: Wait for FFmpeg to extract the entire text file.
-        # This completely prevents the race-condition where FFmpeg was a millisecond too slow!
-        stdout, _ = await proc.communicate()
-        
-        if proc.returncode != 0 or not stdout.strip():
-            # If it's a PGS/VobSub image subtitle, it will fail text conversion. Return a clean empty VTT.
-            return web.Response(
-                body=b"WEBVTT\n\nNOTE Unsupported image-based subtitle format (PGS/VobSub)\n",
-                status=200,
-                headers={"Content-Type": "text/vtt; charset=utf-8", "Access-Control-Allow-Origin": "*"}
-            )
-
-        # Save to RAM cache for instant loads next time
-        SUBTITLE_CACHE[cache_key] = (stdout, time.time() + SUBTITLE_CACHE_TTL)
-        if len(SUBTITLE_CACHE) > 128:
-            oldest = min(SUBTITLE_CACHE.items(), key=lambda kv: kv[1][1])[0]
-            SUBTITLE_CACHE.pop(oldest, None)
-            
-        return web.Response(
-            body=stdout, 
-            status=200, 
+        # 🟢 CRITICAL FIX: Stream the output progressively so the browser never times out
+        response = web.StreamResponse(
+            status=200,
             headers={
                 "Content-Type": "text/vtt; charset=utf-8",
-                "Content-Length": str(len(stdout)),
                 "Access-Control-Allow-Origin": "*",
-                "Cache-Control": "public, max-age=3600"
+                "Cache-Control": "no-store"
             }
         )
+        await response.prepare(request)
+
+        buffer = bytearray()
+        while True:
+            chunk = await proc.stdout.read(8192)
+            if not chunk:
+                break
+            buffer.extend(chunk)
+            await response.write(chunk)
+            
+        await response.write_eof()
+        await proc.wait()
+
+        # Save fully extracted track to RAM cache for instant loads next time
+        if buffer and proc.returncode == 0:
+            SUBTITLE_CACHE[cache_key] = (bytes(buffer), time.time() + SUBTITLE_CACHE_TTL)
+            if len(SUBTITLE_CACHE) > 128:
+                oldest = min(SUBTITLE_CACHE.items(), key=lambda kv: kv[1][1])[0]
+                SUBTITLE_CACHE.pop(oldest, None)
+                
+        return response
         
     except Exception as exc:
         try: proc.kill()
         except: pass
+        # Safely handle exceptions if headers are already sent
+        if 'response' in locals() and response.prepared:
+            return response
         return web.Response(status=502, text=str(exc))
             
