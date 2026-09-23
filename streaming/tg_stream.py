@@ -2,6 +2,7 @@ import mimetypes
 import math
 import re
 import asyncio
+import time
 
 async def get_client_msg(client, chat_id, msg_id):
     """Cache Telegram messages and coalesce simultaneous metadata requests."""
@@ -536,11 +537,11 @@ async def _api_subtitles_handler(request):
     cmd = [
         "ffmpeg", "-hide_banner", "-loglevel", "error",
         "-user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36", 
-        "-rw_timeout", "120000000", 
+        "-rw_timeout", "60000000", 
         "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5",
         "-seekable", "1", "-multiple_requests", "1",
-        # 🟢 CRITICAL FIX: Put probesize back! MKV subtitles are often hidden deep in the file.
-        "-probesize", "20M", "-analyzeduration", "20M",
+        # 🟢 FIX: Scale down probesize to 2MB specifically for subtitle extraction to eliminate host throttling lag
+        "-probesize", "2000000", "-analyzeduration", "2000000",
         "-i", actual_url,
         "-map", f"0:{sub_idx}",
         "-vn", "-an",
