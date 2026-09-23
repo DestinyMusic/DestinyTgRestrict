@@ -61,8 +61,19 @@ async def resolve_direct_link(url):
         return original
 
     now = time.time()
+    
+    # 1. 🟢 SUPER-FAST CACHE BYPASS (Protects already-resolved CDN links!)
+    # If this URL is already in our header cache with a Cookie, it's a raw restricted CDN link. 
+    # DO NOT process it again, just return it instantly so the proxy can use it!
+    if original in DIRECT_HEADER_CACHE and "Cookie" in DIRECT_HEADER_CACHE[original]:
+        DIRECT_URL_CACHE[original] = (original, now + DIRECT_URL_CACHE_TTL)
+        return original
+
     cached = DIRECT_URL_CACHE.get(original)
     if cached and cached[1] > now:
+        # Check if the cached resolved URL has protected headers. If so, return!
+        if cached[0] in DIRECT_HEADER_CACHE:
+            return cached[0]
         return cached[0]
 
     lock = DIRECT_RESOLVE_LOCKS[original]
@@ -71,16 +82,24 @@ async def resolve_direct_link(url):
         cached = DIRECT_URL_CACHE.get(original)
         if cached and cached[1] > now:
             return cached[0]
+            
+        if original in DIRECT_HEADER_CACHE and "Cookie" in DIRECT_HEADER_CACHE[original]:
+            DIRECT_URL_CACHE[original] = (original, now + DIRECT_URL_CACHE_TTL)
+            return original
 
         import re
         result = original
         session = await _get_direct_http_session()
 
         # 0. 🟢 Universal Scraper Bypass (Terabox, Gofile, Shorteners, yt-dlp)
+        from streaming.link_resolver import resolve_universal_link
         unv_url, unv_headers = await resolve_universal_link(original)
+        
         if unv_url != original:
             if unv_headers:
+                # 🟢 Store under BOTH keys to protect against loopback probe bugs!
                 DIRECT_HEADER_CACHE[unv_url] = unv_headers
+                DIRECT_HEADER_CACHE[original] = unv_headers
             DIRECT_URL_CACHE[original] = (unv_url, now + DIRECT_URL_CACHE_TTL)
             return unv_url
 
@@ -121,14 +140,12 @@ async def resolve_direct_link(url):
                 file_id = gdrive_match.group(1)
                 scan_url = f"https://drive.google.com/uc?id={file_id}&export=download"
                 try:
-                    # Natively fetch the Google Drive confirm token to bypass the Large File warning
                     async with session.get(scan_url, allow_redirects=True) as r:
                         text = await r.text(errors='ignore')
                         confirm_match = re.search(r"confirm=([a-zA-Z0-9_-]+)", text)
                         if confirm_match:
                             result = f"https://drive.google.com/uc?id={file_id}&export=download&confirm={confirm_match.group(1)}"
                         elif "download_warning" in str(r.url):
-                            # 🟢 FIX: GDrive changed warning page URL structure!
                             m = re.search(r"confirm=([a-zA-Z0-9_-]+)", str(r.url))
                             if m:
                                 result = f"https://drive.google.com/uc?id={file_id}&export=download&confirm={m.group(1)}"
@@ -138,103 +155,53 @@ async def resolve_direct_link(url):
                             result = str(r.url)
                 except Exception as exc:
                     logger.warning(f"GDrive native bypass failed: {exc}")
-                    result = original # 🟢 FIX: Never fallback to dead workers
+                    result = original
 
-        # 7. GoFile API
-        if result == original:
-            gofile_match = re.search(r"gofile\.io/d/([a-zA-Z0-9]+)", original)
-            if gofile_match:
-                try:
-                    # 🟢 FIX: GoFile blocks generic clients. Use Real Chrome UA!
-                    g_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}
-                    async with session.post("https://api.gofile.io/accounts", headers=g_headers) as r:
-                        token_data = await r.json(content_type=None)
-                    token = ((token_data.get('data') or {}).get('token') or '').strip()
-                    if token:
-                        g_headers["Authorization"] = f"Bearer {token}"
-                        async with session.get(
-                            f"https://api.gofile.io/contents/{gofile_match.group(1)}?wt=4fd6sg89d7s6",
-                            headers=g_headers,
-                        ) as r:
-                            data = await r.json(content_type=None)
-                        for item in ((data.get('data') or {}).get('children') or {}).values():
-                            if item.get('type') == 'file' and item.get('link'):
-                                result = item['link']
-                                break
-                except Exception as exc:
-                    logger.warning(f"GoFile resolve failed: {exc}")
-
-        # 8. Buzzheavier API
-        if result == original:
-            buzz_match = re.search(r"buzzheavier\.com/([a-zA-Z0-9]+)", original)
-            if buzz_match:
-                try:
-                    async with session.get(
-                        original,
-                        headers={"Accept": "text/html,application/xhtml+xml", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
-                        allow_redirects=True,
-                    ) as r:
-                        html_text = await r.text(errors='ignore')
-                    patterns = [
-                        r'href=["\'](https://[^"\']+\.(?:mp4|mkv|webm|m4v|mp3|m4a|flac|opus)(?:\?[^"\']*)?)["\']',
-                        r'(https://[^"\']+buzzheavier[^"\']+)',
-                    ]
-                    for pat in patterns:
-                        m = re.search(pat, html_text, re.I)
-                        if m:
-                            result = m.group(1).replace('&amp;', '&')
-                            break
-                except Exception as exc:
-                    logger.warning(f"Buzzheavier resolve failed: {exc}")
-
-        # 9. 🟢 UNIVERSAL HTML MEDIA SCRAPER (Catches VikingFile, Extralink, and hundreds of custom hosts!)
+        # 7. 🟢 UNIVERSAL HTML MEDIA SCRAPER
         if result == original:
             try:
-                u_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}
+                u_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
                 async with session.get(original, headers=u_headers, allow_redirects=True) as r:
                     content_type = r.headers.get("Content-Type", "").lower()
                     if "text/html" in content_type:
                         html_text = await r.text(errors='ignore')
-                        # Match 1: HTML5 Video/Source Tags
                         m = re.search(r'(?:<source[^>]+src=["\']|<video[^>]+src=["\'])(https?://[^"\']+\.(?:mp4|mkv|webm|m4v|mp3|m4a|flac|opus)(?:\?[^"\']*)?)["\']', html_text, re.I)
                         if m:
                             result = m.group(1).replace('&amp;', '&')
                         else:
-                            # Match 2: Direct media links floating in hrefs
                             m = re.search(r'href=["\'](https?://[^"\']+\.(?:mp4|mkv|webm|m4v|mp3|m4a|flac|opus)(?:\?[^"\']*)?)["\']', html_text, re.I)
                             if m:
                                 result = m.group(1).replace('&amp;', '&')
                     else:
-                        result = str(r.url) # If it auto-redirected directly to the raw file!
+                        result = str(r.url) 
             except Exception:
                 pass
 
-        # 10. Last resort: a single ranged GET resolves redirects and captures useful headers
+        # 8. Last resort: a single ranged GET resolves redirects and captures useful headers
         if result == original:
-            try:
-                async with session.get(
-                    original,
-                    headers={"Range": "bytes=0-0", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
-                    allow_redirects=True,
-                ) as r:
-                    result = str(r.url)
-                    DIRECT_HEADER_CACHE[original] = {
-                        "content_type": r.headers.get("Content-Type", "").split(';')[0],
-                        "content_length": r.headers.get("Content-Length"),
-                        "content_range": r.headers.get("Content-Range"),
-                        "accept_ranges": r.headers.get("Accept-Ranges"),
-                        "content_disposition": r.headers.get("Content-Disposition", ""),
-                    }
-            except Exception:
-                result = original
+            # 🟢 CRITICAL FIX: Only execute the naked GET if we don't already have protected headers!
+            # This prevents 403 Forbidden overwrites on restricted domains.
+            if original not in DIRECT_HEADER_CACHE or "Cookie" not in DIRECT_HEADER_CACHE[original]:
+                try:
+                    async with session.get(
+                        original,
+                        headers={"Range": "bytes=0-0", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+                        allow_redirects=True,
+                    ) as r:
+                        result = str(r.url)
+                        # ONLY save headers if request succeeded!
+                        if r.status < 400: 
+                            DIRECT_HEADER_CACHE[original] = {
+                                "content_type": r.headers.get("Content-Type", "").split(';')[0],
+                                "content_length": r.headers.get("Content-Length"),
+                                "content_range": r.headers.get("Content-Range"),
+                                "accept_ranges": r.headers.get("Accept-Ranges"),
+                                "content_disposition": r.headers.get("Content-Disposition", ""),
+                            }
+                except Exception:
+                    result = original
 
         DIRECT_URL_CACHE[original] = (result, now + DIRECT_URL_CACHE_TTL)
-        if len(DIRECT_URL_CACHE) > 512:
-            oldest = min(DIRECT_URL_CACHE.items(), key=lambda kv: kv[1][1])[0]
-            DIRECT_URL_CACHE.pop(oldest, None)
-        if len(DIRECT_HEADER_CACHE) > 512:
-            oldest = next(iter(DIRECT_HEADER_CACHE))
-            DIRECT_HEADER_CACHE.pop(oldest, None)
         return result
 
 async def _direct_upstream_request(url, request):
@@ -333,10 +300,10 @@ async def _api_direct_stream_handler(request):
         return web.Response(status=400, text="Invalid direct media URL")
 
     resolved = await resolve_direct_link(url)
-    filename = _guess_filename_from_url(resolved, "direct_media").lower()
+    filename = _guess_filename_from_url(resolved, "direct_media", original_url=url).lower()
     
-    # 🟢 FIX: Trigger your virtual concatenator perfectly for .zip AND .zip.001
-    is_zip = bool(re.search(r'\.zip(\.\d{3})?$', filename))
+    # 🟢 FIX: Support ALL archive types (.zip, .7z, .rar) for Direct Links
+    is_zip = bool(re.search(r'\.(zip|7z|rar|tar|gz)(\.\d{3})?$', filename))
     
     session = await _get_direct_http_session()
     virtual_size = -1
@@ -347,13 +314,21 @@ async def _api_direct_stream_handler(request):
     zip_idx = request.query.get("zip_idx", "")
     if is_zip:
         try:
-            async with session.head(resolved, allow_redirects=True) as h_resp:
+            # 🟢 FIX: INJECT AUTH HEADERS TO PREVENT 403 FORBIDDEN ON ZIP PROBES
+            zip_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+            cached_h = DIRECT_HEADER_CACHE.get(resolved) or DIRECT_HEADER_CACHE.get(url) or {}
+            for h_key in ["Cookie", "Referer", "Authorization"]:
+                if h_key in cached_h: 
+                    zip_headers[h_key] = cached_h[h_key]
+
+            async with session.head(resolved, headers=zip_headers, allow_redirects=True) as h_resp:
                 raw_size = int(h_resp.headers.get("Content-Length", 0))
             
             if raw_size > 0:
                 async def zip_read_http(off, length):
-                    headers = {"Range": f"bytes={off}-{off+length-1}", "User-Agent": "Mozilla/5.0"}
-                    async with session.get(resolved, headers=headers) as r:
+                    z_req_headers = zip_headers.copy()
+                    z_req_headers["Range"] = f"bytes={off}-{off+length-1}"
+                    async with session.get(resolved, headers=z_req_headers) as r:
                         return await r.read()
                 
                 # 🟢 MAGIC CHECK FOR DIRECT LINKS
@@ -504,10 +479,21 @@ def _media_cache_key(user_id, link):
     return f"{user_id}:{link.strip()}"
 
 
-def _guess_filename_from_url(url, fallback="Direct_Stream_Media"):
+def _guess_filename_from_url(url, fallback="Direct_Stream_Media", original_url=None):
     from urllib.parse import urlparse, parse_qsl, unquote
     import os
+    import re
     try:
+        # 1. 🟢 FAST CACHE LOOKUP (Extract exact filename from CDN Headers)
+        for check_url in [original_url, url]:
+            if check_url and check_url in DIRECT_HEADER_CACHE:
+                cd = DIRECT_HEADER_CACHE[check_url].get("content_disposition", "")
+                if cd:
+                    m = re.search(r'filename\*?=(?:UTF-8\'\')?["\']?([^;"\']+)', cd, re.I)
+                    if m:
+                        return unquote(m.group(1))
+                        
+        # 2. Check query params...
         parsed = urlparse(url)
         # 1. Check query params for explicit file names (Fixes "?path=" or "?filename=")
         qs = dict(parse_qsl(parsed.query))
