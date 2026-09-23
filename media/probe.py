@@ -255,11 +255,12 @@ async def _invalidate_tg_access(user_id, chat_id, msg_id, client=None):
 
 async def _api_media_probe_handler(request):
     """Metadata probe with caching and fast native-path friendly fallbacks."""
-    try:
-        user_id = int(request.query.get("user_id", 0))
-    except Exception:
-        user_id = 0
+    try: user_id = int(request.query.get("user_id", 0))
+    except Exception: user_id = 0
+    
     link = request.query.get("link", "").strip()
+    zip_idx = request.query.get("zip_idx", "").strip() # 🟢 NEW: Capture the ZIP Index!
+    
     if not link:
         return web.json_response({"status": "error", "message": "Link required"}, status=400)
 
@@ -326,9 +327,12 @@ async def _api_media_probe_handler(request):
 
             probe_input = actual_url
             if not is_tg:
-                # 🟢 Restoring Loopback for Direct Links to prevent strict 5XX server blocks
+                # 🟢 Restoring Loopback for Direct Links
                 probe_input = f"http://127.0.0.1:{PORT}/api/direct_stream?user_id={user_id}&url={quote(actual_url, safe='')}"
-                logger.debug(f"🔎 [PROBE] Feeding Loopback Proxy to FFprobe: {probe_input[:100]}...")
+            
+            # 🟢 CRITICAL FIX: Pass the zip_idx to the FFprobe loopback so it extracts the file!
+            if zip_idx:
+                probe_input += f"&zip_idx={zip_idx}"
 
             tg_duration = 0.0
             if is_tg and 'media' in locals() and media:
@@ -516,27 +520,27 @@ async def _api_media_probe_handler(request):
 
 async def _api_cover_handler(request):
     """Extracts embedded Album Art/Cover Art from audio files on the fly."""
-    try:
-        user_id = int(request.query.get("user_id", 0))
-    except:
-        user_id = 0
+    try: user_id = int(request.query.get("user_id", 0))
+    except: user_id = 0
     link = request.query.get("link", "").strip()
+    zip_idx = request.query.get("zip_idx", "").strip() # 🟢 Capture zip_idx
     if not link:
         return web.Response(status=400, text="No link provided")
 
     is_tg = _is_tg_link(link)
-    actual_url = link
-
     try:
         if is_tg:
             parsed = _parse_source_link(link)
             chat_id = parsed.get("chat_id")
             msg_id = parsed.get("msg_id")
             actual_url = f"http://127.0.0.1:{PORT}/api/tg_stream?user_id={user_id}&chat_id={chat_id}&msg_id={msg_id}"
+            if zip_idx: actual_url += f"&zip_idx={zip_idx}"
         else:
-            actual_url = await resolve_direct_link(link)
+            from urllib.parse import quote
+            # 🟢 CRITICAL FIX: Use loopback proxy for Direct Covers too so they bypass Cloudflare!
+            actual_url = f"http://127.0.0.1:{PORT}/api/direct_stream?user_id={user_id}&url={quote(link, safe='')}"
+            if zip_idx: actual_url += f"&zip_idx={zip_idx}"
 
-        # Grabs the exact cover frame directly from the media container
         cmd = [
             "ffmpeg", "-hide_banner", "-loglevel", "error",
             "-i", actual_url,
@@ -544,11 +548,7 @@ async def _api_cover_handler(request):
             "-vframes", "1", "-c:v", "mjpeg", "-f", "image2", "pipe:1"
         ]
 
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
+        proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         stdout, stderr = await proc.communicate()
         
         if proc.returncode == 0 and stdout:
@@ -557,4 +557,3 @@ async def _api_cover_handler(request):
             return web.Response(status=404, text="No cover found")
     except Exception as e:
         return web.Response(status=500, text=str(e))
-
