@@ -3872,8 +3872,10 @@
                     if (track) zipParam = `&zip_idx=${track.original_index}`;
                 }
                 
-                const url = `/api/subtitles?user_id=${encodeURIComponent(currentUser)}&link=${encodeURIComponent(activeMediaLink)}&sub_idx=${encodeURIComponent(activeSubtitleIndex)}${zipParam}`;
-                const response = await fetch(url, { signal: subtitleAbortController.signal, cache: 'force-cache' });
+                // 🟢 CRITICAL FIX: Changed parameter to 'index' to match the dynamic subtitle streaming backend perfectly
+                const url = `/api/subtitles?user_id=${encodeURIComponent(currentUser)}&link=${encodeURIComponent(activeMediaLink)}&index=${encodeURIComponent(activeSubtitleIndex)}${zipParam}`;
+                
+                const response = await fetch(url, { signal: subtitleAbortController.signal, cache: 'no-store' });
                 if (!response.ok) throw new Error(`Subtitle server returned ${response.status}`);
 
                 // The server caches extracted WebVTT.  Read it progressively so the
