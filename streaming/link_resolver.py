@@ -47,7 +47,7 @@ async def resolve_universal_link(url: str):
         elif isinstance(result, tuple):
             raw_url, headers_raw = result
             # 🟢 CRITICAL FIX: Flawless Tuple Header Unpacking!
-            header_lines = [headers_raw] if isinstance(headers_raw, str) else headers_raw
+            header_lines = headers_raw.splitlines() if isinstance(headers_raw, str) else headers_raw
             for h in header_lines:
                 if ":" in h:
                     k, v = h.split(":", 1)
