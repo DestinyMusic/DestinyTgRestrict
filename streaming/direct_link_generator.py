@@ -1410,7 +1410,11 @@ def terabox(url):
             f"Referer: https://www.terabox.com/"
         )
         if len(details["contents"]) == 1:
-            return details["contents"][0]["url"], details["header"]
+            d_url = details["contents"][0]["url"]
+            d_name = details["contents"][0]["filename"]
+            sep = "&" if "?" in d_url else "?"
+            d_url = f"{d_url}{sep}filename={quote(d_name)}"
+            return d_url, details["header"]
         return details
 
     cookies = __load_cookies()
