@@ -3616,7 +3616,6 @@
         function parseWebVTT(text) {
             if (!text) return [];
             const cues = [];
-            // 🟢 CRITICAL FIX: Removed double backslashes to match actual newline characters!
             const lines = String(text).replace(/\r/g, '').split('\n');
             let i = 0;
             
@@ -3625,8 +3624,9 @@
                     const timeParts = lines[i].split('-->');
                     const start = vttTimeToSeconds(timeParts[0]);
                     
-                    // 🟢 FIX: Parse end time AND extra VTT settings (like line:10%)
-                    const endMatch = timeParts[1].trim().match(/^(\\S+)(.*)/);
+                    // 🟢 CRITICAL FIX: Removed double backslashes inside Javascript Regex literals! 
+                    // \S+ correctly matches the end timestamp.
+                    const endMatch = timeParts[1].trim().match(/^(\S+)(.*)/);
                     const end = endMatch ? vttTimeToSeconds(endMatch[1]) : 0;
                     const settings = endMatch ? endMatch[2].trim() : '';
                     
@@ -3637,18 +3637,17 @@
                         i++;
                     }
                     
-                    let rawText = payload.join('\\n');
+                    // 🟢 CRITICAL FIX: Use real \n newline, not literal text string '\\n'
+                    let rawText = payload.join('\n');
                     
-                    // 🟢 DETECT SDH INTENT: Top-Screen detection from ASS tags or VTT settings
                     let isTop = false;
                     if (rawText.includes('{\\an8}') || rawText.includes('{\\an7}') || rawText.includes('{\\an9}') || settings.includes('line:0') || settings.includes('line:10%')) {
                         isTop = true;
                     }
                     
-                    // Strip complex ASS brackets but KEEP basic HTML formatting (colors, bold, italics)
-                    let cleanText = rawText.replace(/\\{[^}]*\\}/g, '').trim();
+                    // 🟢 CRITICAL FIX: Fixed escaping for Advanced SubStation Alpha bracket stripping
+                    let cleanText = rawText.replace(/\{[^}]*\}/g, '').trim();
                     
-                    // Convert WebVTT color tags to HTML spans so the browser parses them correctly
                     cleanText = cleanText.replace(/<c\.([^>]+)>([^<]+)<\/c>/gi, '<span style="color:$1;">$2</span>');
                     
                     if (cleanText && Number.isFinite(start) && Number.isFinite(end)) {
