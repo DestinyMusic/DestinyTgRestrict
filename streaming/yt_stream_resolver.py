@@ -1,15 +1,14 @@
 import asyncio
 import os
 from yt_dlp import YoutubeDL
+from yt_dlp.networking.impersonate import ImpersonateTarget  # 🟢 NEW: Required for API impersonation
 import logging
 import traceback
 
 logger = logging.getLogger("BotLogger")
 
 def _extract_stream_sync(url: str, use_cookies: bool = True):
-    # 🟢 CRITICAL CURE FOR CURL_CFFI THREAD CRASH
-    # curl_cffi requires an active event loop to impersonate Chrome.
-    # Background threads don't have one by default, which caused the AssertionError!
+    # Ensure event loop for curl_cffi background thread
     try:
         asyncio.get_running_loop()
     except RuntimeError:
@@ -21,9 +20,10 @@ def _extract_stream_sync(url: str, use_cookies: bool = True):
         "no_warnings": True,
         "noplaylist": True,
         
-        # 🟢 BROWSER SPOOFING (CURES THE YOUTUBE EOF ERROR)
-        "impersonate": "chrome",          # Uses curl_cffi to perfectly mimic Chrome TLS fingerprints
-        "force_ipv4": True,               # YouTube blocks IPv6 Datacenters
+        # 🟢 THE REAL FIX: Pass the actual ImpersonateTarget object!
+        # This prevents the AssertionError and perfectly spoofs a Chrome TLS handshake.
+        "impersonate": ImpersonateTarget(client="chrome"), 
+        "force_ipv4": True,               
         "socket_timeout": 15,             
         "extractor_retries": 1,
     }
@@ -55,13 +55,13 @@ def _extract_stream_sync(url: str, use_cookies: bool = True):
 async def resolve_yt_dlp_stream(url: str):
     """Extracts stream URLs. Automatically falls back to cookie-less mode."""
     try:
-        # 🟢 Attempt 1: With Cookies
+        # Attempt 1: With Cookies
         return await asyncio.to_thread(_extract_stream_sync, url, True)
     except Exception as e:
         error_details = traceback.format_exc()
         logger.warning(f"yt-dlp stream resolution failed (Cookies Active):\n{error_details}")
         
-        # 🟢 Attempt 2: Unconditional Fallback! 
+        # Attempt 2: Unconditional Fallback! 
         # If it fails for ANY reason with cookies, try instantly without them!
         try:
             logger.info("🔄 Retrying yt-dlp without cookies to bypass Auth/TLS drop...")
