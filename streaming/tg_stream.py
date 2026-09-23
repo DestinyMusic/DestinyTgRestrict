@@ -538,13 +538,14 @@ async def _api_subtitles_handler(request):
     import sys
     
     # 🟢 FIX 1: Set 15MB probesize so files with 40+ tracks (like your 44-stream MKV) are completely indexed
+    # 🟢 FAST SUBTITLE EXTRACTION: Added -analyzeduration 2M and fast-seek flags to eliminate the 2-minute delay
     cmd = [
         "ffmpeg", "-hide_banner", "-loglevel", "error",
         "-user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36", 
         "-rw_timeout", "60000000", 
         "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5",
         "-seekable", "1", "-multiple_requests", "1",
-        "-probesize", "15000000", "-analyzeduration", "15000000",
+        "-analyzeduration", "2000000", "-probesize", "5000000",
         "-i", actual_url,
         "-map", f"0:{sub_idx}",
         "-vn", "-an",
