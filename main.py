@@ -475,6 +475,22 @@ async def main():
 
     await app.start()
     logger.info("🤖 Bot Started") 
+
+    # 🟢 Auto-Restore saved Netscape cookies from MongoDB onto the local filesystem
+    logger.info("🍪 Restoring Per-Site Cookies from Database...")
+    try:
+        cookies_doc = await db.get_all_cookies()
+        restored_count = 0
+        for site, text in cookies_doc.items():
+            if site == "_id":
+                continue
+            filename = f"{site}.txt" if site != "general" else "cookies.txt"
+            with open(filename, "w", encoding="utf-8") as f:
+                f.write(text)
+            restored_count += 1
+        logger.info(f"✅ Restored {restored_count} cookie files to disk.")
+    except Exception as e:
+        logger.error(f"Failed to restore cookies from DB: {e}")
     
     logger.info("📝 Updating Bot Commands...")
     try:
