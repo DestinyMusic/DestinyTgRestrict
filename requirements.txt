@@ -21,3 +21,4 @@ niquests
 lxml
 curl_cffi
 yt-dlp
+certifi
