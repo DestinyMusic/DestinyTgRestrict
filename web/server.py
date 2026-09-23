@@ -1331,8 +1331,51 @@ async def _api_playlist_handler(request):
     playlist = []
     try:
         if is_tg:
-            # (Keep your existing Telegram zip playlist code here)
-            pass
+            parsed = _parse_source_link(link)
+            chat_id = parsed.get("chat_id")
+            msg_id = parsed.get("msg_id")
+            pool, _ = await _get_working_tg_pool(user_id, chat_id, msg_id)
+            primary_client = pool[0]
+            
+            msg = await get_client_msg(primary_client, chat_id, msg_id)
+            media = msg.document or msg.video or msg.audio
+            filename = str(getattr(media, "file_name", "")).lower()
+            
+            # 🟢 FIX: Support all major archive extensions for the playlist extractor (.zip.001, .7z.001, etc)
+            is_zip = bool(re.search(r'\.(zip|7z|rar|tar|gz)(\.\d{3})?$', filename))
+            if not is_zip: return web.json_response({"status": "success", "playlist": []})
+            
+            parts_map = []
+            global_offset = 0
+            match = re.search(r'\.(\d{2,3})$', filename)
+            if match and int(match.group(1)) == 1:
+                current_id = msg_id
+                while True:
+                    try:
+                        m = await get_client_msg(primary_client, chat_id, current_id)
+                        doc = m.document or m.video or m.audio
+                        if not doc: break
+                        psz = int(doc.file_size or 0)
+                        parts_map.append({"msg_id": m.id, "start": global_offset, "end": global_offset + psz, "size": psz})
+                        global_offset += psz
+                        current_id += 1
+                        next_m = await get_client_msg(primary_client, chat_id, current_id)
+                        next_doc = next_m.document or next_m.video or next_m.audio
+                        if not next_doc or not re.search(r'\.\d{2,3}$', next_doc.file_name or ""): break
+                    except Exception: break
+            else:
+                part_size = int(getattr(media, "file_size", 0) or 0)
+                parts_map.append({"msg_id": msg_id, "start": 0, "end": part_size, "size": part_size})
+                global_offset = part_size
+                
+            async def zip_read_tg(off, length):
+                buf = bytearray()
+                async for chunk in parallel_stream_generator(primary_client, chat_id, parts_map, off, length):
+                    buf.extend(chunk)
+                    if len(buf) >= length: break
+                return bytes(buf[:length])
+                
+            playlist = await get_zip_playlist(zip_read_tg, global_offset)
         else:
             actual_url = await resolve_direct_link(link)
             filename = _guess_filename_from_url(actual_url, original_url=link).lower()
@@ -1352,6 +1395,7 @@ async def _api_playlist_handler(request):
             raw_size = int(cached_h.get("meta_content_length", 0))
             if raw_size <= 0:
                 try:
+                    # 🟢 FAST NATIVE STRING (No _safe_yarl corruption)
                     async with session.head(actual_url, headers=zip_headers, allow_redirects=True) as h_resp:
                         raw_size = int(h_resp.headers.get("Content-Length", 0))
                 except Exception: pass
@@ -1369,7 +1413,7 @@ async def _api_playlist_handler(request):
                 except Exception: pass
 
             if raw_size <= 0:
-                return web.json_response({"status": "error", "message": "Failed to determine ZIP size."})
+                return web.json_response({"status": "error", "message": "Failed to determine ZIP size. Host may be blocking requests."})
 
             async def zip_read_http(off, length):
                 z_req_headers = zip_headers.copy()
@@ -1378,11 +1422,6 @@ async def _api_playlist_handler(request):
                     return await r.read()
                     
             playlist = await get_zip_playlist(zip_read_http, raw_size)
-            
-            # 🟢 FIX: Ensure clean track names and audio flags for the Web UI player
-            for track in playlist:
-                if not track.get("display_name"):
-                    track["display_name"] = track["name"].split("/")[-1].split("\\")[-1]
 
         return web.json_response({"status": "success", "playlist": playlist})
     except Exception as e:
