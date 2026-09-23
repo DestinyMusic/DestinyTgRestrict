@@ -43,12 +43,16 @@ async def resolve_universal_link(url: str):
 
         if isinstance(result, str):
             raw_url = result
+            
         elif isinstance(result, tuple):
-            raw_url, header_list = result
-            for h in header_list:
+            raw_url, headers_raw = result
+            # 🟢 CRITICAL FIX: Flawless Tuple Header Unpacking!
+            header_lines = [headers_raw] if isinstance(headers_raw, str) else headers_raw
+            for h in header_lines:
                 if ":" in h:
                     k, v = h.split(":", 1)
                     headers[k.strip()] = v.strip()
+                    
         elif isinstance(result, dict):
             if "contents" in result and result["contents"]:
                 best_file = max(result["contents"], key=lambda x: x.get("size", 0))
@@ -61,6 +65,7 @@ async def resolve_universal_link(url: str):
 
         logger.info(f"✅ Resolved Direct Link: {raw_url[:70]}...")
         return raw_url, headers
+        
     except Exception as exc:
         # Fallback to yt-dlp before returning the raw URL
         yt_res = await resolve_yt_dlp_stream(url)
