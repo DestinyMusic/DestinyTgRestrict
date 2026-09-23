@@ -11,10 +11,8 @@ def _extract_stream_sync(url: str, use_cookies: bool = True):
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
-        # 🟢 CRITICAL SSL FIXES
-        "nocheckcertificate": True,  
-        "legacyserverconnect": True, 
-        "extractor_retries": 3,
+        # 🟢 FIX: Strict 15-second timeout so dead links don't freeze the bot for 3 minutes!
+        "socket_timeout": 15,
     }
     
     if use_cookies and os.path.exists("cookies.txt"):
@@ -50,20 +48,12 @@ async def resolve_yt_dlp_stream(url: str):
         err_str = str(e).lower()
         logger.warning(f"yt-dlp stream resolution failed (Cookies Active): {e}")
         
-        # 🟢 Attempt 2: If YouTube dropped the SSL tunnel or the cookie is banned, try without cookies!
+        # 🟢 Attempt 2: If the cookie is expired or YouTube blocks the IP, retry instantly without it!
         if "ssl" in err_str or "eof" in err_str or "cookie" in err_str or "sign in" in err_str:
             try:
-                logger.info("🔄 Retrying yt-dlp without cookies to bypass SSL/Auth drop...")
+                logger.info("🔄 Retrying yt-dlp without cookies to bypass Auth/SSL drop...")
                 return await asyncio.to_thread(_extract_stream_sync, url, False)
             except Exception as e2:
                 logger.warning(f"yt-dlp stream resolution failed (No Cookies): {e2}")
                 
-        return None
-        }
-
-async def resolve_yt_dlp_stream(url: str):
-    try:
-        return await asyncio.to_thread(_extract_stream_sync, url)
-    except Exception as e:
-        logger.warning(f"yt-dlp stream resolution failed: {e}")
         return None
