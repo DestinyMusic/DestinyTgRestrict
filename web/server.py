@@ -1392,15 +1392,11 @@ async def _api_playlist_handler(request):
                 if h_key in cached_h: 
                     zip_headers[h_key] = cached_h[h_key]
 
-            import yarl
-            def _safe_yarl(u):
-                try: return yarl.URL(u, encoded=True) if '%' in u else u
-                except Exception: return u
-
             raw_size = int(cached_h.get("meta_content_length", 0))
             if raw_size <= 0:
                 try:
-                    async with session.head(_safe_yarl(actual_url), headers=zip_headers, allow_redirects=True) as h_resp:
+                    # 🟢 FAST NATIVE STRING (No _safe_yarl corruption)
+                    async with session.head(actual_url, headers=zip_headers, allow_redirects=True) as h_resp:
                         raw_size = int(h_resp.headers.get("Content-Length", 0))
                 except Exception: pass
                 
@@ -1408,7 +1404,7 @@ async def _api_playlist_handler(request):
                 try:
                     get_h = zip_headers.copy()
                     get_h["Range"] = "bytes=0-0"
-                    async with session.get(_safe_yarl(actual_url), headers=get_h, allow_redirects=True) as g_resp:
+                    async with session.get(actual_url, headers=get_h, allow_redirects=True) as g_resp:
                         cr = g_resp.headers.get("Content-Range", "")
                         if cr and "/" in cr:
                             raw_size = int(cr.split("/")[-1])
@@ -1422,7 +1418,7 @@ async def _api_playlist_handler(request):
             async def zip_read_http(off, length):
                 z_req_headers = zip_headers.copy()
                 z_req_headers["Range"] = f"bytes={off}-{off+length-1}"
-                async with session.get(_safe_yarl(actual_url), headers=z_req_headers) as r:
+                async with session.get(actual_url, headers=z_req_headers) as r:
                     return await r.read()
                     
             playlist = await get_zip_playlist(zip_read_http, raw_size)
