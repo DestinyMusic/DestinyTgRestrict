@@ -2,7 +2,8 @@
 # DestinyRestrict Dockerfile
 # ==============================================================================
 
-FROM python:3.10-slim
+# 🟢 FIX: Upgraded to Python 3.11 to fix yt-dlp SSL/TLS handshake crashes
+FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1
 ENV DEBIAN_FRONTEND=noninteractive
