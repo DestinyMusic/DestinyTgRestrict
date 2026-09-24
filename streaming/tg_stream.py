@@ -546,7 +546,7 @@ async def _api_subtitles_handler(request):
         "-rw_timeout", "60000000", 
         "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5",
         "-seekable", "1", "-multiple_requests", "1",
-        "-probesize", "15000000", "-analyzeduration", "15000000",
+        "-probesize", "2000000", "-analyzeduration", "2000000",
     ]
 
     # 🟢 CRITICAL SPEED FIX: Jump directly to the requested timestamp to prevent downloading gigabytes of MKV data!
@@ -568,47 +568,57 @@ async def _api_subtitles_handler(request):
     ]
 
     try:
-        # 🟢 FIX 2: Capture stderr so errors are visible in logs instead of silent failures
+        # 🟢 STREAMING FIX: Ignore stderr to prevent pipe deadlocks, stream stdout live!
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stderr=asyncio.subprocess.DEVNULL
         )
         
-        stdout, stderr = await proc.communicate()
-        stderr_msg = stderr.decode('utf-8', errors='ignore').strip()
-
-        # 🟢 FIX 3: Explicit YES / NO log output with exact error reasons
-        if proc.returncode != 0 or not stdout.strip():
-            logger.error(f"❌ [SUBTITLES STATUS] Track #{sub_idx} | Loaded: NO | Error: {stderr_msg or 'Empty stream or unsupported codec'}")
-            return web.Response(
-                body=b"WEBVTT\n\nNOTE Empty or unsupported subtitle stream\n",
-                status=200,
-                headers={"Content-Type": "text/vtt; charset=utf-8", "Access-Control-Allow-Origin": "*"}
-            )
-
-        logger.info(f"✅ [SUBTITLES STATUS] Track #{sub_idx} | Loaded: YES | Bytes: {len(stdout)} | Status: READY")
-
-        # Save to RAM cache for instant loads
-        SUBTITLE_CACHE[cache_key] = (stdout, time.time() + SUBTITLE_CACHE_TTL)
-        if len(SUBTITLE_CACHE) > 128:
-            oldest = min(SUBTITLE_CACHE.items(), key=lambda kv: kv[1][1])[0]
-            SUBTITLE_CACHE.pop(oldest, None)
-            
-        return web.Response(
-            body=stdout, 
-            status=200, 
+        # 1. Prepare a live StreamResponse for the WebVTT text
+        response = web.StreamResponse(
+            status=200,
             headers={
                 "Content-Type": "text/vtt; charset=utf-8",
-                "Content-Length": str(len(stdout)),
                 "Access-Control-Allow-Origin": "*",
-                "Cache-Control": "public, max-age=3600"
+                "Cache-Control": "no-store",
+                "Transfer-Encoding": "chunked"
             }
         )
+        await response.prepare(request)
+
+        buffer = bytearray()
+        
+        # 2. Feed the Javascript frontend chunks instantly as FFmpeg parses them
+        while True:
+            chunk = await proc.stdout.read(8192)
+            if not chunk:
+                break
+            await response.write(chunk)
+            buffer.extend(chunk)
+            
+        await response.write_eof()
+        await proc.wait()
+
+        # Catch if the track was empty or failed
+        if proc.returncode != 0 and not buffer:
+            logger.error(f"❌ [SUBTITLES STATUS] Track #{sub_idx} | Loaded: NO | Error: Empty stream or unsupported codec")
+            return response
+
+        logger.info(f"✅ [SUBTITLES STATUS] Track #{sub_idx} | Loaded: YES | Bytes: {len(buffer)} | Status: STREAMED LIVE")
+
+        # 3. Save the fully collected buffer to RAM so rewinds and replays are instant
+        if buffer:
+            SUBTITLE_CACHE[cache_key] = (bytes(buffer), time.time() + SUBTITLE_CACHE_TTL)
+            if len(SUBTITLE_CACHE) > 128:
+                oldest = min(SUBTITLE_CACHE.items(), key=lambda kv: kv[1][1])[0]
+                SUBTITLE_CACHE.pop(oldest, None)
+                
+        return response
         
     except Exception as exc:
         try: proc.kill()
         except: pass
         logger.error(f"❌ [SUBTITLES STATUS] Track #{sub_idx} | Loaded: NO | Exception: {exc}")
         return web.Response(status=502, text=str(exc))
-        
+            
