@@ -38,7 +38,8 @@ async def _get_direct_http_session():
                 keepalive_timeout=30, 
                 enable_cleanup_closed=True,
             )
-            timeout = aiohttp.ClientTimeout(total=None, connect=8, sock_connect=8, sock_read=15)
+            # 🟢 FIX: Increased sock_read from 15s to 60s to prevent Terabox drops
+            timeout = aiohttp.ClientTimeout(total=None, connect=15, sock_connect=15, sock_read=60)
             DIRECT_HTTP_SESSION = aiohttp.ClientSession(
                 connector=connector,
                 timeout=timeout,
@@ -563,3 +564,4 @@ def _guess_browser_compatibility(mime_type, filename, streams):
         } and ac not in bad_audio
 
     return False
+
