@@ -32,7 +32,6 @@ async def process_remux(input_file, output_file, stream_config, global_tags=None
     if global_tags and global_tags.get("title"):
         cmd.extend(["--title", global_tags["title"].strip()])
 
-    main_tracks = []
     main_args = []
     ext_args = []
 
@@ -60,7 +59,6 @@ async def process_remux(input_file, output_file, stream_config, global_tags=None
         # 🟢 Handle Original File Tracks
         else:
             idx = str(track.get('index', '0')).replace('v:', '').replace('a:', '').replace('s:', '')
-            main_tracks.append(idx)
             
             if delay_ms != 0:
                 main_args.extend(["--sync", f"{idx}:{delay_ms}"])
@@ -72,15 +70,8 @@ async def process_remux(input_file, output_file, stream_config, global_tags=None
                 main_args.extend(["--language", f"{idx}:{track['lang']}"])
 
     # Build the final command structure
-    if main_tracks:
-        cmd.extend(["--tracks", ",".join(main_tracks)])
-        cmd.extend(main_args)
-        cmd.append(input_file)
-    else:
-        # Failsafe if the user unchecked all original video/audio tracks
-        cmd.extend(["--no-video", "--no-audio", "--no-subtitles", input_file]) 
-
-    # Append external tracks to the end of the command
+    cmd.extend(main_args)
+    cmd.append(input_file)
     cmd.extend(ext_args)
     
     # Execute MKVToolNix
@@ -88,8 +79,11 @@ async def process_remux(input_file, output_file, stream_config, global_tags=None
     out, err = await proc.communicate()
     
     if proc.returncode != 0:
-        err_str = err.decode('utf-8', errors='ignore')
-        raise Exception(f"MKVMerge Error: {err_str}")
+        # MKVMerge prints its errors to stdout instead of stderr, so we combine them!
+        err_str = err.decode('utf-8', errors='ignore').strip()
+        out_str = out.decode('utf-8', errors='ignore').strip()
+        full_error = f"{err_str}\n{out_str}".strip()
+        raise Exception(f"MKVMerge Error:\n{full_error}")
         
     return output_file
 
