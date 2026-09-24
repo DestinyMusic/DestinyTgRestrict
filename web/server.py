@@ -1570,6 +1570,7 @@ async def _api_edit_media_handler(request):
             pass
 
     async def background_editor():
+        nonlocal new_name  # 🟢 THE FIX: Tells Python to inherit the name from the outer function
         temp_dir.mkdir(parents=True, exist_ok=True)
         input_file = temp_dir / "input_media.dat"
         output_file = temp_dir / sanitize_filename(new_name)
