@@ -3893,7 +3893,8 @@
 
                 const reader = response.body?.getReader();
                 if (!reader) {
-                    subtitleCues = parseWebVTT(await response.text(), fetchStart);
+                    // 🟢 FIX: Pass 0 instead of fetchStart. -copyts handles the absolute time natively.
+                    subtitleCues = parseWebVTT(await response.text(), 0); 
                     renderCurrentSubtitle();
                     return;
                 }
@@ -3906,11 +3907,11 @@
                     if (done) break;
                     buffer += decoder.decode(value, { stream: true });
 
-                    // 🟢 CRITICAL FIX: Split on actual double newlines for progressive rendering
                     const blocks = buffer.split(/\n\s*\n/);
                     buffer = blocks.pop() || '';
                     for (const block of blocks) {
-                        const cues = parseWebVTT(block + '\n\n', fetchStart); // 🟢 Passed fetchStart offset
+                        // 🟢 FIX: Pass 0 here too
+                        const cues = parseWebVTT(block + '\n\n', 0); 
                         if (cues.length) subtitleCues.push(...cues);
                     }
                     subtitleCues.sort((a, b) => a.start - b.start);
@@ -3919,7 +3920,8 @@
 
                 buffer += decoder.decode();
                 if (buffer.trim()) {
-                    const cues = parseWebVTT(buffer + '\n\n', fetchStart); // 🟢 Passed fetchStart offset
+                    // 🟢 FIX: And pass 0 here
+                    const cues = parseWebVTT(buffer + '\n\n', 0); 
                     if (cues.length) subtitleCues.push(...cues);
                 }
                 subtitleCues.sort((a, b) => a.start - b.start);
