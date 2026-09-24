@@ -67,12 +67,17 @@ async def fetch_single_chunk(client, chat_id, msg_id, offset, limit):
                     if len(data) >= target_bytes:
                         break
                         
-            # 🟢 FIX: Vastly reduced timeout threshold so hung streams die fast and retry instead of freezing
-            dynamic_timeout = max(5.0, (target_bytes / 1024 / 1024) * 2.0)
+            # 🟢 DYNAMIC TIMEOUT ENGINE: Calculates exact wait time based on requested chunk size and minimum network speed
+            min_speed_bps = 50 * 1024  # Assume a worst-case network speed of 50 KB/s
+            calculated_time = target_bytes / min_speed_bps
+            
+            # Always give Telegram at least 20 seconds to physically find the file on their servers (Seek Overhead)
+            dynamic_timeout = max(20.0, calculated_time) 
+            
             try:
                 await asyncio.wait_for(fetch_continuous(), timeout=dynamic_timeout)
             except asyncio.TimeoutError:
-                raise TimeoutError("Chunk fetch timed out during transfer")
+                raise TimeoutError(f"Chunk fetch timed out (Expected {target_bytes} bytes at >50KB/s)")
                     
             if not data: 
                 raise ValueError("EOF Reached or Empty Chunk")
