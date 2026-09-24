@@ -3893,8 +3893,8 @@
 
                 const reader = response.body?.getReader();
                 if (!reader) {
-                    // 🟢 FIX: Pass 0 instead of fetchStart. -copyts handles the absolute time natively.
-                    subtitleCues = parseWebVTT(await response.text(), 0); 
+                    // 🟢 RESTORED: Pass fetchStart back so JS aligns the text mathematically
+                    subtitleCues = parseWebVTT(await response.text(), fetchStart); 
                     renderCurrentSubtitle();
                     return;
                 }
@@ -3910,8 +3910,8 @@
                     const blocks = buffer.split(/\n\s*\n/);
                     buffer = blocks.pop() || '';
                     for (const block of blocks) {
-                        // 🟢 FIX: Pass 0 here too
-                        const cues = parseWebVTT(block + '\n\n', 0); 
+                        // 🟢 RESTORED: Pass fetchStart here
+                        const cues = parseWebVTT(block + '\n\n', fetchStart); 
                         if (cues.length) subtitleCues.push(...cues);
                     }
                     subtitleCues.sort((a, b) => a.start - b.start);
@@ -3920,8 +3920,8 @@
 
                 buffer += decoder.decode();
                 if (buffer.trim()) {
-                    // 🟢 FIX: And pass 0 here
-                    const cues = parseWebVTT(buffer + '\n\n', 0); 
+                    // 🟢 RESTORED: Pass fetchStart here
+                    const cues = parseWebVTT(buffer + '\n\n', fetchStart); 
                     if (cues.length) subtitleCues.push(...cues);
                 }
                 subtitleCues.sort((a, b) => a.start - b.start);
