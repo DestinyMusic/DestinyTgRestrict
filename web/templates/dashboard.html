@@ -1509,6 +1509,16 @@
                         </label>
                     </div>
 
+                    <!-- 🟢 NEW: Upload Mode Selector -->
+                    <div class="input-group">
+                        <label>Upload Format</label>
+                        <select id="editor-upload-mode" class="pop-select">
+                            <option value="document" selected>Document (.mkv / .001)</option>
+                            <option value="video">Streamable Video (Native Player)</option>
+                            <option value="zip">Archive (.zip / .zip.001)</option>
+                        </select>
+                    </div>
+
                     <div class="input-group">
                         <label>Upload Destination</label>
                         <!-- 🟢 Dynamic Selection: Will automatically populate with your Groups/Channels -->
@@ -5665,8 +5675,7 @@
             bar.style.width = '0%';
             bar.style.background = 'linear-gradient(90deg, var(--accent), #38bdf8)';
             
-            // 🟢 This polls your OWN server's API every 5 seconds!
-            // Because it bypasses the Telegram API entirely, there are zero FloodWait limits.
+            // 🟢 Live 1-second interval for smooth web progress animation
             editorPollInterval = setInterval(async () => {
                 try {
                     const res = await fetch('/api/editor_progress?task_uuid=' + taskUuid);
@@ -5678,14 +5687,15 @@
                         if (data.percent !== undefined && data.percent > 0) {
                             txt.innerText = phase + " (" + data.percent.toFixed(1) + "%)";
                             bar.style.width = data.percent + '%';
+                            bar.style.background = 'linear-gradient(90deg, var(--accent), #38bdf8)';
                             left.innerText = formatBytes(data.current) + ' / ' + formatBytes(data.total);
-                            right.innerText = formatBytes(data.speed) + '/s | ETA: ' + formatTime(data.eta);
+                            right.innerText = (data.speed > 0 ? formatBytes(data.speed) + '/s | ' : '') + 'ETA: ' + formatTime(data.eta);
                         } else {
                             txt.innerText = phase;
-                            if (phase === 'Remuxing' || phase === 'Splitting') {
+                            if (phase.includes('Remuxing') || phase.includes('Splitting') || phase.includes('Zipping')) {
                                 bar.style.width = '100%';
-                                bar.style.background = '#f59e0b'; // Orange
-                                left.innerText = 'Processing file structure...';
+                                bar.style.background = phase.includes('Zipping') ? '#8b5cf6' : '#f59e0b';
+                                left.innerText = phase + '...';
                                 right.innerText = '';
                             }
                         }
@@ -5709,10 +5719,10 @@
                 } catch (e) {
                     console.log("Polling error", e);
                 }
-            }, 5000);
+            }, 1000); // 🟢 Polling every 1s
         }
 
-        async function sendEditorPayload(config, newName, dest, thumbB64, globalTags, btn) {
+        async function sendEditorPayload(config, newName, dest, uploadMode, thumbB64, globalTags, btn) {
             try {
                 const res = await fetch('/api/edit_media', {
                     method: 'POST',
@@ -5724,6 +5734,7 @@
                         config: config,
                         new_name: newName,
                         dest: dest,
+                        upload_mode: uploadMode, // 🟢 Transmit selected upload mode
                         thumb: thumbB64,
                         global_tags: globalTags
                     })
@@ -5731,7 +5742,6 @@
                 const data = await res.json();
                 
                 if (data.status === 'success') {
-                    // Start polling the progress bar!
                     pollEditorProgress(data.task_uuid, btn);
                 } else {
                     document.getElementById('editor-status-text').innerHTML = '❌ <b>Error:</b> ' + data.message;
@@ -5748,6 +5758,7 @@
         async function submitEditorTask() {
             const btn = document.getElementById('editor-submit-btn');
             const dest = document.getElementById('editor-dest').value;
+            const uploadMode = document.getElementById('editor-upload-mode')?.value || 'document'; // 🟢 Grab choice
             const newName = document.getElementById('editor-filename').value;
             const thumbFile = document.getElementById('editor-thumb-file').files[0];
             
@@ -5823,7 +5834,7 @@
             document.getElementById('editor-stats-left').innerText = "";
             document.getElementById('editor-stats-right').innerText = "";
             
-            await sendEditorPayload(config, newName, dest, thumbB64, globalTags, btn);
+            await sendEditorPayload(config, newName, dest, uploadMode, thumbB64, globalTags, btn);
         }
 
         // ======================================================================
