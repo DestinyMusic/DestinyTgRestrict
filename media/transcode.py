@@ -125,7 +125,8 @@ async def _api_stream_handler(request):
     is_audio = (not has_video and not video_codec and bool(audio_codec)) or filename.endswith(
         (".flac", ".mp3", ".m4a", ".ogg", ".wav", ".aac", ".wma", ".opus", ".dsf", ".ape", ".mka", ".alac")
     )
-    is_mkv_or_non_mp4 = filename.endswith((".mkv", ".mka", ".avi", ".wmv", ".flv", ".ts", ".m2ts", ".vob", ".webm"))
+    # 🟢 FIX: Ensure ONLY video/zip split files (.001, .002) are piped through the video transcoder
+    is_mkv_or_non_mp4 = filename.endswith((".mkv", ".mka", ".avi", ".wmv", ".flv", ".ts", ".m2ts", ".vob", ".webm")) or bool(re.search(r'\.(zip|mkv|mp4|avi|ts|m4v|mov|wmv|webm|flv|m2ts|mpg|mpeg)\.\d{2,3}$', filename.lower()))
 
     # --- 4. DYNAMIC CODEC DECISION MATRIX ---
     # External players bypass all server-side processing
