@@ -550,6 +550,7 @@ async def _api_subtitles_handler(request):
     ]
 
     # 🟢 CRITICAL SPEED FIX: Jump directly to the requested timestamp to prevent downloading gigabytes of MKV data!
+
     if start_time:
         try:
             start_f = max(0.0, float(start_time))
@@ -559,6 +560,7 @@ async def _api_subtitles_handler(request):
             pass
 
     cmd += [
+        "-copyts", # 🟢 SYNC FIX: Preserves exact original MKV global timestamps!
         "-i", actual_url,
         "-map", f"0:{sub_idx}",
         "-vn", "-an",
@@ -568,14 +570,12 @@ async def _api_subtitles_handler(request):
     ]
 
     try:
-        # 🟢 STREAMING FIX: Ignore stderr to prevent pipe deadlocks, stream stdout live!
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL
         )
         
-        # 1. Prepare a live StreamResponse for the WebVTT text
         response = web.StreamResponse(
             status=200,
             headers={
@@ -589,25 +589,40 @@ async def _api_subtitles_handler(request):
 
         buffer = bytearray()
         
-        # 2. Feed the Javascript frontend chunks instantly as FFmpeg parses them
-        while True:
-            chunk = await proc.stdout.read(8192)
-            if not chunk:
-                break
-            await response.write(chunk)
-            buffer.extend(chunk)
+        try:
+            # Feed the Javascript frontend chunks instantly as FFmpeg parses them
+            while True:
+                chunk = await proc.stdout.read(8192)
+                if not chunk:
+                    break
+                await response.write(chunk)
+                buffer.extend(chunk)
+                
+            await response.write_eof()
+            await proc.wait()
             
-        await response.write_eof()
-        await proc.wait()
+        except (ConnectionResetError, ConnectionAbortedError, asyncio.CancelledError):
+            # 🟢 FIX: Normal disconnect when user closes the web player. Kill silently.
+            logger.info(f"🛑 [SUBTITLES] Stream aborted by client (Track #{sub_idx})")
+            try: proc.kill() 
+            except: pass
+            return response
+        except Exception as e:
+            if "closing transport" in str(e).lower() or "broken pipe" in str(e).lower():
+                logger.info(f"🛑 [SUBTITLES] Client disconnected early (Track #{sub_idx})")
+                try: proc.kill() 
+                except: pass
+                return response
+            raise e
 
         # Catch if the track was empty or failed
         if proc.returncode != 0 and not buffer:
-            logger.error(f"❌ [SUBTITLES STATUS] Track #{sub_idx} | Loaded: NO | Error: Empty stream or unsupported codec")
+            logger.error(f"❌ [SUBTITLES STATUS] Track #{sub_idx} | Loaded: NO | Error: Empty stream")
             return response
 
         logger.info(f"✅ [SUBTITLES STATUS] Track #{sub_idx} | Loaded: YES | Bytes: {len(buffer)} | Status: STREAMED LIVE")
 
-        # 3. Save the fully collected buffer to RAM so rewinds and replays are instant
+        # Save the fully collected buffer to RAM so rewinds and replays are instant
         if buffer:
             SUBTITLE_CACHE[cache_key] = (bytes(buffer), time.time() + SUBTITLE_CACHE_TTL)
             if len(SUBTITLE_CACHE) > 128:
@@ -621,4 +636,3 @@ async def _api_subtitles_handler(request):
         except: pass
         logger.error(f"❌ [SUBTITLES STATUS] Track #{sub_idx} | Loaded: NO | Exception: {exc}")
         return web.Response(status=502, text=str(exc))
-            
