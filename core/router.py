@@ -107,14 +107,48 @@ def _get_client_label(c):
         return "🤖 Main Bot"
     return f"🤖 {name}"
 
-async def _execute_unrestricted_copy(client, acc, chat_id, msgid, dest_chat_id, dest_thread_id, msg, msg_type, user_id, task_uuid, delay):
-    # 🟢 Select an Upload Client (Worker Bot > Main Bot)
-    upload_client = client
+def get_dynamic_upload_client(client, acc, user_id, task_uuid, msg_index):
+    """Dynamically slices worker bots across multiple concurrent tasks to prevent FloodWaits."""
     worker_bots = USER_TASK_BOTS.get(user_id, [])
-    if worker_bots:
-        connected_workers = [wb for wb in worker_bots if getattr(wb, "is_connected", False)]
-        if connected_workers:
-            upload_client = connected_workers[int(time.time()) % len(connected_workers)]
+    connected = [wb for wb in worker_bots if getattr(wb, "is_connected", False)]
+    
+    if not connected:
+        return client
+        
+    # 1. Count active batch tasks (Ignore Watchers)
+    user_tasks = [
+        tid for tid, info in ACTIVE_PROCESSES.get(user_id, {}).items() 
+        if not info.get("is_watcher", False)
+    ]
+    
+    if not user_tasks or task_uuid not in user_tasks:
+        return connected[msg_index % len(connected)]
+        
+    total_tasks = len(user_tasks)
+    my_rank = user_tasks.index(task_uuid)
+    total_bots = len(connected)
+    
+    # 2. Slice logic
+    if total_tasks == 1:
+        return connected[msg_index % total_bots] # Use all bots for 1 task
+        
+    bots_per_task = max(1, total_bots // total_tasks)
+    start_idx = my_rank * bots_per_task
+    
+    # 3. Overflow logic (if more tasks than bots, overflow uses User Session or Main Bot)
+    if start_idx >= total_bots:
+        return acc if acc else client
+        
+    # 4. Grab dedicated slice for this specific task
+    my_slice = connected[start_idx : start_idx + bots_per_task]
+    if not my_slice:
+        return acc if acc else client
+        
+    return my_slice[msg_index % len(my_slice)]
+
+async def _execute_unrestricted_copy(client, acc, chat_id, msgid, dest_chat_id, dest_thread_id, msg, msg_type, user_id, task_uuid, delay, index=1):
+    # 🟢 Select an Upload Client (Dynamic Slicing)
+    upload_client = get_dynamic_upload_client(client, acc, user_id, task_uuid, index)
             
     if task_uuid and user_id in ACTIVE_PROCESSES and task_uuid in ACTIVE_PROCESSES[user_id]:
         ACTIVE_PROCESSES[user_id][task_uuid]["fetcher"] = _get_client_label(acc if acc else client)
@@ -179,14 +213,9 @@ async def _execute_unrestricted_copy(client, acc, chat_id, msgid, dest_chat_id, 
         return False
     except Exception: return False
 
-async def _execute_public_live_unrestricted_copy(client, acc, chat_id, msgid, dest_chat_id, dest_thread_id, msg, msg_type, user_id, task_uuid, delay):
-    # 🟢 Select an Upload Client (Worker Bot > Main Bot)
-    upload_client = client
-    worker_bots = USER_TASK_BOTS.get(user_id, [])
-    if worker_bots:
-        connected_workers = [wb for wb in worker_bots if getattr(wb, "is_connected", False)]
-        if connected_workers:
-            upload_client = connected_workers[int(time.time()) % len(connected_workers)]
+async def _execute_public_live_unrestricted_copy(client, acc, chat_id, msgid, dest_chat_id, dest_thread_id, msg, msg_type, user_id, task_uuid, delay, index=1):
+    # 🟢 Select an Upload Client (Dynamic Slicing)
+    upload_client = get_dynamic_upload_client(client, acc, user_id, task_uuid, index)
 
     if task_uuid and user_id in ACTIVE_PROCESSES and task_uuid in ACTIVE_PROCESSES[user_id]:
         ACTIVE_PROCESSES[user_id][task_uuid]["fetcher"] = _get_client_label(acc if acc else client)
@@ -258,15 +287,15 @@ async def _execute_public_live_unrestricted_copy(client, acc, chat_id, msgid, de
 
 # 1 Public Link
 async def handle_unrestricted_public(client, acc, chat_id, msgid, dest_chat_id, dest_thread_id, msg, msg_type, **kwargs):
-    return await _execute_public_live_unrestricted_copy(client, acc, chat_id, msgid, dest_chat_id, dest_thread_id, msg, msg_type, kwargs.get("user_id"), kwargs.get("task_uuid"), kwargs.get("delay", 3))
+    return await _execute_public_live_unrestricted_copy(client, acc, chat_id, msgid, dest_chat_id, dest_thread_id, msg, msg_type, kwargs.get("user_id"), kwargs.get("task_uuid"), kwargs.get("delay", 3), kwargs.get("index", 1))
 
 # 2 Pvt link
 async def handle_unrestricted_private(client, acc, chat_id, msgid, dest_chat_id, dest_thread_id, msg, msg_type, **kwargs):
-    return await _execute_unrestricted_copy(client, acc, chat_id, msgid, dest_chat_id, dest_thread_id, msg, msg_type, kwargs.get("user_id"), kwargs.get("task_uuid"), kwargs.get("delay", 3))
+    return await _execute_unrestricted_copy(client, acc, chat_id, msgid, dest_chat_id, dest_thread_id, msg, msg_type, kwargs.get("user_id"), kwargs.get("task_uuid"), kwargs.get("delay", 3), kwargs.get("index", 1))
 
 # 3 Live watch
 async def handle_unrestricted_live(client, acc, chat_id, msgid, dest_chat_id, dest_thread_id, msg, msg_type, **kwargs):
-    return await _execute_public_live_unrestricted_copy(client, acc, chat_id, msgid, dest_chat_id, dest_thread_id, msg, msg_type, kwargs.get("user_id"), kwargs.get("task_uuid"), kwargs.get("delay", 3))
+    return await _execute_public_live_unrestricted_copy(client, acc, chat_id, msgid, dest_chat_id, dest_thread_id, msg, msg_type, kwargs.get("user_id"), kwargs.get("task_uuid"), kwargs.get("delay", 3), kwargs.get("index", 1))
 
 # ==============================================================================
 # --- 🔴 RESTRICTED ROUTES ---
@@ -406,12 +435,7 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
         ACTIVE_PROCESSES[user_id][task_uuid]["current_file"] = safe_filename
         ACTIVE_PROCESSES[user_id][task_uuid]["fetcher"] = _get_client_label(fetcher)
         
-        predicted_uploader = client
-        worker_bots = USER_TASK_BOTS.get(user_id, [])
-        if worker_bots:
-            connected_workers = [wb for wb in worker_bots if getattr(wb, "is_connected", False)]
-            if connected_workers:
-                predicted_uploader = connected_workers[index % len(connected_workers)]
+        predicted_uploader = get_dynamic_upload_client(client, acc, user_id, task_uuid, index)
         ACTIVE_PROCESSES[user_id][task_uuid]["uploader"] = _get_client_label(predicted_uploader)
 
     # 🟢 [FIX] Wipe previous file's progress so stale numbers NEVER carry over!
@@ -635,12 +659,7 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
         upload_success = False
 
         # 🟢 NEW: Select an Upload Client (Worker Bot > Main Bot)
-        upload_client = client
-        worker_bots = USER_TASK_BOTS.get(user_id, [])
-        if worker_bots:
-            connected_workers = [wb for wb in worker_bots if getattr(wb, "is_connected", False)]
-            if connected_workers:
-                upload_client = connected_workers[index % len(connected_workers)]
+        upload_client = get_dynamic_upload_client(client, acc, user_id, task_uuid, index)
         
         async with SERVER_UPLOAD_LIMIT:
             async with USER_SEMAPHORES[user_id]:
@@ -726,4 +745,3 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
                 shutil.rmtree(task_folder_path)
         except Exception: pass
         gc.collect()
-
