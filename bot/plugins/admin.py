@@ -702,14 +702,53 @@ async def download_audio_snippet_http(url, file_path, limit_mb=15):
                         break
 
 async def full_download_http(url, file_path):
-    """Full HTTP download for Spectrogram analysis."""
-    headers = {"User-Agent": "Mozilla/5.0"}
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, headers=headers) as resp:
-            resp.raise_for_status()
-            with open(file_path, "wb") as f:
-                async for chunk in resp.content.iter_chunked(1024 * 1024):
-                    f.write(chunk)
+    """Full HTTP download utilizing the Direct Stream resolver for Terabox/Gdrive/etc."""
+    resolved = await resolve_direct_link(url)
+    session = await _get_direct_http_session()
+    
+    req_headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
+    }
+    
+    # Apply cached security cookies and tokens
+    cached_h = DIRECT_HEADER_CACHE.get(resolved) or DIRECT_HEADER_CACHE.get(url) or {}
+    for h_key in ["Cookie", "Referer", "Authorization", "User-Agent"]:
+        if h_key in cached_h:
+            req_headers[h_key] = cached_h[h_key]
+
+    # Robust redirect follower mimicking the live streaming engine
+    max_redirects = 3
+    current_url = resolved
+    remote = None
+    
+    for _ in range(max_redirects):
+        remote = await session.get(
+            _safe_yarl(current_url), 
+            headers=req_headers,
+            allow_redirects=False
+        )
+        if remote.status in (301, 302, 303, 307, 308):
+            new_url = remote.headers.get("Location")
+            remote.release()
+            if not new_url:
+                break
+            from urllib.parse import urljoin
+            current_url = urljoin(current_url, new_url)
+        else:
+            break
+            
+    if not remote or remote.status >= 400:
+        if remote: remote.release()
+        raise Exception(f"HTTP Error: Download failed with status {remote.status if remote else 'Redirect Loop'}")
+
+    # Safely stream actual media bytes to the editor's disk
+    try:
+        with open(file_path, "wb") as f:
+            async for chunk in remote.content.iter_chunked(2 * 1024 * 1024):
+                if chunk: f.write(chunk)
+    finally:
+        try: remote.release()
+        except Exception: pass
                     
 @app.on_message(filters.command(["mediainfo", "mi"]) & (filters.user(ADMINS) | filters.user(SUDOS)))
 async def mediainfo_handler(client: Client, message: Message):
