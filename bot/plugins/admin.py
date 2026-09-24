@@ -701,7 +701,7 @@ async def download_audio_snippet_http(url, file_path, limit_mb=15):
                     if current_bytes >= limit_mb * 1024 * 1024:
                         break
 
-async def full_download_http(url, file_path):
+async def full_download_http(url, file_path, task_uuid=None):
     """Full HTTP download utilizing the Direct Stream resolver for Terabox/Gdrive/etc."""
     resolved = await resolve_direct_link(url)
     session = await _get_direct_http_session()
@@ -741,15 +741,45 @@ async def full_download_http(url, file_path):
         if remote: remote.release()
         raise Exception(f"HTTP Error: Download failed with status {remote.status if remote else 'Redirect Loop'}")
 
-    # Safely stream actual media bytes to the editor's disk
+    # 🟢 SMART UUID EXTRACTION: Grab the Task ID from the folder path to hook into the Web UI!
+    import re
+    if not task_uuid:
+        m = re.search(r"temp_remux_\d+_([a-zA-Z0-9\-]+)", str(file_path))
+        if m:
+            task_uuid = m.group(1)
+
+    total_size = int(remote.headers.get("Content-Length", 0))
+    downloaded = 0
+    last_log_time = time.time()
+
+    # Safely stream actual media bytes to the editor's disk WITH PROGRESS TRACKING
     try:
         with open(file_path, "wb") as f:
             async for chunk in remote.content.iter_chunked(2 * 1024 * 1024):
-                if chunk: f.write(chunk)
+                if chunk: 
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    
+                    # 1. Update the Web UI Progress Bar & Speeds
+                    if task_uuid:
+                        try:
+                            progress(downloaded, total_size, "down", task_uuid)
+                        except Exception as e:
+                            if "CANCELLED" in str(e):
+                                raise Exception("Download Cancelled by User")
+                                
+                    # 2. Print to Terminal Logs every 5 seconds
+                    now = time.time()
+                    if now - last_log_time >= 5.0:
+                        mb_down = downloaded / (1024 * 1024)
+                        mb_total = total_size / (1024 * 1024) if total_size > 0 else 0
+                        logger.info(f"📥 [EDITOR DOWNLOAD] {mb_down:.1f} MB / {mb_total:.1f} MB")
+                        last_log_time = now
+
     finally:
         try: remote.release()
         except Exception: pass
-                    
+
 @app.on_message(filters.command(["mediainfo", "mi"]) & (filters.user(ADMINS) | filters.user(SUDOS)))
 async def mediainfo_handler(client: Client, message: Message):
     url = None
