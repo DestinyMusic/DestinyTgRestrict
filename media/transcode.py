@@ -250,14 +250,19 @@ async def _api_stream_handler(request):
                 "-af", "aresample=async=1000:min_hard_comp=0.100000:first_pts=0"
             ]
 
-        cmd += [
-            "-avoid_negative_ts", "make_zero",
-            "-max_muxing_queue_size", "9999",
-            "-movflags", "frag_keyframe+empty_moov+default_base_moof",
-            "-muxdelay", "0",
-            "-f", "mp4", "pipe:1"
-        ]
-        mime_type = "video/mp4"
+        if copy_video and not video_codec:
+            # MKV container allows unknown codecs (like VVC) to be packaged without crashing
+            cmd += ["-max_muxing_queue_size", "9999", "-f", "matroska", "pipe:1"]
+            mime_type = "video/x-matroska"
+        else:
+            cmd += [
+                "-avoid_negative_ts", "make_zero",
+                "-max_muxing_queue_size", "9999",
+                "-movflags", "frag_keyframe+empty_moov+default_base_moof",
+                "-muxdelay", "0",
+                "-f", "mp4", "pipe:1"
+            ]
+            mime_type = "video/mp4"
 
     # 🟢 Clear structured status output for video and audio
     logger.info(f"🎬 [VIDEO STATUS] File: {filename} | Codec: {video_codec or 'N/A'} | Copy: {copy_video} | Loaded: YES")
