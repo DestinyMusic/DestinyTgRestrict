@@ -147,6 +147,9 @@ async def _api_stream_handler(request):
                 copy_video = client_supports_vp9
             elif video_codec in {"av1", "av01"}:
                 copy_video = client_supports_av1
+            elif not video_codec:
+                # Force copy if FFprobe cannot identify the codec (e.g. VVC/H.266)
+                copy_video = True
 
     # AUDIO COPY DECISION
     copy_audio = False
@@ -226,7 +229,7 @@ async def _api_stream_handler(request):
         scale_filter = res_scale_map.get(quality)
 
         # Video stream handling
-        if copy_video and not scale_filter:
+        if (copy_video and not scale_filter) or not video_codec:
             cmd += ["-c:v", "copy"]
             if video_codec in {"hevc", "h265", "hvc1", "hev1"}:
                 cmd += ["-tag:v", "hvc1"]  # Mandatory for Safari/iOS & MP4 container playback
