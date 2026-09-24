@@ -560,7 +560,6 @@ async def _api_subtitles_handler(request):
             pass
 
     cmd += [
-        "-copyts", # 🟢 SYNC FIX: Preserves exact original MKV global timestamps!
         "-i", actual_url,
         "-map", f"0:{sub_idx}",
         "-vn", "-an",
