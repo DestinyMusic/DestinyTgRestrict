@@ -473,8 +473,8 @@ async def _api_media_probe_handler(request):
                     "language": lang or "",
                 })
 
-            video_codec = (videos[0].get("codec_name") if videos else "").lower()
-            audio_codec = (audios[0].get("codec_name") if audios else "").lower()
+            video_codec = (videos[0].get("codec_name") or "" if videos else "").lower()
+            audio_codec = (audios[0].get("codec_name") or "" if audios else "").lower()
             browser_compatible = _guess_browser_compatibility(mime_type, real_file_name, streams)
             if not streams:
                 ext = Path(filename_lower).suffix
