@@ -331,10 +331,15 @@ async def _api_tg_stream_handler(request):
                             filename = entry["name"]
                 else:
                     logger.info("🎬 Fake ZIP detected (MKV/MP4 renamed to .zip.001). Bypassing ZIP Engine...")
+                    mime_type = "video/x-matroska" # 🟢 FIX: Force MKV so FFprobe reads it!
                     
             except Exception as e:
                 # 🟢 CATCH TIMEOUTS & BAD ZIPS: If Telegram rejects the ZIP probe, fallback gracefully!
                 logger.warning(f"ZIP probe failed (Fallback to raw stream): {e}")
+
+        # 🟢 FIX: Force MKV mime type ONLY for split ZIPs or split Videos. Protects Audio splits!
+        if bool(re.search(r'\.(zip|mkv|mp4|avi|ts|m4v|mov|wmv|webm|flv|m2ts|mpg|mpeg)\.\d{2,3}$', filename.lower())):
+            mime_type = "video/x-matroska"
 
         if virtual_size <= 0:
             return web.Response(status=502, text="Invalid virtual media size")
