@@ -538,14 +538,27 @@ async def _api_subtitles_handler(request):
     import sys
     
     # 🟢 FIX 1: Set 15MB probesize so files with 40+ tracks (like your 44-stream MKV) are completely indexed
-    # 🟢 FAST SUBTITLE EXTRACTION: Added -analyzeduration 2M and fast-seek flags to eliminate the 2-minute delay
+    start_time = request.query.get("start", None)
+
     cmd = [
         "ffmpeg", "-hide_banner", "-loglevel", "error",
         "-user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36", 
         "-rw_timeout", "60000000", 
         "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5",
         "-seekable", "1", "-multiple_requests", "1",
-        "-analyzeduration", "2000000", "-probesize", "5000000",
+        "-probesize", "15000000", "-analyzeduration", "15000000",
+    ]
+
+    # 🟢 CRITICAL SPEED FIX: Jump directly to the requested timestamp to prevent downloading gigabytes of MKV data!
+    if start_time:
+        try:
+            start_f = max(0.0, float(start_time))
+            if start_f > 0:
+                cmd += ["-ss", f"{start_f:.3f}"]
+        except Exception:
+            pass
+
+    cmd += [
         "-i", actual_url,
         "-map", f"0:{sub_idx}",
         "-vn", "-an",
@@ -598,4 +611,4 @@ async def _api_subtitles_handler(request):
         except: pass
         logger.error(f"❌ [SUBTITLES STATUS] Track #{sub_idx} | Loaded: NO | Exception: {exc}")
         return web.Response(status=502, text=str(exc))
-            
+        
