@@ -23,73 +23,74 @@ async def upload_to_gofile(file_path: str):
                 raise Exception(f"GoFile Error: {upload_data}")
 
 async def process_remux(input_file, output_file, stream_config, global_tags=None):
-    """Instantly reshuffles, delays, adds external tracks, and renames streams without re-encoding."""
-    base_cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"]
-    inputs = ["-i", input_file]
-    input_paths = [input_file]
-    maps_and_meta = []
+    """Instantly reshuffles, delays, adds external tracks, and renames streams using MKVToolNix."""
     
-    # 🟢 Wipe all existing global metadata to ensure a clean slate (Removes Group Watermarks)
-    maps_and_meta.extend(["-map_metadata", "-1"])
+    # Initialize mkvmerge command
+    cmd = ["mkvmerge", "-o", output_file]
     
-    # 🟢 Re-inject only the metadata the user left in the UI boxes
-    if global_tags:
-        for k, v in global_tags.items():
-            if v.strip(): # Only add if the text box wasn't emptied
-                maps_and_meta.extend(["-metadata", f"{k}={v.strip()}"])
-        
-    out_idx = 0
+    # 🟢 Global Metadata (Movie Title)
+    if global_tags and global_tags.get("title"):
+        cmd.extend(["--title", global_tags["title"].strip()])
+
+    main_tracks = []
+    main_args = []
+    ext_args = []
+
     for track in stream_config:
         delay_ms = int(track.get("delay", 0))
-        delay_sec = delay_ms / 1000.0
-
-        # Handle External Track Injections
+        
+        # 🟢 Handle External Track Injections
         if track.get("type") in ["ext_audio", "ext_sub"]:
             ext_file = track.get("local_path")
             if not ext_file or not os.path.exists(ext_file):
                 continue
-                
-            if delay_ms != 0:
-                inputs.extend(["-itsoffset", str(delay_sec), "-i", ext_file])
-                src_id = len(input_paths)
-                input_paths.append(ext_file)
-            else:
-                inputs.extend(["-i", ext_file])
-                src_id = len(input_paths)
-                input_paths.append(ext_file)
-                
-            stream_type = "a:0" if track["type"] == "ext_audio" else "s:0"
-            maps_and_meta.extend(["-map", f"{src_id}:{stream_type}"])
             
+            # External files typically hold their target stream at index 0
+            if delay_ms != 0:
+                ext_args.extend(["--sync", f"0:{delay_ms}"])
+                
             if track.get("title") and track.get("title").lower() != "skip":
-                maps_and_meta.extend([f"-metadata:s:{out_idx}", f"title={track['title']}"])
+                ext_args.extend(["--track-name", f"0:{track['title']}"])
+                
             if track.get("lang"):
-                maps_and_meta.extend([f"-metadata:s:{out_idx}", f"language={track['lang']}"])
+                ext_args.extend(["--language", f"0:{track['lang']}"])
                 
-            out_idx += 1
-        
-        # Handle Original File Tracks
+            ext_args.append(ext_file)
+            
+        # 🟢 Handle Original File Tracks
         else:
-            if delay_ms != 0:
-                inputs.extend(["-itsoffset", str(delay_sec), "-i", input_file])
-                src_id = len(input_paths)
-                input_paths.append(input_file)
-            else:
-                src_id = 0
-                
             idx = str(track.get('index', '0')).replace('v:', '').replace('a:', '').replace('s:', '')
-            maps_and_meta.extend(["-map", f"{src_id}:{idx}"])
+            main_tracks.append(idx)
             
-            if track.get("title") and track.get("title").lower() != "skip":
-                maps_and_meta.extend([f"-metadata:s:{out_idx}", f"title={track['title']}"])
+            if delay_ms != 0:
+                main_args.extend(["--sync", f"{idx}:{delay_ms}"])
                 
-            out_idx += 1
-            
-    final_cmd = base_cmd + inputs + maps_and_meta + ["-c", "copy", output_file]
-    proc = await asyncio.create_subprocess_exec(*final_cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            if track.get("title") and track.get("title").lower() != "skip":
+                main_args.extend(["--track-name", f"{idx}:{track['title']}"])
+                
+            if track.get("lang"):
+                main_args.extend(["--language", f"{idx}:{track['lang']}"])
+
+    # Build the final command structure
+    if main_tracks:
+        cmd.extend(["--tracks", ",".join(main_tracks)])
+        cmd.extend(main_args)
+        cmd.append(input_file)
+    else:
+        # Failsafe if the user unchecked all original video/audio tracks
+        cmd.extend(["--no-video", "--no-audio", "--no-subtitles", input_file]) 
+
+    # Append external tracks to the end of the command
+    cmd.extend(ext_args)
+    
+    # Execute MKVToolNix
+    proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     out, err = await proc.communicate()
     
-    if proc.returncode != 0: 
-        raise Exception(err.decode())
+    if proc.returncode != 0:
+        err_str = err.decode('utf-8', errors='ignore')
+        raise Exception(f"MKVMerge Error: {err_str}")
+        
     return output_file
+
 # ==============================================================================
