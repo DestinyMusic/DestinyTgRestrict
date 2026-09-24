@@ -27,6 +27,7 @@ RUN apt-get update && \
     git \
     curl \
     wget \
+    mkvtoolnix
     fonts-freefont-ttf && \
     rm -rf /var/lib/apt/lists/*
 
