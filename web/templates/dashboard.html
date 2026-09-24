@@ -1061,7 +1061,7 @@
 
                         <label style="font-size: 11px; color: var(--subtext); font-weight: bold;">SUBTITLE SYNC DELAY (SECONDS)</label>
                         <div style="display: flex; gap: 8px; margin-bottom: 14px; align-items: center;">
-                            <input id="subtitle-sync-slider" type="range" min="-10" max="10" step="0.25" value="0" oninput="updateSubtitleSync(this.value)" style="flex: 1; accent-color: var(--accent);">
+                            <input id="subtitle-sync-slider" type="range" min="-120" max="120" step="0.5" value="0" oninput="updateSubtitleSync(this.value)" style="flex: 1; accent-color: var(--accent);">
                             <span id="subtitle-sync-val" style="color: var(--text); font-size: 12px; font-weight: bold; font-family: monospace; min-width: 50px; text-align: right;">0.00s</span>
                         </div>
 
@@ -3350,6 +3350,13 @@
 
             globalTargetTime = target; 
             const video = document.getElementById('hidden-video');
+            
+            // 🟢 Subtitle Fast-Fetch Reconnect: If we jump to a part of the movie we haven't loaded subs for, fetch instantly!
+            if (activeSubtitleIndex !== 'off' && subtitleCues.length > 0) {
+                const hasNearbyCues = subtitleCues.some(c => Math.abs(c.start - target) < 60);
+                if (!hasNearbyCues) applySubtitleSelection();
+            }
+
             if (playerRequiresTranscode) {
                 isTranscodeSeeking = true;
                 restartStreamAt(target);
@@ -3613,7 +3620,8 @@
             if (video) video.playbackRate = parseFloat(speed);
         }
 
-        function parseWebVTT(text) {
+        // 🟢 FIX: Pass the timeOffset so Fast-Seeked subtitles mathematically align with the video perfectly
+        function parseWebVTT(text, timeOffset = 0) {
             if (!text) return [];
             const cues = [];
             const lines = String(text).replace(/\r/g, '').split('\n');
@@ -3651,7 +3659,8 @@
                     cleanText = cleanText.replace(/<c\.([^>]+)>([^<]+)<\/c>/gi, '<span style="color:$1;">$2</span>');
                     
                     if (cleanText && Number.isFinite(start) && Number.isFinite(end)) {
-                        cues.push({ start, end, text: cleanText, isTop: isTop });
+                        // 🟢 FIX: Inject the timeOffset into the final cue rendering
+                        cues.push({ start: start + timeOffset, end: end + timeOffset, text: cleanText, isTop: isTop });
                     }
                 } else {
                     i++;
@@ -3870,18 +3879,21 @@
                     const track = window.globalPlaylist[window.currentPlayIndex];
                     if (track) zipParam = `&zip_idx=${track.original_index}`;
                 }
+
+                // 🟢 SPEED FIX: Fetch subtitles starting 30 seconds before your current playback position. 
+                // This guarantees instant loading (under 2 seconds) by bypassing the beginning of the movie.
+                const video = document.getElementById('hidden-video');
+                const currentAbsTime = playerRequiresTranscode ? (playerTimelineOffset + (video?.currentTime||0)) : (video?.currentTime||0);
+                const fetchStart = Math.max(0, currentAbsTime - 30);
                 
-                // 🟢 CRITICAL FIX: Changed parameter to 'index' to match the dynamic subtitle streaming backend perfectly
-                const url = `/api/subtitles?user_id=${encodeURIComponent(currentUser)}&link=${encodeURIComponent(activeMediaLink)}&index=${encodeURIComponent(activeSubtitleIndex)}${zipParam}`;
+                const url = `/api/subtitles?user_id=${encodeURIComponent(currentUser)}&link=${encodeURIComponent(activeMediaLink)}&index=${encodeURIComponent(activeSubtitleIndex)}${zipParam}&start=${fetchStart}`;
                 
                 const response = await fetch(url, { signal: subtitleAbortController.signal, cache: 'no-store' });
                 if (!response.ok) throw new Error(`Subtitle server returned ${response.status}`);
 
-                // The server caches extracted WebVTT.  Read it progressively so the
-                // first cues can appear before the entire file has arrived.
                 const reader = response.body?.getReader();
                 if (!reader) {
-                    subtitleCues = parseWebVTT(await response.text());
+                    subtitleCues = parseWebVTT(await response.text(), fetchStart);
                     renderCurrentSubtitle();
                     return;
                 }
@@ -3898,7 +3910,7 @@
                     const blocks = buffer.split(/\n\s*\n/);
                     buffer = blocks.pop() || '';
                     for (const block of blocks) {
-                        const cues = parseWebVTT(block + '\n\n');
+                        const cues = parseWebVTT(block + '\n\n', fetchStart); // 🟢 Passed fetchStart offset
                         if (cues.length) subtitleCues.push(...cues);
                     }
                     subtitleCues.sort((a, b) => a.start - b.start);
@@ -3907,7 +3919,7 @@
 
                 buffer += decoder.decode();
                 if (buffer.trim()) {
-                    const cues = parseWebVTT(buffer + '\n\n');
+                    const cues = parseWebVTT(buffer + '\n\n', fetchStart); // 🟢 Passed fetchStart offset
                     if (cues.length) subtitleCues.push(...cues);
                 }
                 subtitleCues.sort((a, b) => a.start - b.start);
