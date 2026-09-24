@@ -2903,19 +2903,34 @@
             varying vec2 v_uv;
 
             void main() {
-                vec2 uvL = v_uv;
-                vec2 uvR = v_uv;
+                // 1. Determine which eye we are currently rendering for
+                vec2 base_uv = v_uv;
+                bool is_left_eye = true;
 
-                if (u_in_mode == 1) {
-                    uvL = vec2(v_uv.x * 0.5, v_uv.y);
-                    uvR = vec2(0.5 + v_uv.x * 0.5, v_uv.y);
-                } else if (u_in_mode == 2) {
-                    uvL = vec2(v_uv.x, v_uv.y * 0.5);
-                    uvR = vec2(v_uv.x, 0.5 + v_uv.y * 0.5);
-                } else if (u_in_mode == 3) {
+                if (u_out_mode == 3) { // VR (Side-by-Side Output)
+                    if (v_uv.x < 0.5) {
+                        base_uv = vec2(v_uv.x * 2.0, v_uv.y);
+                        is_left_eye = true;
+                    } else {
+                        base_uv = vec2((v_uv.x - 0.5) * 2.0, v_uv.y);
+                        is_left_eye = false;
+                    }
+                }
+
+                // 2. Map the base coordinate to the source texture format
+                vec2 uvL = base_uv;
+                vec2 uvR = base_uv;
+
+                if (u_in_mode == 1) { // Left/Right Input
+                    uvL = vec2(base_uv.x * 0.5, base_uv.y);
+                    uvR = vec2(0.5 + base_uv.x * 0.5, base_uv.y);
+                } else if (u_in_mode == 2) { // Top/Bottom Input
+                    uvL = vec2(base_uv.x, base_uv.y * 0.5);
+                    uvR = vec2(base_uv.x, 0.5 + base_uv.y * 0.5);
+                } else if (u_in_mode == 3) { // Column Interleaved Input
                     float col = mod(gl_FragCoord.x, 2.0);
                     if (col < 1.0) { uvR = uvL; } else { uvL = uvR; }
-                } else if (u_in_mode == 4) {
+                } else if (u_in_mode == 4) { // Row Interleaved Input
                     float row = mod(gl_FragCoord.y, 2.0);
                     if (row < 1.0) { uvR = uvL; } else { uvL = uvR; }
                 }
@@ -2924,20 +2939,21 @@
                     vec2 tmp = uvL; uvL = uvR; uvR = tmp;
                 }
 
+                // 3. Sample the pixels
                 vec4 cL = texture2D(u_image, uvL);
                 vec4 cR = texture2D(u_image, uvR);
 
-                if (u_in_mode == 0 || u_out_mode == 4) {
+                // 4. Output based on chosen format
+                if (u_in_mode == 0 || u_out_mode == 4) { // None / 2D Out
                     gl_FragColor = cL;
-                } else if (u_out_mode == 0) {
+                } else if (u_out_mode == 3) { // VR (Side-by-Side Out)
+                    gl_FragColor = is_left_eye ? cL : cR;
+                } else if (u_out_mode == 0) { // Red/Cyan
                     gl_FragColor = vec4(cL.r, cR.g, cR.b, 1.0);
-                } else if (u_out_mode == 1) {
+                } else if (u_out_mode == 1) { // Green/Magenta
                     gl_FragColor = vec4(cR.r, cL.g, cR.b, 1.0);
-                } else if (u_out_mode == 2) {
+                } else if (u_out_mode == 2) { // Blue/Amber
                     gl_FragColor = vec4(cR.r, cR.g, cL.b, 1.0);
-                } else if (u_out_mode == 3) {
-                    if (v_uv.x < 0.5) gl_FragColor = texture2D(u_image, vec2(v_uv.x * 2.0, v_uv.y));
-                    else gl_FragColor = texture2D(u_image, vec2((v_uv.x - 0.5) * 2.0, v_uv.y));
                 }
             }
         `;
