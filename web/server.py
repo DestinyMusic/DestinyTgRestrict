@@ -1523,17 +1523,16 @@ async def _api_editor_progress(request):
     state = EDITOR_UI_STATE[task_uuid]
     resp = {"status": "success", "phase": state["phase"], "done": state["done"], "error": state["error"]}
     
-    # Bridge the Telegram progress stats into the Web Dashboard
-    if state["status_msg_id"]:
-        typ = "down" if state["phase"] == "Downloading" else ("up" if state["phase"] == "Uploading" else None)
-        if typ:
-            prog = PROGRESS.get(f"{task_uuid}:{typ}")
-            if prog:
-                resp["percent"] = prog.get("percent", 0)
-                resp["speed"] = prog.get("speed", 0)
-                resp["current"] = prog.get("current", 0)
-                resp["total"] = prog.get("total", 0)
-                resp["eta"] = prog.get("eta", 0)
+    # 🟢 Bridge download AND split uploads ("Uploading Part 1/3") into the Web UI
+    typ = "down" if "Downloading" in state["phase"] else ("up" if "Uploading" in state["phase"] else None)
+    if typ:
+        prog = PROGRESS.get(f"{task_uuid}:{typ}")
+        if prog:
+            resp["percent"] = prog.get("percent", 0)
+            resp["speed"] = prog.get("speed", 0)
+            resp["current"] = prog.get("current", 0)
+            resp["total"] = prog.get("total", 0)
+            resp["eta"] = prog.get("eta", 0)
                 
     return web.json_response(resp)
     
@@ -1544,6 +1543,7 @@ async def _api_edit_media_handler(request):
     config = data.get("config", [])
     new_name = data.get("new_name", "output.mkv")
     dest = data.get("dest", "tg")
+    upload_mode = data.get("upload_mode", "document").lower()  # 'document', 'video', 'zip'
     thumb_b64 = data.get("thumb", "")
     global_tags = data.get("global_tags", {})
     
@@ -1551,14 +1551,24 @@ async def _api_edit_media_handler(request):
         return web.json_response({"status": "error", "message": "Missing link or config"})
         
     import time
+    import math
     from pathlib import Path
     import shutil
     import base64
+    import os
+    import zipfile
     
     task_uuid = uuid.uuid4().hex[:8]
     temp_dir = Path(f"./temp_remux_{uid}_{task_uuid}")
     EDITOR_UI_STATE[task_uuid] = {"phase": "Starting...", "status_msg_id": None, "error": None, "done": False}
     
+    async def safe_tg_edit(msg, text):
+        """Helper to edit the single status message safely without flood waits."""
+        try:
+            await msg.edit_text(text)
+        except Exception:
+            pass
+
     async def background_editor():
         temp_dir.mkdir(parents=True, exist_ok=True)
         input_file = temp_dir / "input_media.dat"
@@ -1566,7 +1576,11 @@ async def _api_edit_media_handler(request):
         thumb_path = None
         
         try:
-            status_msg = await app.send_message(uid, f"⚙️ **Media Editor Task Started!**\n\n**Target:** `{new_name}`\n⏳ Downloading sources...")
+            # Send ONLY 1 status message in Telegram to prevent clutter
+            status_msg = await app.send_message(
+                uid, 
+                f"⚙️ **Media Editor Task Started!**\n\n📄 **Target:** `{new_name}`\n⏳ **Phase:** Downloading sources..."
+            )
             EDITOR_UI_STATE[task_uuid]["status_msg_id"] = status_msg.id
             
             if thumb_b64:
@@ -1578,7 +1592,7 @@ async def _api_edit_media_handler(request):
                 except Exception as e:
                     logger.warning(f"Thumb decode failed: {e}")
 
-            # 🟢 DOWNLOAD EXTERNAL TRACKS
+            # 🟢 1. DOWNLOAD EXTERNAL TRACKS
             EDITOR_UI_STATE[task_uuid]["phase"] = "Downloading"
             for idx, track in enumerate(config):
                 if track.get("type") in ["ext_audio", "ext_sub"]:
@@ -1599,12 +1613,12 @@ async def _api_edit_media_handler(request):
                                 emsg = await get_client_msg(eclient, eparsed["chat_id"], eparsed["msg_id"])
                                 await eclient.download_media(emsg, file_name=str(ext_path))
                             else:
-                                await full_download_http(ext_link, str(ext_path))
+                                await full_download_http(ext_link, str(ext_path), task_uuid=task_uuid)
                         except Exception: pass
                     if ext_path.exists():
                         track["local_path"] = str(ext_path)
 
-            # 🟢 DOWNLOAD MAIN FILE
+            # 🟢 2. DOWNLOAD MAIN FILE
             is_tg = _is_tg_link(link)
             if is_tg:
                 parsed = _parse_source_link(link)
@@ -1614,38 +1628,48 @@ async def _api_edit_media_handler(request):
                 msg = await get_client_msg(client_to_use, parsed["chat_id"], parsed["msg_id"])
                 await client_to_use.download_media(msg, file_name=str(input_file), progress=progress, progress_args=["down", task_uuid])
             else:
-                await full_download_http(link, str(input_file))
+                await full_download_http(link, str(input_file), task_uuid=task_uuid)
                 
+            # 🟢 3. REMUX (MKVToolNix)
             EDITOR_UI_STATE[task_uuid]["phase"] = "Remuxing"
-            await status_msg.edit_text("⚙️ **Remuxing Tracks (Instant Copy)...**")
+            await safe_tg_edit(status_msg, f"⚙️ **Remuxing Tracks (MKVToolNix)...**\n\n📄 `{new_name}`")
             await process_remux(str(input_file), str(output_file), config, global_tags)
             
+            # 🟢 4. OPTIONAL ZIP COMPRESSION
+            if upload_mode == "zip":
+                EDITOR_UI_STATE[task_uuid]["phase"] = "Zipping"
+                await safe_tg_edit(status_msg, f"🗜 **Zipping Media...**\n\n📄 `{new_name}.zip`")
+                zip_path = str(output_file) + ".zip"
+                
+                def create_stored_zip():
+                    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_STORED) as zf:
+                        zf.write(output_file, arcname=output_file.name)
+                        
+                await asyncio.to_thread(create_stored_zip)
+                try: os.remove(output_file)
+                except Exception: pass
+                output_file = Path(zip_path)
+                new_name = output_file.name
+
+            # 🟢 5. UPLOAD TO GOFILE OR TELEGRAM
             if dest == "gofile":
                 EDITOR_UI_STATE[task_uuid]["phase"] = "Uploading"
-                await status_msg.edit_text("☁️ **Uploading to GoFile...**")
+                await safe_tg_edit(status_msg, "☁️ **Uploading to GoFile...**")
                 url = await upload_to_gofile(str(output_file))
-                await status_msg.edit_text(f"✅ **Success! Uploaded to GoFile.**\n\n🔗 **Link:** {url}", disable_web_page_preview=True)
+                await status_msg.delete()
+                await app.send_message(
+                    uid, 
+                    f"✅ **Media Editor Completed!**\n\n📄 **File:** `{new_name}`\n🔗 **GoFile Link:** {url}",
+                    disable_web_page_preview=True
+                )
             else:
                 upload_chat_id = uid if dest == "tg" else dest
                 try: upload_chat_id = int(upload_chat_id)
                 except: pass
                 
-                kwargs = {
-                    "chat_id": upload_chat_id,
-                    "document": str(output_file),
-                    "caption": f"**{new_name}**"
-                }
-                if thumb_path and thumb_path.exists():
-                    kwargs["thumb"] = str(thumb_path)
-
-                # 🟢 SMART UPLOAD ENGINE (>2GB & Premium Logic)
-                file_size = os.path.getsize(output_file)
-                split_limit = 2000 * 1024 * 1024 
-                
+                # Check User Premium Status
                 uclient = USER_CLIENTS.get(uid)
                 is_premium = False
-                
-                # Wake up user session if asleep to check Premium status
                 if not uclient or not uclient.is_connected:
                     session_str = await db.get_session(uid)
                     if session_str:
@@ -1658,7 +1682,6 @@ async def _api_edit_media_handler(request):
                             api_hash=u_hash, 
                             ipv6=False,
                             sleep_threshold=120,
-                            # 🟢 FIX: Scale workers up so the Editor doesn't lock the queue
                             **get_transmission_kwargs(workers=100, is_bot=False) 
                         )
                         await uclient.start()
@@ -1669,37 +1692,103 @@ async def _api_edit_media_handler(request):
                         me = uclient.me or await uclient.get_me()
                         is_premium = getattr(me, "is_premium", False)
                     except: pass
-                
-                EDITOR_UI_STATE[task_uuid]["phase"] = "Uploading"
 
-                if file_size > split_limit and not is_premium:
-                    EDITOR_UI_STATE[task_uuid]["phase"] = "Splitting"
-                    await status_msg.edit_text(f"✂️ **Splitting large file ({_pretty_bytes(file_size)})...**")
-                    parts = await split_file_python(str(output_file), chunk_size=1900*1024*1024)
-                    
-                    EDITOR_UI_STATE[task_uuid]["phase"] = "Uploading"
-                    for i, part in enumerate(parts):
-                        await status_msg.edit_text(f"☁️ **Uploading Part {i+1}/{len(parts)}...**")
-                        kwargs["document"] = str(part)
-                        kwargs["caption"] = f"**{part.name}**"
-                        await safe_send(app, uid, upload_chat_id, task_uuid, True, app.send_document, progress=progress, progress_args=["up", task_uuid], **kwargs)
-                        try: os.remove(part)
-                        except: pass
-                        
-                        # 🟢 FIX: Pace split uploads to avoid spamming the upload handler
-                        await asyncio.sleep(3.0)
-                        
-                elif file_size > split_limit and is_premium:
-                    await status_msg.edit_text(f"☁️ **Uploading via Premium Session ({_pretty_bytes(file_size)})...**")
-                    await safe_send(uclient, uid, upload_chat_id, task_uuid, False, uclient.send_document, progress=progress, progress_args=["up", task_uuid], **kwargs)
-                else:
-                    await status_msg.edit_text("☁️ **Uploading to Destination...**")
-                    await safe_send(app, uid, upload_chat_id, task_uuid, True, app.send_document, progress=progress, progress_args=["up", task_uuid], **kwargs)
-                    
-                await status_msg.delete()
+                # Select upload client (prefer User Session for large/premium files)
+                upload_client = uclient if (uclient and uclient.is_connected) else app
+                is_bot = (upload_client == app)
                 
-                if str(upload_chat_id) != str(uid):
-                    await app.send_message(uid, f"✅ **Media Editor Completed!**\nFile `{new_name}` was successfully uploaded to your selected chat.")
+                # Binary split limits: 3.98GB (Premium) vs 1.98GB (Standard)
+                max_size = (3980 * 1024 * 1024) if is_premium else (1980 * 1024 * 1024)
+                file_size = os.path.getsize(output_file)
+                total_parts = math.ceil(file_size / max_size)
+                final_thumb = str(thumb_path) if (thumb_path and thumb_path.exists()) else None
+
+                # 🟢 MULTI-PART BINARY SPLIT UPLOAD
+                if total_parts > 1:
+                    EDITOR_UI_STATE[task_uuid]["phase"] = f"Splitting into {total_parts} parts"
+                    await safe_tg_edit(status_msg, f"✂️ **Splitting into {total_parts} Parts...**\n({_pretty_bytes(file_size)})")
+                    
+                    part_num = 1
+                    with open(output_file, 'rb') as f:
+                        while True:
+                            chunk = f.read(max_size)
+                            if not chunk:
+                                break
+                                
+                            part_path = temp_dir / f"{new_name}.{part_num:03d}"
+                            with open(part_path, 'wb') as pf:
+                                pf.write(chunk)
+                                
+                            EDITOR_UI_STATE[task_uuid]["phase"] = f"Uploading Part {part_num}/{total_parts}"
+                            await safe_tg_edit(
+                                status_msg, 
+                                f"☁️ **Uploading Part {part_num} of {total_parts}...**\n"
+                                f"*(Mode: Document | {'4GB Premium' if is_premium else '2GB Standard'})*"
+                            )
+                            
+                            # Split chunks must upload as documents so binary headers stay intact
+                            await safe_send(
+                                upload_client, 
+                                uid, 
+                                upload_chat_id, 
+                                task_uuid, 
+                                is_bot, 
+                                upload_client.send_document, 
+                                progress=progress, 
+                                progress_args=["up", task_uuid],
+                                chat_id=upload_chat_id,
+                                document=str(part_path),
+                                thumb=final_thumb,
+                                caption=f"✅ **Part {part_num}/{total_parts}:** `{part_path.name}`"
+                            )
+                            
+                            try: os.remove(part_path)
+                            except Exception: pass
+                            part_num += 1
+                            await asyncio.sleep(2.0)
+                            
+                # 🟢 SINGLE FILE UPLOAD
+                else:
+                    EDITOR_UI_STATE[task_uuid]["phase"] = "Uploading"
+                    await safe_tg_edit(status_msg, f"☁️ **Uploading Media...**\n*(Mode: {upload_mode.title()})*")
+                    
+                    send_fn = upload_client.send_video if (upload_mode == "video") else upload_client.send_document
+                    doc_key = "video" if (upload_mode == "video") else "document"
+                    
+                    extra_kwargs = {}
+                    if upload_mode == "video":
+                        extra_kwargs["supports_streaming"] = True
+                        
+                    await safe_send(
+                        upload_client,
+                        uid,
+                        upload_chat_id,
+                        task_uuid,
+                        is_bot,
+                        send_fn,
+                        progress=progress,
+                        progress_args=["up", task_uuid],
+                        chat_id=upload_chat_id,
+                        **{doc_key: str(output_file)},
+                        thumb=final_thumb,
+                        caption=f"✅ **Remuxed:** `{new_name}`",
+                        **extra_kwargs
+                    )
+
+                # Delete the temporary status message and send 1 final confirmation
+                try: await status_msg.delete()
+                except Exception: pass
+
+                done_text = (
+                    f"✅ **Media Editor Completed!**\n\n"
+                    f"📄 **File:** `{new_name}`\n"
+                    f"📦 **Format:** `{upload_mode.upper()}`\n"
+                    f"📊 **Size:** `{_pretty_bytes(file_size)}`"
+                )
+                if total_parts > 1:
+                    done_text += f"\n✂️ **Parts Delivered:** `{total_parts}`"
+
+                await app.send_message(uid, done_text)
                     
             EDITOR_UI_STATE[task_uuid]["done"] = True
         except Exception as e:
