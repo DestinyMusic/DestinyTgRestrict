@@ -105,6 +105,7 @@ async def _api_stream_handler(request):
     audio_codec = audio_codec_req
     channels = 2
     pix_fmt = "yuv420p"
+    has_video = False
 
     if cached_meta:
         meta = cached_meta[0]
@@ -116,11 +117,12 @@ async def _api_stream_handler(request):
         for s in streams:
             if s.get("codec_type") == "video" and s.get("codec_name") not in {"mjpeg", "png", "bmp", "webp"}:
                 pix_fmt = s.get("pix_fmt", "yuv420p").lower()
+                has_video = True
                 break
             if s.get("codec_type") == "audio":
                 channels = int(s.get("channels") or 2)
 
-    is_audio = (not video_codec and bool(audio_codec)) or filename.endswith(
+    is_audio = (not has_video and not video_codec and bool(audio_codec)) or filename.endswith(
         (".flac", ".mp3", ".m4a", ".ogg", ".wav", ".aac", ".wma", ".opus", ".dsf", ".ape", ".mka", ".alac")
     )
     is_mkv_or_non_mp4 = filename.endswith((".mkv", ".mka", ".avi", ".wmv", ".flv", ".ts", ".m2ts", ".vob", ".webm"))
