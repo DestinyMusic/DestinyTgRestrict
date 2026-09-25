@@ -1485,7 +1485,31 @@
                     <p style="font-size: 12px; color: var(--subtext); margin-top: 0;">This archive contains multiple tracks. The editor will extract and upload each file individually with rich audio/video metadata captions.</p>
                     <div id="archive-tracks-preview" style="max-height: 250px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; margin-bottom: 20px; padding-right: 5px;"></div>
                     
-                    <button class="primary-btn" id="archive-submit-btn" style="background: linear-gradient(135deg, #10b981, #059669);" onclick="submitArchiveTask()">⚡ Extract & Upload All Tracks</button>
+                    <!-- 🟢 NEW: Archive Destination Options -->
+                    <div class="input-group" style="margin-top: 15px;">
+                        <label>Upload Format (For extracted files)</label>
+                        <select id="archive-upload-mode" class="pop-select">
+                            <option value="video" selected>Playable Media (Video/Audio Player)</option>
+                            <option value="document">Force as Documents</option>
+                        </select>
+                    </div>
+                    
+                    <div class="input-group">
+                        <label>Upload Destination</label>
+                        <div style="display: flex; gap: 8px;">
+                            <select id="archive-dest" class="pop-select" style="flex: 1;">
+                                <option value="tg">Telegram (Saved Messages)</option>
+                                <option value="gofile">GoFile.io (Public Link)</option>
+                            </select>
+                            <button class="primary-btn" style="width: auto; padding: 0 15px; background: rgba(239,68,68,0.2); color: #ef4444; border: 1px solid rgba(239,68,68,0.5);" onclick="removeCustomDestArchive()">Delete</button>
+                        </div>
+                        <div style="display: flex; gap: 8px; margin-top: 10px;">
+                            <input type="text" id="archive-custom-dest" placeholder="Add Custom ID (e.g. -100123/5)" style="flex: 1; padding: 12px; border-radius: 12px; border: 1px solid var(--card-border); background: rgba(0,0,0,0.3); color: #fff; font-size: 12px; outline: none;">
+                            <button class="primary-btn" style="width: auto; padding: 0 15px; background: rgba(16,185,129,0.2); color: #10b981; border: 1px solid rgba(16,185,129,0.5);" onclick="addCustomDestArchive()">Save ID</button>
+                        </div>
+                    </div>
+
+                    <button class="primary-btn" id="archive-submit-btn" style="background: linear-gradient(135deg, #10b981, #059669); margin-top: 10px;" onclick="submitArchiveTask()">⚡ Extract & Upload All Tracks</button>
                 </div>
 
                 <div class="card" id="editor-workspace" style="display: none; border-color: var(--accent);">
@@ -5493,6 +5517,10 @@
             }
             
             destSelect.innerHTML = html;
+            
+            const archiveSelect = document.getElementById('archive-dest');
+            if (archiveSelect) archiveSelect.innerHTML = html;
+            
             // 🟢 THE FIX: Re-load and re-inject your custom saved IDs immediately after rebuilding!
             loadCustomDests(); 
         }
@@ -5529,13 +5557,15 @@
                         
                         const audios = plistData.playlist.filter(t => /\.(flac|mp3|m4a|wav|aac|opus|ogg|alac|mka|dsf|dff|ac3|eac3|dts)$/i.test(t.display_name || t.name || ''));
                         const videos = plistData.playlist.filter(t => /\.(mp4|mkv|webm|avi|ts|mov)$/i.test(t.display_name || t.name || ''));
+                        const docs = plistData.playlist.filter(t => /\.(txt|lrc|srt|vtt|nfo|jpg|jpeg|png|pdf)$/i.test(t.display_name || t.name || ''));
                         
-                        document.getElementById('archive-track-count').innerText = `${audios.length} Audio, ${videos.length} Video`;
+                        document.getElementById('archive-track-count').innerText = `${audios.length} Audio, ${videos.length} Video, ${docs.length} Docs`;
                         
                         const previewEl = document.getElementById('archive-tracks-preview');
-                        previewEl.innerHTML = plistData.playlist.map((t, idx) => {
+                        previewEl.innerHTML = plistData.playlist.filter(t => /\.(flac|mp3|m4a|wav|aac|opus|ogg|alac|mka|dsf|dff|ac3|eac3|dts|mp4|mkv|webm|avi|ts|mov|txt|lrc|srt|vtt|nfo|jpg|jpeg|png|pdf)$/i.test(t.display_name || t.name || '')).map((t, idx) => {
                             const isVid = /\.(mp4|mkv|webm|avi|ts|mov)$/i.test(t.display_name || t.name || '');
-                            const icon = isVid ? '🎬' : '🎧';
+                            const isDoc = /\.(txt|lrc|srt|vtt|nfo|jpg|jpeg|png|pdf)$/i.test(t.display_name || t.name || '');
+                            const icon = isVid ? '🎬' : (isDoc ? '📄' : '🎧');
                             return `
                                 <div style="background: rgba(0,0,0,0.3); border: 1px solid var(--card-border); padding: 8px 12px; border-radius: 8px; font-size: 12px; color: #cbd5e1; display: flex; justify-content: space-between;">
                                     <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80%;">${icon} ${t.display_name || t.name}</span>
@@ -5709,18 +5739,45 @@
         // 🟢 1. CUSTOM DESTINATION SAVING LOGIC
         function loadCustomDests() {
             let dests = JSON.parse(localStorage.getItem('editor_dests') || '[]');
-            let select = document.getElementById('editor-dest');
-            // Clear old custom options to prevent duplicates
-            Array.from(select.options).forEach(opt => { if(opt.dataset.custom) opt.remove(); });
             
-            dests.forEach(d => {
-                let opt = document.createElement('option');
-                opt.value = d;
-                opt.innerText = `📁 Saved ID: ${d}`;
-                opt.dataset.custom = 'true';
-                select.appendChild(opt);
-            });
-            initCustomSelects(); // Re-render Glass UI
+            function applyToSelect(selectId) {
+                let select = document.getElementById(selectId);
+                if (!select) return;
+                Array.from(select.options).forEach(opt => { if(opt.dataset.custom) opt.remove(); });
+                dests.forEach(d => {
+                    let opt = document.createElement('option');
+                    opt.value = d;
+                    opt.innerText = `📁 Saved ID: ${d}`;
+                    opt.dataset.custom = 'true';
+                    select.appendChild(opt);
+                });
+            }
+            
+            applyToSelect('editor-dest');
+            applyToSelect('archive-dest');
+            initCustomSelects(); 
+        }
+
+        // Keep your original add/remove buttons, but add these handlers for the Archive panel too:
+        function addCustomDestArchive() {
+            let val = document.getElementById('archive-custom-dest').value.trim();
+            if(!val) return;
+            let dests = JSON.parse(localStorage.getItem('editor_dests') || '[]');
+            if(!dests.includes(val)) { dests.push(val); localStorage.setItem('editor_dests', JSON.stringify(dests)); }
+            document.getElementById('archive-custom-dest').value = '';
+            loadCustomDests();
+            document.getElementById('archive-dest').value = val;
+            initCustomSelects();
+        }
+
+        function removeCustomDestArchive() {
+            let val = document.getElementById('archive-dest').value;
+            if(val === 'tg' || val === 'gofile') return alert("You cannot delete the default destinations.");
+            let dests = JSON.parse(localStorage.getItem('editor_dests') || '[]');
+            dests = dests.filter(d => d !== val);
+            localStorage.setItem('editor_dests', JSON.stringify(dests));
+            document.getElementById('archive-dest').value = 'tg';
+            loadCustomDests();
         }
 
         function addCustomDest() {
@@ -5947,7 +6004,10 @@
         }
 
         async function submitArchiveTask() {
-            const dest = document.getElementById('editor-dest').value;
+            let dest = document.getElementById('archive-custom-dest').value.trim();
+            if (!dest) { dest = document.getElementById('archive-dest').value; }
+            const uploadMode = document.getElementById('archive-upload-mode').value;
+            
             const uiId = 'edtask-' + Date.now();
             const archiveName = window.editorMediaLink.split('/').pop().split('?')[0] || "Archive_Batch";
             
@@ -5980,7 +6040,8 @@
                         token: currentToken,
                         link: window.editorMediaLink,
                         is_archive: true,
-                        dest: dest
+                        dest: dest,
+                        upload_mode: uploadMode
                     })
                 });
                 const data = await res.json();
