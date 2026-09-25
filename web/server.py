@@ -1779,14 +1779,25 @@ async def _api_edit_media_handler(request):
                     
                     caption_text = await generate_rich_caption(track_path, track_path.name)
                     
-                    # 🟢 THE FIX: Intelligent Media Type Detection
+                    # 🟢 THE FIX: Intelligent Media Type & Native Metadata Detection
                     is_video_track = track_path.suffix.lower() in ('.mp4', '.mkv', '.webm', '.avi', '.ts')
                     is_audio_track = track_path.suffix.lower() in ('.flac', '.mp3', '.m4a', '.wav', '.aac', '.opus', '.ogg', '.alac', '.mka')
+                    
+                    extra_kw = {}
+                    track_thumb = thumb_path
+                    audio_meta = {}
                     
                     if is_audio_track:
                         send_fn = upload_client.send_audio
                         doc_key = "audio"
-                        extra_kw = {}
+                        audio_meta = await get_audio_metadata(track_path)
+                        extra_kw.update({
+                            "duration": audio_meta.get("duration", 0),
+                            "performer": audio_meta.get("performer", "Unknown Artist"),
+                            "title": audio_meta.get("title", track_path.name)
+                        })
+                        if not track_thumb and audio_meta.get("thumb"):
+                            track_thumb = Path(audio_meta["thumb"])
                     elif is_video_track:
                         send_fn = upload_client.send_video
                         doc_key = "video"
@@ -1794,16 +1805,19 @@ async def _api_edit_media_handler(request):
                     else:
                         send_fn = upload_client.send_document
                         doc_key = "document"
-                        extra_kw = {}
                     
                     await safe_send(
                         upload_client, uid, final_chat_id, task_uuid, is_bot, send_fn,
                         progress=progress, progress_args=["up", task_uuid],
                         chat_id=final_chat_id, message_thread_id=upload_thread_id,
-                        thumb=thumb_path, caption=caption_text, **{doc_key: str(track_path)}, **extra_kw
+                        thumb=str(track_thumb) if track_thumb else None, 
+                        caption=caption_text, **{doc_key: str(track_path)}, **extra_kw
                     )
                     try: os.remove(track_path)
                     except Exception: pass
+                    if audio_meta.get("thumb"):
+                        try: os.remove(audio_meta["thumb"])
+                        except Exception: pass
                     await asyncio.sleep(1.5)
                     
                 try: await status_msg.delete()
@@ -1895,6 +1909,40 @@ async def _api_edit_media_handler(request):
                     except Exception:
                         return f"`{file_name}`"
 
+                # 🟢 NEW: AUDIO METADATA EXTRACTOR (For Native Telegram Players)
+                async def get_audio_metadata(file_path):
+                    try:
+                        import json, math, os
+                        cmd = ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", str(file_path)]
+                        proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                        stdout, _ = await proc.communicate()
+                        info = json.loads(stdout)
+                        
+                        format_info = info.get('format', {})
+                        tags = format_info.get('tags', {})
+                        duration = math.ceil(float(format_info.get('duration', 0)))
+                        
+                        title = tags.get('title') or tags.get('TITLE') or file_path.name
+                        artist = tags.get('artist') or tags.get('ARTIST') or tags.get('album_artist') or "Unknown Artist"
+                        
+                        # Extract Embedded Cover Art
+                        cover_path = str(file_path) + "_cover.jpg"
+                        c_cmd = ["ffmpeg", "-y", "-i", str(file_path), "-an", "-vcodec", "copy", cover_path]
+                        c_proc = await asyncio.create_subprocess_exec(*c_cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+                        await c_proc.communicate()
+                        
+                        if not os.path.exists(cover_path) or os.path.getsize(cover_path) == 0:
+                            c_cmd = ["ffmpeg", "-y", "-i", str(file_path), "-an", "-vframes", "1", cover_path]
+                            c_proc = await asyncio.create_subprocess_exec(*c_cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+                            await c_proc.communicate()
+                            
+                        if not os.path.exists(cover_path) or os.path.getsize(cover_path) == 0:
+                            cover_path = None
+                            
+                        return {"duration": duration, "performer": artist, "title": title, "thumb": cover_path}
+                    except Exception:
+                        return {}
+
                 # 🟢 2. SMART UPLOAD ROUTING (Stream Bots -> Main Bot -> User)
                 final_chat_id = uid if dest == "tg" else upload_chat_id
                 
@@ -1979,15 +2027,26 @@ async def _api_edit_media_handler(request):
                     EDITOR_UI_STATE[task_uuid]["phase"] = "Uploading"
                     await safe_tg_edit(status_msg, f"☁️ **Uploading Media...**\n*(Mode: {upload_mode.title()})*")
                     
-                    # 🟢 THE FIX: Smart Routing for Audio vs Video
+                    # 🟢 THE FIX: Smart Routing for Audio vs Video with Native Metadata
                     is_video = str(output_file).lower().endswith(('.mp4', '.mkv', '.webm', '.avi', '.ts'))
                     is_audio = str(output_file).lower().endswith(('.flac', '.mp3', '.m4a', '.wav', '.aac', '.opus', '.ogg', '.alac', '.mka'))
                     
+                    extra_kwargs = {}
+                    track_thumb = final_thumb
+                    audio_meta = {}
+
                     if upload_mode == "video":
                         if is_audio:
                             send_fn = upload_client.send_audio
                             doc_key = "audio"
-                            extra_kwargs = {}
+                            audio_meta = await get_audio_metadata(output_file)
+                            extra_kwargs.update({
+                                "duration": audio_meta.get("duration", 0),
+                                "performer": audio_meta.get("performer", "Unknown Artist"),
+                                "title": audio_meta.get("title", output_file.name)
+                            })
+                            if not track_thumb and audio_meta.get("thumb"):
+                                track_thumb = audio_meta["thumb"]
                         else:
                             send_fn = upload_client.send_video
                             doc_key = "video"
@@ -1995,7 +2054,6 @@ async def _api_edit_media_handler(request):
                     else:
                         send_fn = upload_client.send_document
                         doc_key = "document"
-                        extra_kwargs = {}
                     
                     # Generate rich caption for single file
                     final_caption = await generate_rich_caption(output_file, new_name)
@@ -2004,8 +2062,13 @@ async def _api_edit_media_handler(request):
                         upload_client, uid, final_chat_id, task_uuid, is_bot, send_fn,
                         progress=progress, progress_args=["up", task_uuid],
                         chat_id=final_chat_id, message_thread_id=upload_thread_id,
-                        thumb=final_thumb, caption=final_caption, **{doc_key: str(output_file)}, **extra_kwargs
+                        thumb=str(track_thumb) if track_thumb else None, 
+                        caption=final_caption, **{doc_key: str(output_file)}, **extra_kwargs
                     )
+                    
+                    if audio_meta.get("thumb"):
+                        try: os.remove(audio_meta["thumb"])
+                        except Exception: pass
 
                 try: await status_msg.delete()
                 except Exception: pass
