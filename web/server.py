@@ -1647,15 +1647,79 @@ async def _api_edit_media_handler(request):
                     if ext_path.exists():
                         track["local_path"] = str(ext_path)
 
-            # DOWNLOAD MAIN FILE
+            # 🟢 DOWNLOAD MAIN FILE (WITH SMART STITCHING ENGINE FOR .001 & BATCH RANGES)
             is_tg = _is_tg_link(link)
             if is_tg:
+                import re
                 parsed = _parse_source_link(link)
-                working_pool, _ = await _get_working_tg_pool(uid, parsed["chat_id"], parsed["msg_id"])
+                chat_id = parsed["chat_id"]
+                start_id = parsed["msg_id"]
+                end_id = parsed.get("msg_id_end")
+                
+                working_pool, _ = await _get_working_tg_pool(uid, chat_id, start_id)
                 client_to_use = working_pool[0] if working_pool else app
                 
-                msg = await get_client_msg(client_to_use, parsed["chat_id"], parsed["msg_id"])
-                await client_to_use.download_media(msg, file_name=str(input_file), progress=progress, progress_args=["down", task_uuid])
+                messages_to_stitch = []
+                total_bytes = 0
+                
+                EDITOR_UI_STATE[task_uuid]["phase"] = "Analyzing Split Parts..."
+                
+                # SCENARIO A: Explicit Range given (e.g. 517544 - 517547)
+                if end_id and end_id > start_id:
+                    for i in range(start_id, end_id + 1):
+                        try:
+                            m = await get_client_msg(client_to_use, chat_id, i)
+                            doc = m.document or m.video or m.audio
+                            if doc:
+                                messages_to_stitch.append(m)
+                                total_bytes += getattr(doc, "file_size", 0)
+                        except Exception: pass
+                        
+                # SCENARIO B: Single link, but auto-discover if it's a .001 file!
+                else:
+                    m = await get_client_msg(client_to_use, chat_id, start_id)
+                    doc = m.document or m.video or m.audio
+                    if doc:
+                        messages_to_stitch.append(m)
+                        total_bytes += getattr(doc, "file_size", 0)
+                        fname = str(getattr(doc, "file_name", "")).lower()
+                        
+                        if re.search(r'\.001$', fname):
+                            curr_id = start_id + 1
+                            while True:
+                                try:
+                                    next_m = await get_client_msg(client_to_use, chat_id, curr_id)
+                                    next_doc = next_m.document or next_m.video or next_m.audio
+                                    if not next_doc or not re.search(r'\.\d{3}$', str(getattr(next_doc, "file_name", "")).lower()):
+                                        break
+                                    messages_to_stitch.append(next_m)
+                                    total_bytes += getattr(next_doc, "file_size", 0)
+                                    curr_id += 1
+                                except Exception: break
+
+                if not messages_to_stitch:
+                    raise Exception("No valid media found in the provided link or range.")
+
+                num_parts = len(messages_to_stitch)
+                EDITOR_UI_STATE[task_uuid]["phase"] = f"Downloading {num_parts} Part{'s' if num_parts > 1 else ''}"
+                await safe_tg_edit(status_msg, f"📥 **Downloading & Stitching {num_parts} Part{'s' if num_parts > 1 else ''}...**\n\n📄 `{new_name}`")
+                
+                # STITCHING DOWNLOADER (Streams all parts directly into a single massive file)
+                with open(input_file, "wb") as f_out:
+                    downloaded = 0
+                    for m_idx, msg in enumerate(messages_to_stitch):
+                        async for chunk in client_to_use.stream_media(msg):
+                            f_out.write(chunk)
+                            downloaded += len(chunk)
+                            
+                            try:
+                                if asyncio.iscoroutinefunction(progress):
+                                    await progress(downloaded, total_bytes, "down", task_uuid)
+                                else:
+                                    progress(downloaded, total_bytes, "down", task_uuid)
+                            except Exception as e:
+                                if "CANCELLED" in str(e).upper():
+                                    raise Exception("Download Cancelled by User")
             else:
                 await full_download_http(link, str(input_file), task_uuid=task_uuid)
                 
