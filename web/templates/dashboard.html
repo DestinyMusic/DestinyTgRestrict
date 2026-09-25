@@ -1469,11 +1469,17 @@
                         <div style="display: flex; gap: 8px;">
                             <input type="text" id="editor-stream-url" placeholder="https://t.me/c/123/456 or https://domain.com/movie.mkv" style="flex: 1;">
                             <button class="primary-btn" id="editor-load-btn" style="width: auto; padding: 0 24px; background: #8b5cf6;" onclick="loadEditorMedia()">Analyze Tracks</button>
+                            <!-- 🟢 Probe Cancel Button -->
+                            <button class="primary-btn" id="editor-cancel-probe-btn" style="width: auto; padding: 0 15px; background: rgba(239,68,68,0.2); color: #ef4444; border: 1px solid rgba(239,68,68,0.5); display: none;" onclick="cancelEditorProbe()">✕</button>
                         </div>
                     </div>
                 </div>
 
-                <!-- 🟢 NEW: Active Editor Tasks Container (Multiple parallel tasks will stack here) -->
+                <!-- 🟢 NEW: Active Editor Tasks Container -->
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <h3 id="editor-tasks-title" style="margin: 0; color: #fff; font-size: 16px; display: none;">🚀 Active Tasks</h3>
+                    <button id="editor-cancel-all-btn" class="primary-btn" style="width: auto; padding: 4px 12px; font-size: 10px; background: rgba(239,68,68,0.2); color: #ef4444; border: 1px solid rgba(239,68,68,0.5); display: none;" onclick="cancelAllEditorTasks()">✕ Cancel All</button>
+                </div>
                 <div id="editor-active-tasks" style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px;"></div>
                 
                 <!-- 🟢 DYNAMIC ARCHIVE / ALBUM WORKSPACE -->
@@ -5526,12 +5532,21 @@
         }
 
         let activeArchiveFiles = [];
+        let editorProbeAbortController = null; // 🟢 Abort Controller for the Probe
+        
+        function cancelEditorProbe() {
+            if (editorProbeAbortController) {
+                editorProbeAbortController.abort();
+                editorProbeAbortController = null;
+            }
+        }
 
         async function loadEditorMedia() {
             const link = document.getElementById('editor-stream-url').value.trim();
             if (!link) return alert('Provide a valid media link!');
             
             const btn = document.getElementById('editor-load-btn');
+            const cancelBtn = document.getElementById('editor-cancel-probe-btn');
             const workspace = document.getElementById('editor-workspace');
             const archiveWorkspace = document.getElementById('editor-archive-workspace');
             const container = document.getElementById('editor-tracks-container');
@@ -5539,15 +5554,18 @@
             
             btn.innerText = '⏳ Probing...';
             btn.disabled = true;
+            cancelBtn.style.display = 'block'; // Show Cancel Button
             workspace.style.display = 'none';
             if (archiveWorkspace) archiveWorkspace.style.display = 'none';
             if (statusBox) statusBox.style.display = 'none';
             
+            editorProbeAbortController = new AbortController();
+            
             try {
-                // 🟢 1. UNIVERSAL ARCHIVE CHECK (Works for TG links t.me/c/... AND direct links)
+                // 🟢 1. UNIVERSAL ARCHIVE CHECK
                 let isArchiveDetected = false;
                 try {
-                    const plistRes = await fetch(`/api/playlist?user_id=${encodeURIComponent(currentUser)}&link=${encodeURIComponent(link)}`);
+                    const plistRes = await fetch(`/api/playlist?user_id=${encodeURIComponent(currentUser)}&link=${encodeURIComponent(link)}`, { signal: editorProbeAbortController.signal });
                     const plistData = await plistRes.json();
                     
                     if (plistData.status === 'success' && plistData.playlist && plistData.playlist.length > 0) {
@@ -5582,9 +5600,9 @@
                 } catch (_) {}
 
                 // 🟢 2. STANDARD MEDIA FILE -> RUN REMUX PROBE
-                const res = await fetch('/api/media_probe?user_id=' + encodeURIComponent(currentUser) + '&link=' + encodeURIComponent(link) + '&extract_tags=1');
+                const res = await fetch('/api/media_probe?user_id=' + encodeURIComponent(currentUser) + '&link=' + encodeURIComponent(link) + '&extract_tags=1', { signal: editorProbeAbortController.signal });
                 const data = await res.json();
-                
+                 
                 if (data.status !== 'success') {
                     throw new Error(data.message || 'Probe failed');
                 }
@@ -5679,10 +5697,15 @@
                 populateEditorDestinations();
                 
             } catch (err) {
-                alert("Analysis failed: " + err.message);
+                if (err.name === 'AbortError') {
+                    console.log("Probe Cancelled by User");
+                } else {
+                    alert("Analysis failed: " + err.message);
+                }
             } finally {
                 btn.innerText = 'Analyze Tracks';
                 btn.disabled = false;
+                document.getElementById('editor-cancel-probe-btn').style.display = 'none'; // Hide Cancel Button
             }
         }
 
@@ -5898,13 +5921,16 @@
                 
                 if (data.status === 'success') {
                     pollEditorProgress(data.task_uuid, uiId);
+                    return data.task_uuid; // 🟢 Return ID so we can bind the Cancel button
                 } else {
                     document.getElementById(`${uiId}-text`).innerHTML = '❌ <b>Error:</b> ' + data.message;
                     document.getElementById(`${uiId}-bar`).style.background = '#ef4444';
+                    return null;
                 }
             } catch (e) {
                 document.getElementById(`${uiId}-text`).innerHTML = '❌ <b>Network Error</b>';
                 document.getElementById(`${uiId}-bar`).style.background = '#ef4444';
+                return null;
             }
         }
 
@@ -5995,12 +6021,17 @@
             
             // Push it to the top of the Active Tasks container
             document.getElementById('editor-active-tasks').insertAdjacentHTML('afterbegin', taskHtml);
-            
-            // 🟢 4. RESET THE WORKSPACE SO YOU CAN ADD ANOTHER LINK IMMEDIATELY
-            document.getElementById('editor-workspace').style.display = 'none';
+            document.getElementById('editor-workspace').style.display = 'none'; // (or archive-workspace)
             document.getElementById('editor-stream-url').value = '';
+            updateActiveTaskCounters(); // Update title
             
-            await sendEditorPayload(config, newName, dest, uploadMode, thumbB64, globalTags, uiId);
+            let assignedTaskUuid = await sendEditorPayload(config, newName, dest, uploadMode, thumbB64, globalTags, uiId);
+            
+            // Inject the Cancel Button now that we have the task ID
+            if (assignedTaskUuid) {
+                const textSpan = document.getElementById(`${uiId}-text`);
+                textSpan.insertAdjacentHTML('afterend', `<button onclick="cancelEditorTask('${assignedTaskUuid}', '${uiId}')" style="background: rgba(239,68,68,0.2); color: #ef4444; border: 1px solid rgba(239,68,68,0.5); border-radius: 6px; padding: 2px 8px; font-size: 10px; cursor: pointer; margin-left: 10px;">✕ Cancel</button>`);
+            }
         }
 
         async function submitArchiveTask() {
@@ -6056,7 +6087,50 @@
                 document.getElementById(`${uiId}-bar`).style.background = '#ef4444';
             }
         }
-        
+
+        // 🟢 ACTIVE TASK CANCELLATION LOGIC
+        function updateActiveTaskCounters() {
+            const container = document.getElementById('editor-active-tasks');
+            const btn = document.getElementById('editor-cancel-all-btn');
+            const title = document.getElementById('editor-tasks-title');
+            
+            const count = container.children.length;
+            if (count > 0) {
+                title.style.display = 'block';
+                btn.style.display = count > 1 ? 'block' : 'none'; // Only show "Cancel All" if 2+ tasks exist
+            } else {
+                title.style.display = 'none';
+                btn.style.display = 'none';
+            }
+        }
+
+        async function cancelEditorTask(taskUuid, uiId) {
+            if (!confirm("Are you sure you want to cancel this task?")) return;
+            document.getElementById(`${uiId}-text`).innerText = "Cancelling...";
+            try {
+                await fetch('/api/editor_cancel', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({task_uuid: taskUuid, user_id: currentUser})
+                });
+                document.getElementById(uiId).remove();
+                updateActiveTaskCounters();
+            } catch(e) {}
+        }
+
+        async function cancelAllEditorTasks() {
+            if (!confirm("Are you sure you want to cancel ALL active editor tasks?")) return;
+            try {
+                await fetch('/api/editor_cancel', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({task_uuid: 'all', user_id: currentUser})
+                });
+                document.getElementById('editor-active-tasks').innerHTML = '';
+                updateActiveTaskCounters();
+            } catch(e) {}
+        }
+                
         // ======================================================================
         // 🍪 PER-SITE COOKIES ENGINE
         // ======================================================================
