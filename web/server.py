@@ -1778,10 +1778,23 @@ async def _api_edit_media_handler(request):
                     await safe_tg_edit(status_msg, f"☁️ **Uploading Track {t_idx} of {total_tracks}...**\n`{track_path.name}`")
                     
                     caption_text = await generate_rich_caption(track_path, track_path.name)
-                    is_video_track = track_path.suffix.lower() in ('.mp4', '.mkv', '.webm')
-                    send_fn = upload_client.send_video if is_video_track else upload_client.send_document
-                    doc_key = "video" if is_video_track else "document"
-                    extra_kw = {"supports_streaming": True} if is_video_track else {}
+                    
+                    # 🟢 THE FIX: Intelligent Media Type Detection
+                    is_video_track = track_path.suffix.lower() in ('.mp4', '.mkv', '.webm', '.avi', '.ts')
+                    is_audio_track = track_path.suffix.lower() in ('.flac', '.mp3', '.m4a', '.wav', '.aac', '.opus', '.ogg', '.alac', '.mka')
+                    
+                    if is_audio_track:
+                        send_fn = upload_client.send_audio
+                        doc_key = "audio"
+                        extra_kw = {}
+                    elif is_video_track:
+                        send_fn = upload_client.send_video
+                        doc_key = "video"
+                        extra_kw = {"supports_streaming": True}
+                    else:
+                        send_fn = upload_client.send_document
+                        doc_key = "document"
+                        extra_kw = {}
                     
                     await safe_send(
                         upload_client, uid, final_chat_id, task_uuid, is_bot, send_fn,
@@ -1966,9 +1979,23 @@ async def _api_edit_media_handler(request):
                     EDITOR_UI_STATE[task_uuid]["phase"] = "Uploading"
                     await safe_tg_edit(status_msg, f"☁️ **Uploading Media...**\n*(Mode: {upload_mode.title()})*")
                     
-                    send_fn = upload_client.send_video if (upload_mode == "video") else upload_client.send_document
-                    doc_key = "video" if (upload_mode == "video") else "document"
-                    extra_kwargs = {"supports_streaming": True} if upload_mode == "video" else {}
+                    # 🟢 THE FIX: Smart Routing for Audio vs Video
+                    is_video = str(output_file).lower().endswith(('.mp4', '.mkv', '.webm', '.avi', '.ts'))
+                    is_audio = str(output_file).lower().endswith(('.flac', '.mp3', '.m4a', '.wav', '.aac', '.opus', '.ogg', '.alac', '.mka'))
+                    
+                    if upload_mode == "video":
+                        if is_audio:
+                            send_fn = upload_client.send_audio
+                            doc_key = "audio"
+                            extra_kwargs = {}
+                        else:
+                            send_fn = upload_client.send_video
+                            doc_key = "video"
+                            extra_kwargs = {"supports_streaming": True}
+                    else:
+                        send_fn = upload_client.send_document
+                        doc_key = "document"
+                        extra_kwargs = {}
                     
                     # Generate rich caption for single file
                     final_caption = await generate_rich_caption(output_file, new_name)
