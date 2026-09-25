@@ -1540,6 +1540,7 @@ async def _api_edit_media_handler(request):
     data = await request.json()
     uid = int(data.get("user_id", 0))
     link = data.get("link", "")
+    is_archive = data.get("is_archive", False)
     config = data.get("config", [])
     new_name = data.get("new_name", "output.mkv")
     dest = data.get("dest", "tg")
@@ -1547,7 +1548,7 @@ async def _api_edit_media_handler(request):
     thumb_b64 = data.get("thumb", "")
     global_tags = data.get("global_tags", {})
     
-    if not link or not config:
+    if not link or (not is_archive and not config):
         return web.json_response({"status": "error", "message": "Missing link or config"})
         
     # 🟢 1. PRE-FLIGHT ACCESS CHECK & DESTINATION PARSING
@@ -1723,7 +1724,83 @@ async def _api_edit_media_handler(request):
             else:
                 await full_download_http(link, str(input_file), task_uuid=task_uuid)
                 
-            # REMUX
+            # 🟢 DYNAMIC BRANCH: ARCHIVE EXTRACTION & TRACK-BY-TRACK UPLOADER
+            if is_archive or str(input_file).lower().endswith(('.zip', '.tar', '.gz', '.7z', '.rar')) or re.search(r'\.(zip|7z|rar)\.\d{3}$', link.lower()):
+                EDITOR_UI_STATE[task_uuid]["phase"] = "Extracting Archive"
+                await safe_tg_edit(status_msg, "🗜 **Unpacking Archive Tracks...**")
+                
+                extract_dir = temp_dir / "extracted_media"
+                extract_dir.mkdir(parents=True, exist_ok=True)
+                
+                def unpack_archive():
+                    import zipfile
+                    with zipfile.ZipFile(input_file, 'r') as zf:
+                        zf.extractall(extract_dir)
+                
+                await asyncio.to_thread(unpack_archive)
+                
+                # Gather media tracks
+                valid_extensions = ('.flac', '.mp3', '.m4a', '.wav', '.aac', '.opus', '.ogg', '.alac', '.mp4', '.mkv', '.webm')
+                media_files = []
+                for root, _, files in os.walk(extract_dir):
+                    for f in sorted(files):
+                        if f.lower().endswith(valid_extensions):
+                            media_files.append(Path(root) / f)
+                            
+                if not media_files:
+                    raise Exception("No playable audio or video files found inside the archive.")
+                    
+                total_tracks = len(media_files)
+                final_chat_id = uid if dest == "tg" else upload_chat_id
+                
+                # Worker Bot Selection
+                uclient = USER_CLIENTS.get(uid)
+                stream_bots = USER_STREAM_BOTS.get(uid, [])
+                upload_client = app
+                is_bot = True
+                
+                valid_bot = None
+                for b in stream_bots:
+                    try:
+                        if not getattr(b, "is_connected", False): await b.connect()
+                        await b.get_chat(final_chat_id)
+                        valid_bot = b
+                        break
+                    except: pass
+                if valid_bot:
+                    upload_client = valid_bot
+                elif uclient and uclient.is_connected:
+                    upload_client = uclient
+                    is_bot = False
+                    
+                for t_idx, track_path in enumerate(media_files, start=1):
+                    EDITOR_UI_STATE[task_uuid]["phase"] = f"Uploading Track {t_idx}/{total_tracks}"
+                    await safe_tg_edit(status_msg, f"☁️ **Uploading Track {t_idx} of {total_tracks}...**\n`{track_path.name}`")
+                    
+                    caption_text = await generate_rich_caption(track_path, track_path.name)
+                    is_video_track = track_path.suffix.lower() in ('.mp4', '.mkv', '.webm')
+                    send_fn = upload_client.send_video if is_video_track else upload_client.send_document
+                    doc_key = "video" if is_video_track else "document"
+                    extra_kw = {"supports_streaming": True} if is_video_track else {}
+                    
+                    await safe_send(
+                        upload_client, uid, final_chat_id, task_uuid, is_bot, send_fn,
+                        progress=progress, progress_args=["up", task_uuid],
+                        chat_id=final_chat_id, message_thread_id=upload_thread_id,
+                        thumb=thumb_path, caption=caption_text, **{doc_key: str(track_path)}, **extra_kw
+                    )
+                    try: os.remove(track_path)
+                    except Exception: pass
+                    await asyncio.sleep(1.5)
+                    
+                try: await status_msg.delete()
+                except Exception: pass
+                await app.send_message(uid, f"✅ **Album/Archive Completed!**\nDelivered {total_tracks} tracks successfully to your selected destination.")
+                
+                EDITOR_UI_STATE[task_uuid]["done"] = True
+                return  # Skip standard MKVToolNix remuxing
+
+            # REMUX (Standard Video/Single Media Path)
             EDITOR_UI_STATE[task_uuid]["phase"] = "Remuxing"
             await safe_tg_edit(status_msg, f"⚙️ **Remuxing Tracks (MKVToolNix)...**\n\n📄 `{new_name}`")
             await process_remux(str(input_file), str(output_file), config, global_tags)
