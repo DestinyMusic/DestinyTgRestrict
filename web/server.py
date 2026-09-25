@@ -1828,10 +1828,30 @@ async def _api_edit_media_handler(request):
                 EDITOR_UI_STATE[task_uuid]["done"] = True
                 return  # Skip standard MKVToolNix remuxing
 
-            # REMUX (Standard Video/Single Media Path)
-            EDITOR_UI_STATE[task_uuid]["phase"] = "Remuxing"
-            await safe_tg_edit(status_msg, f"⚙️ **Remuxing Tracks (MKVToolNix)...**\n\n📄 `{new_name}`")
-            await process_remux(str(input_file), str(output_file), config, global_tags)
+            # 🟢 REMUX OR BYPASS (Standard Video vs Audio)
+            is_single_audio = str(new_name).lower().endswith(('.flac', '.mp3', '.m4a', '.wav', '.aac', '.opus', '.ogg', '.alac', '.mka', '.dsf', '.dff', '.ac3', '.eac3', '.dts'))
+            
+            if is_single_audio:
+                EDITOR_UI_STATE[task_uuid]["phase"] = "Processing Audio"
+                await safe_tg_edit(status_msg, f"⚙️ **Processing Audio File (Preserving Tags)...**\n\n📄 `{new_name}`")
+                
+                # If a new title was typed in Global Metadata, safely inject it via FFmpeg. Otherwise, copy natively.
+                new_title = global_tags.get("title") or global_tags.get("TITLE")
+                if new_title:
+                    ffmpeg_cmd = [
+                        "ffmpeg", "-y", "-i", str(input_file),
+                        "-c", "copy",
+                        "-metadata", f"title={new_title}",
+                        str(output_file)
+                    ]
+                    proc = await asyncio.create_subprocess_exec(*ffmpeg_cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+                    await proc.communicate()
+                else:
+                    shutil.copy(str(input_file), str(output_file))
+            else:
+                EDITOR_UI_STATE[task_uuid]["phase"] = "Remuxing"
+                await safe_tg_edit(status_msg, f"⚙️ **Remuxing Tracks (MKVToolNix)...**\n\n📄 `{new_name}`")
+                await process_remux(str(input_file), str(output_file), config, global_tags)
             
             # ZIP COMPRESSION
             if upload_mode == "zip":
@@ -1945,8 +1965,23 @@ async def _api_edit_media_handler(request):
                         for k, v in info.get('format', {}).get('tags', {}).items():
                             all_tags[k.lower()] = str(v).strip()
                             
-                        title = all_tags.get('title') or file_path.name
-                        artist = all_tags.get('artist') or all_tags.get('album_artist') or all_tags.get('performer') or "Unknown Artist"
+                        # 🟢 AGGRESSIVE ARTIST & TITLE RECOVERY
+                        title = all_tags.get('title') or all_tags.get('©nam') or file_path.name
+                        
+                        artist = None
+                        for k in ['artist', 'album_artist', 'albumartist', 'performer', 'author', 'composer', '©art', 'aart']:
+                            if k in all_tags:
+                                artist = all_tags[k]
+                                break
+                                
+                        if not artist:
+                            for k, v in all_tags.items():
+                                if 'artist' in k or 'author' in k:
+                                    artist = v
+                                    break
+                                    
+                        if not artist:
+                            artist = "Unknown Artist"
                         
                         # Extract Embedded Cover Art
                         cover_path = str(file_path) + "_cover.jpg"
