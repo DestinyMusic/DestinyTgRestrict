@@ -1556,8 +1556,9 @@ async def _api_edit_media_handler(request):
     
     if dest not in ["tg", "gofile"]:
         if "/" in str(dest):
-            upload_chat_id, upload_thread_id = str(dest).split("/", 1)
-            upload_thread_id = int(upload_thread_id)
+            parts = str(dest).split("/", 1)
+            upload_chat_id = parts[0]
+            upload_thread_id = int(parts[1])
         try: upload_chat_id = int(upload_chat_id)
         except: pass
         
@@ -1565,7 +1566,7 @@ async def _api_edit_media_handler(request):
         stream_bots = USER_STREAM_BOTS.get(uid, [])
         has_access = False
         
-        # Test Stream Bots and Main Bot first
+        # Priority 1: Test Stream Bots and Main Bot
         for b in stream_bots + [app]:
             try:
                 if not getattr(b, "is_connected", False): await b.connect()
@@ -1574,7 +1575,7 @@ async def _api_edit_media_handler(request):
                 break
             except: pass
             
-        # Fallback test User Session
+        # Priority 2: Fallback test User Session
         if not has_access and uclient and uclient.is_connected:
             try:
                 await uclient.get_chat(upload_chat_id)
@@ -1775,7 +1776,7 @@ async def _api_edit_media_handler(request):
                         upload_client, uid, final_chat_id, task_uuid, is_bot, send_fn,
                         progress=progress, progress_args=["up", task_uuid],
                         chat_id=final_chat_id, message_thread_id=upload_thread_id,
-                        thumb=final_thumb, caption=f"`{new_name}`", **{doc_key: str(output_file)}, **extra_kwargs
+                        thumb=final_thumb, caption=f"`{new_name}`", **{doc_key: str(output_file)}, **extra_kwargs # 🟢 CLEAN CAPTION
                     )
 
                 try: await status_msg.delete()
