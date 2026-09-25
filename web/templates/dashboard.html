@@ -1472,6 +1472,9 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- 🟢 NEW: Active Editor Tasks Container (Multiple parallel tasks will stack here) -->
+                <div id="editor-active-tasks" style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px;"></div>
                 
                 <div class="card" id="editor-workspace" style="display: none; border-color: var(--accent);">
                     <h3 style="margin-top: 0; color: #fff; font-size: 16px; margin-bottom: 15px;">🛠 Inspect & Edit Tracks</h3>
@@ -1519,13 +1522,20 @@
                         </select>
                     </div>
 
+                    <!-- 🟢 NEW: Custom Destination Manager -->
                     <div class="input-group">
                         <label>Upload Destination</label>
-                        <select id="editor-dest" class="pop-select">
-                            <option value="tg">Telegram (Saved Messages)</option>
-                            <option value="gofile">GoFile.io (Public Link)</option>
-                        </select>
-                        <input type="text" id="editor-custom-dest" placeholder="Override with Custom Chat/Topic ID (e.g. -10012345/5)" style="margin-top: 10px; width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--card-border); background: color-mix(in srgb, var(--bg) var(--glass-bg, 100%), transparent); color: #fff; font-size: 12px; outline: none;">
+                        <div style="display: flex; gap: 8px;">
+                            <select id="editor-dest" class="pop-select" style="flex: 1;">
+                                <option value="tg">Telegram (Saved Messages)</option>
+                                <option value="gofile">GoFile.io (Public Link)</option>
+                            </select>
+                            <button class="primary-btn" style="width: auto; padding: 0 15px; background: rgba(239,68,68,0.2); color: #ef4444; border: 1px solid rgba(239,68,68,0.5);" onclick="removeCustomDest()">Delete</button>
+                        </div>
+                        <div style="display: flex; gap: 8px; margin-top: 10px;">
+                            <input type="text" id="editor-custom-dest" placeholder="Add Custom ID (e.g. -100123/5)" style="flex: 1; padding: 12px; border-radius: 12px; border: 1px solid var(--card-border); background: rgba(0,0,0,0.3); color: #fff; font-size: 12px; outline: none;">
+                            <button class="primary-btn" style="width: auto; padding: 0 15px; background: rgba(16,185,129,0.2); color: #10b981; border: 1px solid rgba(16,185,129,0.5);" onclick="addCustomDest()">Save ID</button>
+                        </div>
                     </div>
 
                     <button class="primary-btn" id="editor-submit-btn" style="margin-top: 10px;" onclick="submitEditorTask()">🚀 Process & Upload</button>
@@ -5644,7 +5654,49 @@
             list.insertAdjacentHTML('beforeend', htmlStr);
         }
 
-        let editorPollInterval = null;
+        // 🟢 1. CUSTOM DESTINATION SAVING LOGIC
+        function loadCustomDests() {
+            let dests = JSON.parse(localStorage.getItem('editor_dests') || '[]');
+            let select = document.getElementById('editor-dest');
+            // Clear old custom options to prevent duplicates
+            Array.from(select.options).forEach(opt => { if(opt.dataset.custom) opt.remove(); });
+            
+            dests.forEach(d => {
+                let opt = document.createElement('option');
+                opt.value = d;
+                opt.innerText = `📁 Saved ID: ${d}`;
+                opt.dataset.custom = 'true';
+                select.appendChild(opt);
+            });
+            initCustomSelects(); // Re-render Glass UI
+        }
+
+        function addCustomDest() {
+            let val = document.getElementById('editor-custom-dest').value.trim();
+            if(!val) return;
+            let dests = JSON.parse(localStorage.getItem('editor_dests') || '[]');
+            if(!dests.includes(val)) { 
+                dests.push(val); 
+                localStorage.setItem('editor_dests', JSON.stringify(dests)); 
+            }
+            document.getElementById('editor-custom-dest').value = '';
+            loadCustomDests();
+            document.getElementById('editor-dest').value = val;
+            initCustomSelects();
+        }
+
+        function removeCustomDest() {
+            let val = document.getElementById('editor-dest').value;
+            if(val === 'tg' || val === 'gofile') return alert("You cannot delete the default destinations.");
+            let dests = JSON.parse(localStorage.getItem('editor_dests') || '[]');
+            dests = dests.filter(d => d !== val);
+            localStorage.setItem('editor_dests', JSON.stringify(dests));
+            document.getElementById('editor-dest').value = 'tg';
+            loadCustomDests();
+        }
+
+        // Initialize saved destinations on load
+        setTimeout(loadCustomDests, 1000);
 
         function formatBytes(bytes) {
             if (bytes === 0) return '0 B';
@@ -5664,19 +5716,15 @@
             return res;
         }
 
-        async function pollEditorProgress(taskUuid, btn) {
-            if (editorPollInterval) clearInterval(editorPollInterval);
+        // 🟢 2. MULTI-TASK CONCURRENT POLLING ENGINE
+        async function pollEditorProgress(taskUuid, uiId) {
+            const txt = document.getElementById(`${uiId}-text`);
+            const bar = document.getElementById(`${uiId}-bar`);
+            const left = document.getElementById(`${uiId}-left`);
+            const right = document.getElementById(`${uiId}-right`);
             
-            const txt = document.getElementById('editor-status-text');
-            const bar = document.getElementById('editor-progress-bar');
-            const left = document.getElementById('editor-stats-left');
-            const right = document.getElementById('editor-stats-right');
-            
-            bar.style.width = '0%';
-            bar.style.background = 'linear-gradient(90deg, var(--accent), #38bdf8)';
-            
-            // 🟢 Live 1-second interval for smooth web progress animation
-            editorPollInterval = setInterval(async () => {
+            // Local interval instead of global, allowing multiple tasks to poll at the same time
+            const localInterval = setInterval(async () => {
                 try {
                     const res = await fetch('/api/editor_progress?task_uuid=' + taskUuid);
                     const data = await res.json();
@@ -5701,15 +5749,13 @@
                         }
                         
                         if (data.done) {
-                            clearInterval(editorPollInterval);
-                            btn.disabled = false;
-                            btn.innerText = "🚀 Process & Upload";
+                            clearInterval(localInterval);
                             if (data.error) {
                                 txt.innerHTML = '❌ <b>Error:</b> ' + data.error;
-                                bar.style.background = '#ef4444'; // Red
+                                bar.style.background = '#ef4444'; 
                             } else {
                                 txt.innerHTML = '✅ <b>Success! File completely processed.</b>';
-                                bar.style.background = '#10b981'; // Green
+                                bar.style.background = '#10b981'; 
                                 bar.style.width = '100%';
                                 left.innerText = '';
                                 right.innerText = '';
@@ -5719,10 +5765,10 @@
                 } catch (e) {
                     console.log("Polling error", e);
                 }
-            }, 1000); // 🟢 Polling every 1s
+            }, 1000); 
         }
 
-        async function sendEditorPayload(config, newName, dest, uploadMode, thumbB64, globalTags, btn) {
+        async function sendEditorPayload(config, newName, dest, uploadMode, thumbB64, globalTags, uiId) {
             try {
                 const res = await fetch('/api/edit_media', {
                     method: 'POST',
@@ -5734,7 +5780,7 @@
                         config: config,
                         new_name: newName,
                         dest: dest,
-                        upload_mode: uploadMode, // 🟢 Transmit selected upload mode
+                        upload_mode: uploadMode,
                         thumb: thumbB64,
                         global_tags: globalTags
                     })
@@ -5742,24 +5788,20 @@
                 const data = await res.json();
                 
                 if (data.status === 'success') {
-                    pollEditorProgress(data.task_uuid, btn);
+                    pollEditorProgress(data.task_uuid, uiId);
                 } else {
-                    document.getElementById('editor-status-text').innerHTML = '❌ <b>Error:</b> ' + data.message;
-                    btn.disabled = false;
-                    btn.innerText = "🚀 Process & Upload";
+                    document.getElementById(`${uiId}-text`).innerHTML = '❌ <b>Error:</b> ' + data.message;
+                    document.getElementById(`${uiId}-bar`).style.background = '#ef4444';
                 }
             } catch (e) {
-                document.getElementById('editor-status-text').innerHTML = '❌ <b>Network Error:</b> ' + e.message;
-                btn.disabled = false;
-                btn.innerText = "🚀 Process & Upload";
+                document.getElementById(`${uiId}-text`).innerHTML = '❌ <b>Network Error</b>';
+                document.getElementById(`${uiId}-bar`).style.background = '#ef4444';
             }
         }
 
         async function submitEditorTask() {
-            const btn = document.getElementById('editor-submit-btn');
-            let dest = document.getElementById('editor-custom-dest').value.trim();
-            if (!dest) { dest = document.getElementById('editor-dest').value; }
-            const uploadMode = document.getElementById('editor-upload-mode')?.value || 'document'; // 🟢 Grab choice
+            const dest = document.getElementById('editor-dest').value;
+            const uploadMode = document.getElementById('editor-upload-mode')?.value || 'document'; 
             const newName = document.getElementById('editor-filename').value;
             const thumbFile = document.getElementById('editor-thumb-file').files[0];
             
@@ -5824,18 +5866,32 @@
             if (config.length === 0) return alert("You must keep at least one track!");
             config.sort(function(a, b) { return a.order - b.order; });
             
-            btn.disabled = true;
-            btn.innerText = "⏳ Dispatching to Server...";
+            // 🟢 3. SPAWN A NEW UI CARD FOR THIS TASK
+            const uiId = 'edtask-' + Date.now();
+            const taskHtml = `
+                <div id="${uiId}" style="padding: 20px; background: rgba(0,0,0,0.4); border: 1px solid var(--card-border); border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+                    <div style="font-size: 13px; font-weight: bold; color: #fff; display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 65%;" title="${newName}">📄 ${newName}</span>
+                        <span id="${uiId}-text" style="color: var(--accent); font-size: 11px; text-transform: uppercase; font-weight: 800;">Connecting...</span>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.1); border-radius: 8px; width: 100%; height: 12px; overflow: hidden; position: relative;">
+                        <div id="${uiId}-bar" style="background: linear-gradient(90deg, var(--accent), #38bdf8); height: 100%; width: 0%; transition: width 0.5s ease;"></div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--subtext); margin-top: 10px; font-family: monospace;">
+                        <span id="${uiId}-left">Dispatching task to server...</span>
+                        <span id="${uiId}-right"></span>
+                    </div>
+                </div>
+            `;
             
-            const statusContainer = document.getElementById('editor-status-container');
-            statusContainer.style.display = 'block';
-            document.getElementById('editor-status-text').innerText = "Connecting...";
-            document.getElementById('editor-progress-bar').style.width = "0%";
-            document.getElementById('editor-progress-bar').style.background = "linear-gradient(90deg, var(--accent), #38bdf8)";
-            document.getElementById('editor-stats-left').innerText = "";
-            document.getElementById('editor-stats-right').innerText = "";
+            // Push it to the top of the Active Tasks container
+            document.getElementById('editor-active-tasks').insertAdjacentHTML('afterbegin', taskHtml);
             
-            await sendEditorPayload(config, newName, dest, uploadMode, thumbB64, globalTags, btn);
+            // 🟢 4. RESET THE WORKSPACE SO YOU CAN ADD ANOTHER LINK IMMEDIATELY
+            document.getElementById('editor-workspace').style.display = 'none';
+            document.getElementById('editor-stream-url').value = '';
+            
+            await sendEditorPayload(config, newName, dest, uploadMode, thumbB64, globalTags, uiId);
         }
 
         // ======================================================================
