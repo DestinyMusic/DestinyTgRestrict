@@ -715,7 +715,7 @@ async def execute_remux_callback(client: Client, query):
     from pathlib import Path
     import shutil
     import os
-    import asyncio
+    import zipfile
     
     temp_dir = Path(f"./temp_remux_{user_id}_{int(time.time())}")
     temp_dir.mkdir(parents=True, exist_ok=True)
@@ -724,12 +724,10 @@ async def execute_remux_callback(client: Client, query):
     input_file = temp_dir / "input_media.dat"
     output_file = temp_dir / sanitize_filename(new_name)
     
-    # 🟢 Extract UI Options (Assumes your Web UI saves these to PENDING_TASKS)
-    upload_mode = task_data.get("upload_mode", "document").lower() # Modes: 'video', 'document', 'zip'
+    upload_mode = task_data.get("upload_mode", "document").lower() 
     thumb_path = task_data.get("thumb_path")
     
     try:
-        # --- DOWNLOAD PHASE ---
         is_tg = _is_tg_link(task_data["link"])
         if is_tg:
             parsed = _parse_source_link(task_data["link"])
@@ -746,102 +744,96 @@ async def execute_remux_callback(client: Client, query):
         else:
             await full_download_http(task_data["link"], str(input_file))
             
-        # --- REMUX PHASE ---
         await status_msg.edit("⚙️ **Remuxing Tracks (MKVToolNix)...**")
         await process_remux(str(input_file), str(output_file), task_data["remux_config"])
         
-        # --- UPLOAD PHASE ---
         await status_msg.edit("☁️ **Preparing for Upload...**")
         
         if dest_type == "gf":
             url = await upload_to_gofile(str(output_file))
             await status_msg.edit(f"✅ **Success! Uploaded to GoFile.**\n\n🔗 **Link:** {url}", disable_web_page_preview=True)
         else:
-            # 🟢 1. Handle Zipping (If Requested)
             if upload_mode == "zip":
                 await status_msg.edit("🗜 **Zipping Media... (This may take a moment)**")
                 zip_path = str(output_file) + ".zip"
-                
                 def create_zip():
                     import zipfile
-                    # ZIP_STORED applies 0 compression, perfectly fast for large media
                     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_STORED) as zipf:
                         zipf.write(output_file, arcname=new_name)
-                        
                 await asyncio.to_thread(create_zip)
-                os.remove(output_file)  # Delete raw MKV to save disk space
+                try: os.remove(output_file)
+                except: pass
                 output_file = Path(zip_path)
                 new_name = f"{new_name}.zip"
 
-            # 🟢 2. Determine best upload client & check Telegram Premium
+            # 🟢 DYNAMIC UPLOAD CLIENT ROUTING (Stream Bots -> App -> User)
             upload_client = app
             is_premium = False
+            
             uclient = USER_CLIENTS.get(user_id)
             if uclient and getattr(uclient, "is_connected", False):
-                upload_client = uclient
                 try:
                     me = await uclient.get_me()
                     is_premium = getattr(me, "is_premium", False)
                 except Exception: pass
                 
-            # 🟢 3. Calculate Sizes and Total Parts
-            max_size = (3980 * 1024 * 1024) if is_premium else (1980 * 1024 * 1024)
             file_size = os.path.getsize(output_file)
-            total_parts = math.ceil(file_size / max_size)
+            max_size = (3980 * 1024 * 1024) if is_premium else (1980 * 1024 * 1024)
+            needs_split = file_size > max_size
             
-            # Validate Thumbnail
+            if file_size > (1980 * 1024 * 1024) and is_premium and not needs_split:
+                upload_client = uclient
+            else:
+                stream_bots = USER_STREAM_BOTS.get(user_id, [])
+                valid_bot = None
+                for b in stream_bots:
+                    try:
+                        if not getattr(b, "is_connected", False): await b.connect()
+                        await b.get_chat(user_id) # Dest is DM in bot callback
+                        valid_bot = b
+                        break
+                    except: pass
+                if valid_bot:
+                    upload_client = valid_bot
+                else:
+                    upload_client = app
+
+            total_parts = math.ceil(file_size / max_size)
             final_thumb = str(thumb_path) if (thumb_path and os.path.exists(str(thumb_path))) else None
             
-            # 🟢 4. Binary Split & Upload Logic
             if total_parts > 1:
-                await status_msg.edit(f"✂️ **Splitting File into {total_parts} Parts...**\n(Total Size: {file_size / 1024**3:.2f} GB)")
+                await status_msg.edit(f"✂️ **Splitting File into {total_parts} Parts...**\n(Total Size: {_pretty_bytes(file_size)})")
                 part_num = 1
                 with open(output_file, 'rb') as f:
                     while True:
                         chunk = f.read(max_size)
-                        if not chunk:
-                            break
+                        if not chunk: break
                             
                         part_name = f"{output_file}.{part_num:03d}"
-                        
                         with open(part_name, 'wb') as part_file:
                             part_file.write(chunk)
                             
-                        await status_msg.edit(
-                            f"☁️ **Uploading Part {part_num} of {total_parts}...**\n"
-                            f"*(Mode: Document Fallback | {'4GB Premium' if is_premium else '2GB Standard'} chunks)*"
-                        )
+                        await status_msg.edit(f"☁️ **Uploading Part {part_num} of {total_parts}...**")
                         
-                        # Note: TG cannot stream a broken binary chunk, so it MUST upload as a document!
                         await upload_client.send_document(
                             chat_id=user_id, 
                             document=part_name, 
                             thumb=final_thumb,
-                            caption=f"✅ **Part {part_num} of {total_parts}:** `{new_name}.{part_num:03d}`"
+                            caption=f"`{new_name}.{part_num:03d}`" # 🟢 CLEAN CAPTION
                         )
-                        
-                        os.remove(part_name) # Save disk space instantly
+                        os.remove(part_name) 
                         part_num += 1
                         
                 await status_msg.delete()
             else:
-                # 🟢 5. Single File Upload
                 await status_msg.edit(f"☁️ **Uploading Media...**\n*(Mode: {upload_mode.title()})*")
-                
                 if upload_mode == "video":
                     await upload_client.send_video(
-                        chat_id=user_id, 
-                        video=str(output_file), 
-                        thumb=final_thumb,
-                        supports_streaming=True,
-                        caption=f"✅ **Video:** `{new_name}`"
+                        chat_id=user_id, video=str(output_file), thumb=final_thumb, supports_streaming=True, caption=f"`{new_name}`" # 🟢 CLEAN CAPTION
                     )
                 else:
                     await upload_client.send_document(
-                        chat_id=user_id, 
-                        document=str(output_file), 
-                        thumb=final_thumb,
-                        caption=f"✅ **File:** `{new_name}`"
+                        chat_id=user_id, document=str(output_file), thumb=final_thumb, caption=f"`{new_name}`" # 🟢 CLEAN CAPTION
                     )
                 await status_msg.delete()
             
