@@ -1751,6 +1751,60 @@ async def _api_edit_media_handler(request):
                 await status_msg.delete()
                 await app.send_message(uid, f"✅ **Media Editor Completed!**\n\n🔗 **GoFile Link:** {url}", disable_web_page_preview=True)
             else:
+                # 🟢 NEW: RICH CAPTION GENERATOR (FFprobe)
+                async def generate_rich_caption(file_path, file_name):
+                    try:
+                        import json, math
+                        cmd = ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", str(file_path)]
+                        proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                        stdout, _ = await proc.communicate()
+                        info = json.loads(stdout)
+                        
+                        size_bytes = int(info.get('format', {}).get('size', 0))
+                        dur_sec = float(info.get('format', {}).get('duration', 0))
+                        m = math.floor(dur_sec / 60)
+                        s = math.floor(dur_sec % 60)
+                        
+                        v_stream = next((st for st in info.get('streams', []) if st['codec_type'] == 'video' and st['codec_name'] not in ['mjpeg', 'png']), None)
+                        a_streams = [st for st in info.get('streams', []) if st['codec_type'] == 'audio']
+                        s_streams = [st for st in info.get('streams', []) if st['codec_type'] == 'subtitle']
+                        
+                        k = 1024
+                        sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+                        i = 0 if size_bytes == 0 else math.floor(math.log(size_bytes) / math.log(k))
+                        size_str = f"{(size_bytes / (k**i)):.1f} {sizes[i]}"
+                        
+                        caption = f"`{file_name}`\n\n🗂 {size_str}"
+                        
+                        if v_stream:
+                            w = v_stream.get('width', '?')
+                            h = v_stream.get('height', '?')
+                            
+                            a_langs = []
+                            for a in a_streams:
+                                lng = a.get('tags', {}).get('language', a.get('tags', {}).get('LANGUAGE', 'Unknown')).title()
+                                if lng not in a_langs: a_langs.append(lng)
+                            
+                            s_langs = []
+                            for sub in s_streams:
+                                lng = sub.get('tags', {}).get('language', sub.get('tags', {}).get('LANGUAGE', 'None')).title()
+                                if lng not in s_langs: s_langs.append(lng)
+                                
+                            a_str = ", ".join(a_langs) if a_langs else "Unknown"
+                            s_str = ", ".join(s_langs) if s_langs else "None"
+                            
+                            caption += f" 💎 {w}x{h}\n⏳ {m}m {s}s 💬 {s_str}\n🔊 {a_str}"
+                        elif a_streams:
+                            a = a_streams[0]
+                            codec = str(a.get('codec_name', 'Unknown')).upper()
+                            sr = int(a.get('sample_rate', 0)) / 1000
+                            bits = a.get('bits_per_raw_sample') or a.get('bits_per_sample') or '16'
+                            caption += f"\n🎧 {codec} • {bits}Bit - {sr}kHz"
+                            
+                        return caption
+                    except Exception:
+                        return f"`{file_name}`"
+
                 # 🟢 2. SMART UPLOAD ROUTING (Stream Bots -> Main Bot -> User)
                 final_chat_id = uid if dest == "tg" else upload_chat_id
                 
@@ -1816,12 +1870,15 @@ async def _api_edit_media_handler(request):
                             EDITOR_UI_STATE[task_uuid]["phase"] = f"Uploading Part {part_num}/{total_parts}"
                             await safe_tg_edit(status_msg, f"☁️ **Uploading Part {part_num} of {total_parts}...**")
                             
+                            # Generate rich caption for parts
+                            part_caption = await generate_rich_caption(part_path, part_path.name)
+                            
                             await safe_send(
                                 upload_client, uid, final_chat_id, task_uuid, is_bot, upload_client.send_document, 
                                 progress=progress, progress_args=["up", task_uuid],
                                 chat_id=final_chat_id, message_thread_id=upload_thread_id,
                                 document=str(part_path), thumb=final_thumb,
-                                caption=f"`{part_path.name}`"  # 🟢 CLEAN CAPTION
+                                caption=part_caption
                             )
                             try: os.remove(part_path)
                             except Exception: pass
@@ -1835,12 +1892,15 @@ async def _api_edit_media_handler(request):
                     send_fn = upload_client.send_video if (upload_mode == "video") else upload_client.send_document
                     doc_key = "video" if (upload_mode == "video") else "document"
                     extra_kwargs = {"supports_streaming": True} if upload_mode == "video" else {}
+                    
+                    # Generate rich caption for single file
+                    final_caption = await generate_rich_caption(output_file, new_name)
                         
                     await safe_send(
                         upload_client, uid, final_chat_id, task_uuid, is_bot, send_fn,
                         progress=progress, progress_args=["up", task_uuid],
                         chat_id=final_chat_id, message_thread_id=upload_thread_id,
-                        thumb=final_thumb, caption=f"`{new_name}`", **{doc_key: str(output_file)}, **extra_kwargs # 🟢 CLEAN CAPTION
+                        thumb=final_thumb, caption=final_caption, **{doc_key: str(output_file)}, **extra_kwargs
                     )
 
                 try: await status_msg.delete()
