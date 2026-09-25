@@ -1609,6 +1609,124 @@ async def _api_edit_media_handler(request):
         input_file = temp_dir / "input_media.dat"
         output_file = temp_dir / sanitize_filename(new_name)
         thumb_path = None
+
+        # 🟢 MOVED TO TOP: RICH CAPTION & METADATA EXTRACTORS
+        async def generate_rich_caption(file_path, file_name):
+            try:
+                import json, math
+                cmd = ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", str(file_path)]
+                proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                stdout, _ = await proc.communicate()
+                info = json.loads(stdout)
+                
+                size_bytes = int(info.get('format', {}).get('size', 0))
+                dur_sec = float(info.get('format', {}).get('duration', 0))
+                m = math.floor(dur_sec / 60)
+                s = math.floor(dur_sec % 60)
+                
+                v_stream = next((st for st in info.get('streams', []) if st['codec_type'] == 'video' and st['codec_name'] not in ['mjpeg', 'png']), None)
+                a_streams = [st for st in info.get('streams', []) if st['codec_type'] == 'audio']
+                s_streams = [st for st in info.get('streams', []) if st['codec_type'] == 'subtitle']
+                
+                k = 1024
+                sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+                i = 0 if size_bytes == 0 else math.floor(math.log(size_bytes) / math.log(k))
+                size_str = f"{(size_bytes / (k**i)):.1f} {sizes[i]}"
+                
+                caption = f"`{file_name}`\n\n🗂 {size_str}"
+                
+                if v_stream:
+                    w = v_stream.get('width', '?')
+                    h = v_stream.get('height', '?')
+                    
+                    a_langs = []
+                    for a in a_streams:
+                        lng = a.get('tags', {}).get('language', a.get('tags', {}).get('LANGUAGE', 'Unknown')).title()
+                        if lng not in a_langs: a_langs.append(lng)
+                    
+                    s_langs = []
+                    for sub in s_streams:
+                        lng = sub.get('tags', {}).get('language', sub.get('tags', {}).get('LANGUAGE', 'None')).title()
+                        if lng not in s_langs: s_langs.append(lng)
+                        
+                    a_str = ", ".join(a_langs) if a_langs else "Unknown"
+                    s_str = ", ".join(s_langs) if s_langs else "None"
+                    
+                    caption += f" 💎 {w}x{h}\n⏳ {m}m {s}s 💬 {s_str}\n🔊 {a_str}"
+                elif a_streams:
+                    a = a_streams[0]
+                    codec = str(a.get('codec_name', 'Unknown')).upper()
+                    
+                    if codec == 'EAC3': codec = 'E-AC-3 (Dolby Digital Plus / Atmos)'
+                    elif codec == 'TRUEHD': codec = 'TrueHD (Dolby Atmos)'
+                    elif 'DSD' in codec: codec = 'DSD (Direct Stream Digital)'
+                    elif codec == 'DCA': codec = 'DTS Audio'
+                    elif codec == 'ALAC': codec = 'Apple Lossless (ALAC)'
+                    
+                    sr = int(a.get('sample_rate', 0)) / 1000
+                    bits = a.get('bits_per_raw_sample') or a.get('bits_per_sample') or '16'
+                    
+                    if 'DSD' in codec:
+                        caption += f"\n🎧 {codec} • 1-Bit - {sr}kHz"
+                    else:
+                        caption += f"\n🎧 {codec} • {bits}Bit - {sr}kHz"
+                    
+                return caption
+            except Exception:
+                return f"`{file_name}`"
+
+        async def get_audio_metadata(file_path):
+            try:
+                import json, math, os
+                cmd = ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", str(file_path)]
+                proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                stdout, _ = await proc.communicate()
+                info = json.loads(stdout)
+                
+                duration = math.ceil(float(info.get('format', {}).get('duration', 0)))
+                
+                all_tags = {}
+                for s in info.get('streams', []):
+                    if s.get('codec_type') == 'audio':
+                        for k, v in s.get('tags', {}).items():
+                            all_tags[k.lower()] = str(v).strip()
+                            
+                for k, v in info.get('format', {}).get('tags', {}).items():
+                    all_tags[k.lower()] = str(v).strip()
+                    
+                title = all_tags.get('title') or all_tags.get('©nam') or file_path.name
+                
+                artist = None
+                for k in ['artist', 'album_artist', 'albumartist', 'performer', 'author', 'composer', '©art', 'aart']:
+                    if k in all_tags:
+                        artist = all_tags[k]
+                        break
+                        
+                if not artist:
+                    for k, v in all_tags.items():
+                        if 'artist' in k or 'author' in k:
+                            artist = v
+                            break
+                            
+                if not artist:
+                    artist = "Unknown Artist"
+                
+                cover_path = str(file_path) + "_cover.jpg"
+                c_cmd = ["ffmpeg", "-y", "-i", str(file_path), "-an", "-vcodec", "copy", cover_path]
+                c_proc = await asyncio.create_subprocess_exec(*c_cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+                await c_proc.communicate()
+                
+                if not os.path.exists(cover_path) or os.path.getsize(cover_path) == 0:
+                    c_cmd = ["ffmpeg", "-y", "-i", str(file_path), "-an", "-vframes", "1", cover_path]
+                    c_proc = await asyncio.create_subprocess_exec(*c_cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+                    await c_proc.communicate()
+                    
+                if not os.path.exists(cover_path) or os.path.getsize(cover_path) == 0:
+                    cover_path = None
+                    
+                return {"duration": duration, "performer": artist, "title": title, "thumb": cover_path}
+            except Exception:
+                return {}
         
         try:
             status_msg = await app.send_message(uid, f"⚙️ **Media Editor Task Started!**\n\n📄 **Target:** `{new_name}`\n⏳ **Phase:** Downloading sources...")
@@ -1739,19 +1857,31 @@ async def _api_edit_media_handler(request):
                 
                 await asyncio.to_thread(unpack_archive)
                 
-                # Gather media tracks
-                # 🟢 THE FIX: Expanded supported extensions to include DSF, DFF, AC3, EAC3, and DTS!
-                valid_extensions = ('.flac', '.mp3', '.m4a', '.wav', '.aac', '.opus', '.ogg', '.alac', '.mka', '.dsf', '.dff', '.ac3', '.eac3', '.dts', '.mp4', '.mkv', '.webm', '.avi', '.ts')
-                media_files = []
+                # 🟢 Gather media and document tracks
+                audio_exts = ('.flac', '.mp3', '.m4a', '.wav', '.aac', '.opus', '.ogg', '.alac', '.mka', '.dsf', '.dff', '.ac3', '.eac3', '.dts')
+                video_exts = ('.mp4', '.mkv', '.webm', '.avi', '.ts', '.mov', '.m4v')
+                doc_exts = ('.txt', '.lrc', '.srt', '.vtt', '.nfo', '.jpg', '.jpeg', '.png', '.pdf')
+                
+                audio_files = []
+                video_files = []
+                doc_files = []
+                
                 for root, _, files in os.walk(extract_dir):
                     for f in sorted(files):
-                        if f.lower().endswith(valid_extensions):
-                            media_files.append(Path(root) / f)
+                        f_low = f.lower()
+                        p = Path(root) / f
+                        if f_low.endswith(audio_exts):
+                            audio_files.append(p)
+                        elif f_low.endswith(video_exts):
+                            video_files.append(p)
+                        elif f_low.endswith(doc_exts):
+                            doc_files.append(p)
                             
-                if not media_files:
-                    raise Exception("No playable audio or video files found inside the archive.")
+                all_media = audio_files + video_files + doc_files
+                if not all_media:
+                    raise Exception("No supported audio, video, or document files found inside the archive.")
                     
-                total_tracks = len(media_files)
+                total_tracks = len(all_media)
                 final_chat_id = uid if dest == "tg" else upload_chat_id
                 
                 # Worker Bot Selection
@@ -1774,38 +1904,41 @@ async def _api_edit_media_handler(request):
                     upload_client = uclient
                     is_bot = False
                     
-                for t_idx, track_path in enumerate(media_files, start=1):
-                    EDITOR_UI_STATE[task_uuid]["phase"] = f"Uploading Track {t_idx}/{total_tracks}"
-                    await safe_tg_edit(status_msg, f"☁️ **Uploading Track {t_idx} of {total_tracks}...**\n`{track_path.name}`")
+                # Process and upload each track cleanly
+                for t_idx, track_path in enumerate(all_media, start=1):
+                    is_audio = track_path in audio_files
+                    is_video = track_path in video_files
+                    t_type = "Audio" if is_audio else ("Video" if is_video else "Document")
                     
-                    caption_text = await generate_rich_caption(track_path, track_path.name)
-                    
-                    # 🟢 THE FIX: Intelligent Media Type & Native Metadata Detection
-                    is_video_track = track_path.suffix.lower() in ('.mp4', '.mkv', '.webm', '.avi', '.ts')
-                    is_audio_track = track_path.suffix.lower() in ('.flac', '.mp3', '.m4a', '.wav', '.aac', '.opus', '.ogg', '.alac', '.mka', '.dsf', '.dff', '.ac3', '.eac3', '.dts')
+                    EDITOR_UI_STATE[task_uuid]["phase"] = f"Uploading {t_type} {t_idx}/{total_tracks}"
+                    await safe_tg_edit(status_msg, f"☁️ **Uploading {t_type} {t_idx} of {total_tracks}...**\n`{track_path.name}`")
                     
                     extra_kw = {}
                     track_thumb = thumb_path
                     audio_meta = {}
                     
-                    if is_audio_track:
-                        send_fn = upload_client.send_audio
-                        doc_key = "audio"
-                        audio_meta = await get_audio_metadata(track_path)
-                        extra_kw.update({
-                            "duration": audio_meta.get("duration", 0),
-                            "performer": audio_meta.get("performer", "Unknown Artist"),
-                            "title": audio_meta.get("title", track_path.name)
-                        })
-                        if not track_thumb and audio_meta.get("thumb"):
-                            track_thumb = Path(audio_meta["thumb"])
-                    elif is_video_track:
-                        send_fn = upload_client.send_video
-                        doc_key = "video"
-                        extra_kw = {"supports_streaming": True}
-                    else:
+                    # 🟢 FORCE DOCUMENTS IF SELECTED IN UI (Overrides audio/video native players)
+                    if upload_mode == "document" or not (is_audio or is_video):
+                        caption_text = f"`{track_path.name}`"
                         send_fn = upload_client.send_document
                         doc_key = "document"
+                    else:
+                        caption_text = await generate_rich_caption(track_path, track_path.name)
+                        if is_audio:
+                            send_fn = upload_client.send_audio
+                            doc_key = "audio"
+                            audio_meta = await get_audio_metadata(track_path)
+                            extra_kw.update({
+                                "duration": audio_meta.get("duration", 0),
+                                "performer": audio_meta.get("performer", "Unknown Artist"),
+                                "title": audio_meta.get("title", track_path.name)
+                            })
+                            if not track_thumb and audio_meta.get("thumb"):
+                                track_thumb = Path(audio_meta["thumb"])
+                        elif is_video:
+                            send_fn = upload_client.send_video
+                            doc_key = "video"
+                            extra_kw = {"supports_streaming": True}
                     
                     await safe_send(
                         upload_client, uid, final_chat_id, task_uuid, is_bot, send_fn,
@@ -1814,6 +1947,7 @@ async def _api_edit_media_handler(request):
                         thumb=str(track_thumb) if track_thumb else None, 
                         caption=caption_text, **{doc_key: str(track_path)}, **extra_kw
                     )
+                    
                     try: os.remove(track_path)
                     except Exception: pass
                     if audio_meta.get("thumb"):
@@ -1876,131 +2010,6 @@ async def _api_edit_media_handler(request):
                 await status_msg.delete()
                 await app.send_message(uid, f"✅ **Media Editor Completed!**\n\n🔗 **GoFile Link:** {url}", disable_web_page_preview=True)
             else:
-                # 🟢 NEW: RICH CAPTION GENERATOR (FFprobe)
-                async def generate_rich_caption(file_path, file_name):
-                    try:
-                        import json, math
-                        cmd = ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", str(file_path)]
-                        proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-                        stdout, _ = await proc.communicate()
-                        info = json.loads(stdout)
-                        
-                        size_bytes = int(info.get('format', {}).get('size', 0))
-                        dur_sec = float(info.get('format', {}).get('duration', 0))
-                        m = math.floor(dur_sec / 60)
-                        s = math.floor(dur_sec % 60)
-                        
-                        v_stream = next((st for st in info.get('streams', []) if st['codec_type'] == 'video' and st['codec_name'] not in ['mjpeg', 'png']), None)
-                        a_streams = [st for st in info.get('streams', []) if st['codec_type'] == 'audio']
-                        s_streams = [st for st in info.get('streams', []) if st['codec_type'] == 'subtitle']
-                        
-                        k = 1024
-                        sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-                        i = 0 if size_bytes == 0 else math.floor(math.log(size_bytes) / math.log(k))
-                        size_str = f"{(size_bytes / (k**i)):.1f} {sizes[i]}"
-                        
-                        caption = f"`{file_name}`\n\n🗂 {size_str}"
-                        
-                        if v_stream:
-                            w = v_stream.get('width', '?')
-                            h = v_stream.get('height', '?')
-                            
-                            a_langs = []
-                            for a in a_streams:
-                                lng = a.get('tags', {}).get('language', a.get('tags', {}).get('LANGUAGE', 'Unknown')).title()
-                                if lng not in a_langs: a_langs.append(lng)
-                            
-                            s_langs = []
-                            for sub in s_streams:
-                                lng = sub.get('tags', {}).get('language', sub.get('tags', {}).get('LANGUAGE', 'None')).title()
-                                if lng not in s_langs: s_langs.append(lng)
-                                
-                            a_str = ", ".join(a_langs) if a_langs else "Unknown"
-                            s_str = ", ".join(s_langs) if s_langs else "None"
-                            
-                            caption += f" 💎 {w}x{h}\n⏳ {m}m {s}s 💬 {s_str}\n🔊 {a_str}"
-                        elif a_streams:
-                            a = a_streams[0]
-                            codec = str(a.get('codec_name', 'Unknown')).upper()
-                            
-                            # 🟢 THE FIX: Premium Codec Naming (Atmos, DSD, DTS)
-                            if codec == 'EAC3': codec = 'E-AC-3 (Dolby Digital Plus / Atmos)'
-                            elif codec == 'TRUEHD': codec = 'TrueHD (Dolby Atmos)'
-                            elif 'DSD' in codec: codec = 'DSD (Direct Stream Digital)'
-                            elif codec == 'DCA': codec = 'DTS Audio'
-                            elif codec == 'ALAC': codec = 'Apple Lossless (ALAC)'
-                            
-                            sr = int(a.get('sample_rate', 0)) / 1000
-                            bits = a.get('bits_per_raw_sample') or a.get('bits_per_sample') or '16'
-                            
-                            # DSD is 1-bit audio, standard fallback is 16-bit
-                            if 'DSD' in codec:
-                                caption += f"\n🎧 {codec} • 1-Bit - {sr}kHz"
-                            else:
-                                caption += f"\n🎧 {codec} • {bits}Bit - {sr}kHz"
-                            
-                        return caption
-                    except Exception:
-                        return f"`{file_name}`"
-
-                # 🟢 NEW: AUDIO METADATA EXTRACTOR (For Native Telegram Players)
-                async def get_audio_metadata(file_path):
-                    try:
-                        import json, math, os
-                        # Added -show_streams to catch M4A/FLAC tags hidden at the stream level
-                        cmd = ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", str(file_path)]
-                        proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-                        stdout, _ = await proc.communicate()
-                        info = json.loads(stdout)
-                        
-                        duration = math.ceil(float(info.get('format', {}).get('duration', 0)))
-                        
-                        # 🟢 THE FIX: Deep case-insensitive scan of BOTH streams and formats
-                        all_tags = {}
-                        for s in info.get('streams', []):
-                            if s.get('codec_type') == 'audio':
-                                for k, v in s.get('tags', {}).items():
-                                    all_tags[k.lower()] = str(v).strip()
-                                    
-                        for k, v in info.get('format', {}).get('tags', {}).items():
-                            all_tags[k.lower()] = str(v).strip()
-                            
-                        # 🟢 AGGRESSIVE ARTIST & TITLE RECOVERY
-                        title = all_tags.get('title') or all_tags.get('©nam') or file_path.name
-                        
-                        artist = None
-                        for k in ['artist', 'album_artist', 'albumartist', 'performer', 'author', 'composer', '©art', 'aart']:
-                            if k in all_tags:
-                                artist = all_tags[k]
-                                break
-                                
-                        if not artist:
-                            for k, v in all_tags.items():
-                                if 'artist' in k or 'author' in k:
-                                    artist = v
-                                    break
-                                    
-                        if not artist:
-                            artist = "Unknown Artist"
-                        
-                        # Extract Embedded Cover Art
-                        cover_path = str(file_path) + "_cover.jpg"
-                        c_cmd = ["ffmpeg", "-y", "-i", str(file_path), "-an", "-vcodec", "copy", cover_path]
-                        c_proc = await asyncio.create_subprocess_exec(*c_cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
-                        await c_proc.communicate()
-                        
-                        if not os.path.exists(cover_path) or os.path.getsize(cover_path) == 0:
-                            c_cmd = ["ffmpeg", "-y", "-i", str(file_path), "-an", "-vframes", "1", cover_path]
-                            c_proc = await asyncio.create_subprocess_exec(*c_cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
-                            await c_proc.communicate()
-                            
-                        if not os.path.exists(cover_path) or os.path.getsize(cover_path) == 0:
-                            cover_path = None
-                            
-                        return {"duration": duration, "performer": artist, "title": title, "thumb": cover_path}
-                    except Exception:
-                        return {}
-
                 # 🟢 2. SMART UPLOAD ROUTING (Stream Bots -> Main Bot -> User)
                 final_chat_id = uid if dest == "tg" else upload_chat_id
                 
