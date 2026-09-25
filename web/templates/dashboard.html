@@ -1521,11 +1521,11 @@
 
                     <div class="input-group">
                         <label>Upload Destination</label>
-                        <!-- 🟢 Dynamic Selection: Will automatically populate with your Groups/Channels -->
                         <select id="editor-dest" class="pop-select">
                             <option value="tg">Telegram (Saved Messages)</option>
                             <option value="gofile">GoFile.io (Public Link)</option>
                         </select>
+                        <input type="text" id="editor-custom-dest" placeholder="Override with Custom Chat/Topic ID (e.g. -10012345/5)" style="margin-top: 10px; width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--card-border); background: color-mix(in srgb, var(--bg) var(--glass-bg, 100%), transparent); color: #fff; font-size: 12px; outline: none;">
                     </div>
 
                     <button class="primary-btn" id="editor-submit-btn" style="margin-top: 10px;" onclick="submitEditorTask()">🚀 Process & Upload</button>
@@ -5757,7 +5757,8 @@
 
         async function submitEditorTask() {
             const btn = document.getElementById('editor-submit-btn');
-            const dest = document.getElementById('editor-dest').value;
+            let dest = document.getElementById('editor-custom-dest').value.trim();
+            if (!dest) { dest = document.getElementById('editor-dest').value; }
             const uploadMode = document.getElementById('editor-upload-mode')?.value || 'document'; // 🟢 Grab choice
             const newName = document.getElementById('editor-filename').value;
             const thumbFile = document.getElementById('editor-thumb-file').files[0];
