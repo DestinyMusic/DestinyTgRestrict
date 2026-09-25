@@ -1529,7 +1529,7 @@
                         <label>Upload Format</label>
                         <select id="editor-upload-mode" class="pop-select">
                             <option value="document" selected>Document (.mkv / .001)</option>
-                            <option value="video">Streamable Video (Native Player)</option>
+                            <option value="video">Playable Media (Video/Audio Player)</option>
                             <option value="zip">Archive (.zip / .zip.001)</option>
                         </select>
                     </div>
@@ -5493,7 +5493,8 @@
             }
             
             destSelect.innerHTML = html;
-            initCustomSelects(); // Re-render the liquid glass UI
+            // 🟢 THE FIX: Re-load and re-inject your custom saved IDs immediately after rebuilding!
+            loadCustomDests(); 
         }
 
         let activeArchiveFiles = [];
