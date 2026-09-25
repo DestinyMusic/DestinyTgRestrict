@@ -1476,6 +1476,18 @@
                 <!-- 🟢 NEW: Active Editor Tasks Container (Multiple parallel tasks will stack here) -->
                 <div id="editor-active-tasks" style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px;"></div>
                 
+                <!-- 🟢 DYNAMIC ARCHIVE / ALBUM WORKSPACE -->
+                <div class="card" id="editor-archive-workspace" style="display: none; border-color: #10b981; margin-bottom: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h3 style="margin: 0; color: #10b981; font-size: 16px;">📦 Archive / Album Detected</h3>
+                        <span id="archive-track-count" style="font-size: 12px; color: var(--subtext); font-weight: 800;">0 Tracks</span>
+                    </div>
+                    <p style="font-size: 12px; color: var(--subtext); margin-top: 0;">This archive contains multiple tracks. The editor will extract and upload each file individually with rich audio/video metadata captions.</p>
+                    <div id="archive-tracks-preview" style="max-height: 250px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; margin-bottom: 20px; padding-right: 5px;"></div>
+                    
+                    <button class="primary-btn" id="archive-submit-btn" style="background: linear-gradient(135deg, #10b981, #059669);" onclick="submitArchiveTask()">⚡ Extract & Upload All Tracks</button>
+                </div>
+
                 <div class="card" id="editor-workspace" style="display: none; border-color: var(--accent);">
                     <h3 style="margin-top: 0; color: #fff; font-size: 16px; margin-bottom: 15px;">🛠 Inspect & Edit Tracks</h3>
                     
@@ -5484,22 +5496,52 @@
             initCustomSelects(); // Re-render the liquid glass UI
         }
 
+        let activeArchiveFiles = [];
+
         async function loadEditorMedia() {
             const link = document.getElementById('editor-stream-url').value.trim();
             if (!link) return alert('Provide a valid media link!');
             
             const btn = document.getElementById('editor-load-btn');
             const workspace = document.getElementById('editor-workspace');
+            const archiveWorkspace = document.getElementById('editor-archive-workspace');
             const container = document.getElementById('editor-tracks-container');
             const statusBox = document.getElementById('editor-status-container');
             
             btn.innerText = '⏳ Probing...';
             btn.disabled = true;
             workspace.style.display = 'none';
+            if (archiveWorkspace) archiveWorkspace.style.display = 'none';
             if (statusBox) statusBox.style.display = 'none';
             
             try {
-                // 🟢 Appended &extract_tags=1 to force deep scan ONLY for the editor!
+                // 🟢 1. CHECK IF THE LINK IS AN ARCHIVE / ALBUM ZIP FIRST
+                const isArchiveLink = /\.(zip|7z|rar|tar|gz)(\.\d{2,3})?($|\?)/i.test(link);
+                if (isArchiveLink) {
+                    const plistRes = await fetch(`/api/playlist?user_id=${encodeURIComponent(currentUser)}&link=${encodeURIComponent(link)}`);
+                    const plistData = await plistRes.json();
+                    
+                    if (plistData.status === 'success' && plistData.playlist && plistData.playlist.length > 0) {
+                        window.editorMediaLink = link;
+                        activeArchiveFiles = plistData.playlist;
+                        document.getElementById('archive-track-count').innerText = `${plistData.playlist.length} Files`;
+                        
+                        const previewEl = document.getElementById('archive-tracks-preview');
+                        previewEl.innerHTML = plistData.playlist.map((t, idx) => `
+                            <div style="background: rgba(0,0,0,0.3); border: 1px solid var(--card-border); padding: 8px 12px; border-radius: 8px; font-size: 12px; color: #cbd5e1; display: flex; justify-content: space-between;">
+                                <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80%;">🎵 ${t.display_name || t.name}</span>
+                                <span style="color: #10b981; font-family: monospace;">${formatBytes(t.size || 0)}</span>
+                            </div>
+                        `).join('');
+                        
+                        archiveWorkspace.style.display = 'block';
+                        btn.innerText = 'Analyze Tracks';
+                        btn.disabled = false;
+                        return;
+                    }
+                }
+
+                // 🟢 2. STANDARD MEDIA FILE -> RUN REMUX PROBE
                 const res = await fetch('/api/media_probe?user_id=' + encodeURIComponent(currentUser) + '&link=' + encodeURIComponent(link) + '&extract_tags=1');
                 const data = await res.json();
                 
@@ -5894,6 +5936,56 @@
             await sendEditorPayload(config, newName, dest, uploadMode, thumbB64, globalTags, uiId);
         }
 
+        async function submitArchiveTask() {
+            const dest = document.getElementById('editor-dest').value;
+            const uiId = 'edtask-' + Date.now();
+            const archiveName = window.editorMediaLink.split('/').pop().split('?')[0] || "Archive_Batch";
+            
+            const taskHtml = `
+                <div id="${uiId}" style="padding: 20px; background: rgba(0,0,0,0.4); border: 1px solid #10b981; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+                    <div style="font-size: 13px; font-weight: bold; color: #fff; display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 65%;">📦 Batch: ${archiveName}</span>
+                        <span id="${uiId}-text" style="color: #10b981; font-size: 11px; text-transform: uppercase; font-weight: 800;">Extracting...</span>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.1); border-radius: 8px; width: 100%; height: 12px; overflow: hidden; position: relative;">
+                        <div id="${uiId}-bar" style="background: linear-gradient(90deg, #10b981, #38bdf8); height: 100%; width: 0%; transition: width 0.5s ease;"></div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--subtext); margin-top: 10px; font-family: monospace;">
+                        <span id="${uiId}-left">Unpacking & processing tracks...</span>
+                        <span id="${uiId}-right"></span>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('editor-active-tasks').insertAdjacentHTML('afterbegin', taskHtml);
+            document.getElementById('editor-archive-workspace').style.display = 'none';
+            document.getElementById('editor-stream-url').value = '';
+            
+            try {
+                const res = await fetch('/api/edit_media', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        user_id: currentUser,
+                        token: currentToken,
+                        link: window.editorMediaLink,
+                        is_archive: true,
+                        dest: dest
+                    })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    pollEditorProgress(data.task_uuid, uiId);
+                } else {
+                    document.getElementById(`${uiId}-text`).innerHTML = '❌ <b>Error:</b> ' + data.message;
+                    document.getElementById(`${uiId}-bar`).style.background = '#ef4444';
+                }
+            } catch (e) {
+                document.getElementById(`${uiId}-text`).innerHTML = '❌ <b>Network Error</b>';
+                document.getElementById(`${uiId}-bar`).style.background = '#ef4444';
+            }
+        }
+        
         // ======================================================================
         // 🍪 PER-SITE COOKIES ENGINE
         // ======================================================================
