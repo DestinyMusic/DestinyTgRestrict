@@ -5516,31 +5516,40 @@
             if (statusBox) statusBox.style.display = 'none';
             
             try {
-                // 🟢 1. CHECK IF THE LINK IS AN ARCHIVE / ALBUM ZIP FIRST
-                const isArchiveLink = /\.(zip|7z|rar|tar|gz)(\.\d{2,3})?($|\?)/i.test(link);
-                if (isArchiveLink) {
+                // 🟢 1. UNIVERSAL ARCHIVE CHECK (Works for TG links t.me/c/... AND direct links)
+                let isArchiveDetected = false;
+                try {
                     const plistRes = await fetch(`/api/playlist?user_id=${encodeURIComponent(currentUser)}&link=${encodeURIComponent(link)}`);
                     const plistData = await plistRes.json();
                     
                     if (plistData.status === 'success' && plistData.playlist && plistData.playlist.length > 0) {
+                        isArchiveDetected = true;
                         window.editorMediaLink = link;
                         activeArchiveFiles = plistData.playlist;
-                        document.getElementById('archive-track-count').innerText = `${plistData.playlist.length} Files`;
+                        
+                        const audios = plistData.playlist.filter(t => /\.(flac|mp3|m4a|wav|aac|opus|ogg|alac|mka|dsf|dff|ac3|eac3|dts)$/i.test(t.display_name || t.name || ''));
+                        const videos = plistData.playlist.filter(t => /\.(mp4|mkv|webm|avi|ts|mov)$/i.test(t.display_name || t.name || ''));
+                        
+                        document.getElementById('archive-track-count').innerText = `${audios.length} Audio, ${videos.length} Video`;
                         
                         const previewEl = document.getElementById('archive-tracks-preview');
-                        previewEl.innerHTML = plistData.playlist.map((t, idx) => `
-                            <div style="background: rgba(0,0,0,0.3); border: 1px solid var(--card-border); padding: 8px 12px; border-radius: 8px; font-size: 12px; color: #cbd5e1; display: flex; justify-content: space-between;">
-                                <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80%;">🎵 ${t.display_name || t.name}</span>
-                                <span style="color: #10b981; font-family: monospace;">${formatBytes(t.size || 0)}</span>
-                            </div>
-                        `).join('');
+                        previewEl.innerHTML = plistData.playlist.map((t, idx) => {
+                            const isVid = /\.(mp4|mkv|webm|avi|ts|mov)$/i.test(t.display_name || t.name || '');
+                            const icon = isVid ? '🎬' : '🎧';
+                            return `
+                                <div style="background: rgba(0,0,0,0.3); border: 1px solid var(--card-border); padding: 8px 12px; border-radius: 8px; font-size: 12px; color: #cbd5e1; display: flex; justify-content: space-between;">
+                                    <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80%;">${icon} ${t.display_name || t.name}</span>
+                                    <span style="color: ${isVid ? '#38bdf8' : '#10b981'}; font-family: monospace;">${formatBytes(t.size || 0)}</span>
+                                </div>
+                            `;
+                        }).join('');
                         
                         archiveWorkspace.style.display = 'block';
                         btn.innerText = 'Analyze Tracks';
                         btn.disabled = false;
                         return;
                     }
-                }
+                } catch (_) {}
 
                 // 🟢 2. STANDARD MEDIA FILE -> RUN REMUX PROBE
                 const res = await fetch('/api/media_probe?user_id=' + encodeURIComponent(currentUser) + '&link=' + encodeURIComponent(link) + '&extract_tags=1');
