@@ -1514,6 +1514,28 @@ async def _api_proxy_wiki(request):
 # --- MEDIA EDITOR PROGRESS TRACKER ---
 # ==============================================================================
 EDITOR_UI_STATE = {}
+EDITOR_ACTIVE_TASKS = {}  # 🟢 Track active Python tasks for cancellation
+
+async def _api_editor_cancel(request):
+    try:
+        data = await request.json()
+        task_uuid = data.get("task_uuid")
+        uid = int(data.get("user_id", 0))
+
+        if task_uuid == "all":
+            for tid, tinfo in list(EDITOR_ACTIVE_TASKS.items()):
+                if tinfo["user_id"] == uid:
+                    tinfo["task"].cancel()
+            return web.json_response({"status": "success", "message": "All tasks cancelled."})
+            
+        if task_uuid in EDITOR_ACTIVE_TASKS:
+            tinfo = EDITOR_ACTIVE_TASKS[task_uuid]
+            if tinfo["user_id"] == uid:
+                tinfo["task"].cancel()
+                return web.json_response({"status": "success"})
+        return web.json_response({"status": "error", "message": "Task not found"})
+    except Exception as e:
+        return web.json_response({"status": "error", "message": str(e)})
 
 async def _api_editor_progress(request):
     task_uuid = request.query.get("task_uuid")
@@ -2144,6 +2166,12 @@ async def _api_edit_media_handler(request):
                     await app.send_message(uid, f"✅ **Media Editor Completed!**\nFile `{new_name}` uploaded successfully.")
                     
             EDITOR_UI_STATE[task_uuid]["done"] = True
+        except asyncio.CancelledError:
+            # 🟢 Cleanly handle the kill signal
+            EDITOR_UI_STATE[task_uuid]["error"] = "Cancelled by User"
+            EDITOR_UI_STATE[task_uuid]["done"] = True
+            try: await app.send_message(uid, f"🚫 **Task Cancelled:** `{new_name}`")
+            except: pass
         except Exception as e:
             EDITOR_UI_STATE[task_uuid]["error"] = str(e)
             EDITOR_UI_STATE[task_uuid]["done"] = True
@@ -2151,8 +2179,12 @@ async def _api_edit_media_handler(request):
             except: pass
         finally:
             shutil.rmtree(str(temp_dir), ignore_errors=True)
+            EDITOR_ACTIVE_TASKS.pop(task_uuid, None) # Remove from active list
             
-    asyncio.create_task(background_editor())
+    # 🟢 Register the task so it can be cancelled
+    task_obj = asyncio.create_task(background_editor())
+    EDITOR_ACTIVE_TASKS[task_uuid] = {"task": task_obj, "user_id": uid}
+    
     return web.json_response({"status": "success", "task_uuid": task_uuid})
 
 # ==============================================================================
@@ -2263,6 +2295,7 @@ async def start_koyeb_health_check(host: str = "0.0.0.0"):
     # Editor & Proxies
     app_web.router.add_post("/api/edit_media", _api_edit_media_handler)
     app_web.router.add_get("/api/editor_progress", _api_editor_progress)
+    app_web.router.add_post("/api/editor_cancel", _api_editor_cancel)  # 🟢 Added Cancel Route
     app_web.router.add_get("/api/bg", _api_bg_proxy)
     app_web.router.add_get("/api/proxy/country", _api_proxy_country)
     app_web.router.add_get("/api/proxy/wiki", _api_proxy_wiki)
