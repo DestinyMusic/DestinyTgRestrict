@@ -1593,6 +1593,7 @@ async def _api_edit_media_handler(request):
     import base64
     import os
     import zipfile
+    import re  # 🟢 THE FIX: Moved to the top so HTTP links can use it!
     
     task_uuid = uuid.uuid4().hex[:8]
     temp_dir = Path(f"./temp_remux_{uid}_{task_uuid}")
@@ -1651,7 +1652,6 @@ async def _api_edit_media_handler(request):
             # 🟢 DOWNLOAD MAIN FILE (WITH SMART STITCHING ENGINE FOR .001 & BATCH RANGES)
             is_tg = _is_tg_link(link)
             if is_tg:
-                import re
                 parsed = _parse_source_link(link)
                 chat_id = parsed["chat_id"]
                 start_id = parsed["msg_id"]
@@ -1740,7 +1740,8 @@ async def _api_edit_media_handler(request):
                 await asyncio.to_thread(unpack_archive)
                 
                 # Gather media tracks
-                valid_extensions = ('.flac', '.mp3', '.m4a', '.wav', '.aac', '.opus', '.ogg', '.alac', '.mp4', '.mkv', '.webm')
+                # 🟢 THE FIX: Expanded supported extensions to include DSF, DFF, AC3, EAC3, and DTS!
+                valid_extensions = ('.flac', '.mp3', '.m4a', '.wav', '.aac', '.opus', '.ogg', '.alac', '.mka', '.dsf', '.dff', '.ac3', '.eac3', '.dts', '.mp4', '.mkv', '.webm', '.avi', '.ts')
                 media_files = []
                 for root, _, files in os.walk(extract_dir):
                     for f in sorted(files):
@@ -1781,7 +1782,7 @@ async def _api_edit_media_handler(request):
                     
                     # 🟢 THE FIX: Intelligent Media Type & Native Metadata Detection
                     is_video_track = track_path.suffix.lower() in ('.mp4', '.mkv', '.webm', '.avi', '.ts')
-                    is_audio_track = track_path.suffix.lower() in ('.flac', '.mp3', '.m4a', '.wav', '.aac', '.opus', '.ogg', '.alac', '.mka')
+                    is_audio_track = track_path.suffix.lower() in ('.flac', '.mp3', '.m4a', '.wav', '.aac', '.opus', '.ogg', '.alac', '.mka', '.dsf', '.dff', '.ac3', '.eac3', '.dts')
                     
                     extra_kw = {}
                     track_thumb = thumb_path
@@ -1901,9 +1902,22 @@ async def _api_edit_media_handler(request):
                         elif a_streams:
                             a = a_streams[0]
                             codec = str(a.get('codec_name', 'Unknown')).upper()
+                            
+                            # 🟢 THE FIX: Premium Codec Naming (Atmos, DSD, DTS)
+                            if codec == 'EAC3': codec = 'E-AC-3 (Dolby Digital Plus / Atmos)'
+                            elif codec == 'TRUEHD': codec = 'TrueHD (Dolby Atmos)'
+                            elif 'DSD' in codec: codec = 'DSD (Direct Stream Digital)'
+                            elif codec == 'DCA': codec = 'DTS Audio'
+                            elif codec == 'ALAC': codec = 'Apple Lossless (ALAC)'
+                            
                             sr = int(a.get('sample_rate', 0)) / 1000
                             bits = a.get('bits_per_raw_sample') or a.get('bits_per_sample') or '16'
-                            caption += f"\n🎧 {codec} • {bits}Bit - {sr}kHz"
+                            
+                            # DSD is 1-bit audio, standard fallback is 16-bit
+                            if 'DSD' in codec:
+                                caption += f"\n🎧 {codec} • 1-Bit - {sr}kHz"
+                            else:
+                                caption += f"\n🎧 {codec} • {bits}Bit - {sr}kHz"
                             
                         return caption
                     except Exception:
@@ -1913,17 +1927,26 @@ async def _api_edit_media_handler(request):
                 async def get_audio_metadata(file_path):
                     try:
                         import json, math, os
-                        cmd = ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", str(file_path)]
+                        # Added -show_streams to catch M4A/FLAC tags hidden at the stream level
+                        cmd = ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", str(file_path)]
                         proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
                         stdout, _ = await proc.communicate()
                         info = json.loads(stdout)
                         
-                        format_info = info.get('format', {})
-                        tags = format_info.get('tags', {})
-                        duration = math.ceil(float(format_info.get('duration', 0)))
+                        duration = math.ceil(float(info.get('format', {}).get('duration', 0)))
                         
-                        title = tags.get('title') or tags.get('TITLE') or file_path.name
-                        artist = tags.get('artist') or tags.get('ARTIST') or tags.get('album_artist') or "Unknown Artist"
+                        # 🟢 THE FIX: Deep case-insensitive scan of BOTH streams and formats
+                        all_tags = {}
+                        for s in info.get('streams', []):
+                            if s.get('codec_type') == 'audio':
+                                for k, v in s.get('tags', {}).items():
+                                    all_tags[k.lower()] = str(v).strip()
+                                    
+                        for k, v in info.get('format', {}).get('tags', {}).items():
+                            all_tags[k.lower()] = str(v).strip()
+                            
+                        title = all_tags.get('title') or file_path.name
+                        artist = all_tags.get('artist') or all_tags.get('album_artist') or all_tags.get('performer') or "Unknown Artist"
                         
                         # Extract Embedded Cover Art
                         cover_path = str(file_path) + "_cover.jpg"
@@ -2029,7 +2052,7 @@ async def _api_edit_media_handler(request):
                     
                     # 🟢 THE FIX: Smart Routing for Audio vs Video with Native Metadata
                     is_video = str(output_file).lower().endswith(('.mp4', '.mkv', '.webm', '.avi', '.ts'))
-                    is_audio = str(output_file).lower().endswith(('.flac', '.mp3', '.m4a', '.wav', '.aac', '.opus', '.ogg', '.alac', '.mka'))
+                    is_audio = str(output_file).lower().endswith(('.flac', '.mp3', '.m4a', '.wav', '.aac', '.opus', '.ogg', '.alac', '.mka', '.dsf', '.dff', '.ac3', '.eac3', '.dts'))
                     
                     extra_kwargs = {}
                     track_thumb = final_thumb
