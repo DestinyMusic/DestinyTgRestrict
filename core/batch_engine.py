@@ -153,6 +153,15 @@ async def handle_public_unrestricted(client: Client, acc, chatid: str, msgid: in
     msg = pre_fetched_msg
     fetcher = acc if acc else client
     
+    # 🟢 NEW: Load Balancer for the Fast-Path!
+    upload_client = client
+    worker_bots = USER_TASK_BOTS.get(user_id, [])
+    if worker_bots:
+        connected_workers = [wb for wb in worker_bots if getattr(wb, "is_connected", False)]
+        if connected_workers:
+            import random
+            upload_client = random.choice(connected_workers)
+
     # 🟢 FIX: Inject UI Labels for Web Dashboard (Fast-Path bypasses router)
     if task_uuid and user_id in ACTIVE_PROCESSES and task_uuid in ACTIVE_PROCESSES[user_id]:
         def _lbl(c):
@@ -165,7 +174,7 @@ async def handle_public_unrestricted(client: Client, acc, chatid: str, msgid: in
         
         if "fetcher" not in ACTIVE_PROCESSES[user_id][task_uuid]:
             ACTIVE_PROCESSES[user_id][task_uuid]["fetcher"] = _lbl(fetcher)
-        ACTIVE_PROCESSES[user_id][task_uuid]["uploader"] = _lbl(client)
+        ACTIVE_PROCESSES[user_id][task_uuid]["uploader"] = _lbl(upload_client)
 
     if not msg:
         try:
@@ -207,7 +216,7 @@ async def handle_public_unrestricted(client: Client, acc, chatid: str, msgid: in
     # 🟢 Text Fast-Forward
     if msg_type == "Text":
         try:
-            await client.send_message(dest_chat_id, msg.text, entities=msg.entities, message_thread_id=dest_thread_id)
+            await upload_client.send_message(dest_chat_id, msg.text, entities=msg.entities, message_thread_id=dest_thread_id)
             return "SUCCESS"
         except Exception as e:
             # 🟢 KICKS TO DOWNLOAD MODE IF FORWARDS ARE RESTRICTED
@@ -234,7 +243,7 @@ async def handle_public_unrestricted(client: Client, acc, chatid: str, msgid: in
                 for m in m_group: batch_temp.SKIP_IDS[task_uuid].add(m.id)
 
             try:
-                copy_res = await client.copy_media_group(chat_id=dest_chat_id, from_chat_id=chatid, message_id=msgid, message_thread_id=dest_thread_id)
+                copy_res = await upload_client.copy_media_group(chat_id=dest_chat_id, from_chat_id=chatid, message_id=msgid, message_thread_id=dest_thread_id)
             except Exception as e:
                 if "CHAT_FORWARDS_RESTRICTED" in str(e) or "RESTRICTED" in str(e): return "FALLBACK_RESTRICTED"
                 if acc:
@@ -252,7 +261,7 @@ async def handle_public_unrestricted(client: Client, acc, chatid: str, msgid: in
 
         # 🟢 Single Media Copy
         try:
-            copy_res = await client.copy_message(chat_id=dest_chat_id, from_chat_id=chatid, message_id=msgid, message_thread_id=dest_thread_id)
+            copy_res = await upload_client.copy_message(chat_id=dest_chat_id, from_chat_id=chatid, message_id=msgid, message_thread_id=dest_thread_id)
             if not copy_res: raise ValueError("Bot copy failed")
             return "SUCCESS"
         except Exception as e:
