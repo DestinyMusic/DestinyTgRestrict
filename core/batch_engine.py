@@ -152,6 +152,21 @@ async def handle_public_unrestricted(client: Client, acc, chatid: str, msgid: in
     
     msg = pre_fetched_msg
     fetcher = acc if acc else client
+    
+    # 🟢 FIX: Inject UI Labels for Web Dashboard (Fast-Path bypasses router)
+    if task_uuid and user_id in ACTIVE_PROCESSES and task_uuid in ACTIVE_PROCESSES[user_id]:
+        def _lbl(c):
+            if not c: return "Unknown"
+            nm = getattr(c, "name", "Unknown")
+            if "User_" in nm or "temp_acc_" in nm: return "👤 User Session"
+            if "worker_bot_" in nm: return f"🤖 Worker {nm.split('_')[-1]}"
+            if nm == "RestrictedBot": return "🤖 Main Bot"
+            return f"🤖 {nm}"
+        
+        if "fetcher" not in ACTIVE_PROCESSES[user_id][task_uuid]:
+            ACTIVE_PROCESSES[user_id][task_uuid]["fetcher"] = _lbl(fetcher)
+        ACTIVE_PROCESSES[user_id][task_uuid]["uploader"] = _lbl(client)
+
     if not msg:
         try:
             msg = await fetcher.get_messages(chatid, msgid)
