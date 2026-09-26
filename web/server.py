@@ -1913,7 +1913,10 @@ async def _api_edit_media_handler(request):
                 is_bot = True
                 
                 valid_bot = None
-                for b in stream_bots:
+                import random
+                shuffled_bots = list(stream_bots)
+                random.shuffle(shuffled_bots)
+                for b in shuffled_bots:
                     try:
                         if not getattr(b, "is_connected", False): await b.connect()
                         await b.get_chat(final_chat_id)
@@ -2055,10 +2058,13 @@ async def _api_edit_media_handler(request):
                     upload_client = uclient
                     is_bot = False
                 else:
-                    # Prefer Streamer Bots for all chunks to avoid rate limits
+                    # 🟢 FIX: Bot Load Balancer (Prevents File Splits from Failing)
                     stream_bots = USER_STREAM_BOTS.get(uid, [])
                     valid_bot = None
-                    for b in stream_bots:
+                    import random
+                    shuffled_bots = list(stream_bots)
+                    random.shuffle(shuffled_bots)
+                    for b in shuffled_bots:
                         try:
                             if not getattr(b, "is_connected", False): await b.connect()
                             await b.get_chat(final_chat_id)
