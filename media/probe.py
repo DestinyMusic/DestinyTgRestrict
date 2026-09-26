@@ -45,6 +45,10 @@ async def partial_download_tg(client, message, file_path, limit_mb=15):
 
 async def _run_ffprobe_json(input_url, fast=True, extract_tags=False):
     """Fast probe first; retry with a larger probe only when the small probe fails."""
+    # 🟢 BYPASS: FFprobe cannot read raw split binaries (prevents "Invalid data found" crashes)
+    if str(input_url).lower().endswith(('.001', '.002', '.003', '.004', '.005')):
+        return {}
+        
     probe_pairs = ((10 * 1024 * 1024, 5 * 1024 * 1024), (50 * 1024 * 1024, 25 * 1024 * 1024)) if fast else ((50 * 1024 * 1024, 25 * 1024 * 1024),)
     last_error = None
     
