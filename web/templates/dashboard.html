@@ -5558,47 +5558,39 @@
 
             let countryData = null;
 
-            // 🟢 FIX 2: Hit RESTCountries directly via Browser (Bypasses Server IP Blocks!)
+            // 🟢 BLOCK 1: Fetch Core Demographic & Time Data (Direct first, then Proxy)
             try {
                 let res;
-                if (isoCode && isoCode !== "-99") {
-                    res = await fetch(`https://restcountries.com/v3.1/alpha/${isoCode}`);
-                } else {
-                    res = await fetch(`https://restcountries.com/v3.1/name/${encodeURIComponent(countryName)}?fullText=true`);
-                }
-                
-                if (!res.ok) throw new Error("Direct API Failed");
-                
-                const rawJson = await res.json();
-                countryData = (Array.isArray(rawJson) && rawJson.length > 0) ? rawJson[0] : rawJson;
-                
-            } catch (directErr) {
-                console.log("Direct browser fetch failed, falling back to proxy...");
-                // Fallback to Proxy
-                try {
-                    const proxyUrl = '/api/proxy/country?iso=' + (isoCode || '') + '&name=' + encodeURIComponent(countryName);
-                    const res = await fetch(proxyUrl);
-                    const rawJson = await res.json();
-                    if (Array.isArray(rawJson) && rawJson.length > 0) {
-                        countryData = rawJson[0];
-                    } else if (typeof rawJson === 'object') {
-                        countryData = rawJson;
-                    }
-                } catch (proxyErr) {
-                    console.error("Proxy also failed:", proxyErr);
-                }
-            }
-                
-                const rawText = await res.text();
                 let rawJson;
+                
+                // 1. Try hitting RESTCountries directly via Browser to bypass server IP blocks
                 try {
-                    rawJson = JSON.parse(rawText);
-                } catch (e) {
-                    throw new Error("Invalid JSON from server: " + rawText.substring(0, 40) + "...");
-                }
-
-                if (!res.ok) {
-                    throw new Error(rawJson.error || "HTTP " + res.status);
+                    if (isoCode && isoCode !== "-99") {
+                        res = await fetch("https://restcountries.com/v3.1/alpha/" + isoCode);
+                    } else {
+                        res = await fetch("https://restcountries.com/v3.1/name/" + encodeURIComponent(countryName) + "?fullText=true");
+                    }
+                    
+                    if (!res.ok) throw new Error("Direct API Failed");
+                    rawJson = await res.json();
+                    
+                } catch (directErr) {
+                    console.log("Direct browser fetch failed, falling back to proxy...");
+                    
+                    // 2. Fallback to Proxy
+                    const proxyUrl = '/api/proxy/country?iso=' + (isoCode || '') + '&name=' + encodeURIComponent(countryName);
+                    res = await fetch(proxyUrl);
+                    const rawText = await res.text();
+                    
+                    try {
+                        rawJson = JSON.parse(rawText);
+                    } catch (e) {
+                        throw new Error("Invalid JSON from server: " + rawText.substring(0, 40) + "...");
+                    }
+                    
+                    if (!res.ok) {
+                        throw new Error(rawJson.error || "HTTP " + res.status);
+                    }
                 }
                 
                 // 🟢 BULLETPROOF FIX: Safely handle both Array [ {data} ] and Object {data} responses
@@ -5633,7 +5625,7 @@
                 }
 
             } catch (err) {
-                console.error("Proxy API failed:", err);
+                console.error("Fetch API failed:", err);
                 document.getElementById('c-name').innerText = countryName;
                 document.getElementById('c-cap').innerText = "Unavailable";
                 document.getElementById('c-pop').innerText = "Unavailable";
@@ -5641,7 +5633,6 @@
                 document.getElementById('c-curr').innerText = "Unavailable";
                 document.getElementById('c-lang').innerText = "Unavailable";
                 document.getElementById('c-time').innerText = "--:--:--";
-                // 🟢 FIX: Actually uses a Blue Earth/Globe icon now instead of the French Flag!
                 document.getElementById('c-flag').src = "https://cdn-icons-png.flaticon.com/512/44/44386.png"; 
             }
 
@@ -5654,6 +5645,7 @@
                     const wikiData = await wikiRes.json();
                     if (wikiData.type !== "disambiguation" && wikiData.extract) {
                         const pageUrl = (wikiData.content_urls && wikiData.content_urls.desktop) ? wikiData.content_urls.desktop.page : 'https://en.wikipedia.org/wiki/' + encodeURIComponent(wikiQuery);
+                        // 🟢 Python-Safe String concatenation
                         document.getElementById('c-wiki').innerHTML = '<p>' + wikiData.extract + '</p><a href="' + pageUrl + '" target="_blank" style="color: var(--accent); text-decoration: none; font-weight: bold; font-size: 11px; text-transform: uppercase; border: 1px solid var(--accent); padding: 5px 10px; border-radius: 6px; display: inline-block; margin-top: 10px;">Read Full Wikipedia Article</a>';
                     } else {
                         document.getElementById('c-wiki').innerText = "Wikipedia summary requires disambiguation.";
