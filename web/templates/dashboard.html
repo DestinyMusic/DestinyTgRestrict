@@ -1369,15 +1369,15 @@
                     <button class="primary-btn" style="width: auto; padding: 0 25px;" onclick="searchGlobeCountry()">Search</button>
                 </div>
 
-                <div style="display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start;">
+                <div style="display: flex; gap: 20px; flex-wrap: wrap; align-items: stretch;">
                     <!-- The 3D Canvas -->
-                    <div class="card" style="flex: 1.5; min-width: 320px; padding: 0; overflow: hidden; height: clamp(400px, 60vh, 600px); position: relative; border-radius: 20px; display: flex; align-items: center; justify-content: center; background: #000;">
+                    <div id="globe-container" class="card" style="flex: 1 1 400px; min-height: 45vh; max-height: 70vh; padding: 0; overflow: hidden; position: relative; border-radius: 20px; display: flex; align-items: center; justify-content: center; background: #000;">
                         <div id="globe-loading" style="position: absolute; z-index: 5; color: var(--accent); font-weight: bold; font-size: 16px; text-transform: uppercase; letter-spacing: 2px;">⏳ Booting Global Satellites...</div>
                         <div id="globe-viz" style="width: 100%; height: 100%;"></div>
                     </div>
 
                     <!-- The Information Panel -->
-                    <div id="country-data-panel" class="card" style="flex: 1; min-width: 320px; max-height: clamp(400px, 60vh, 600px); overflow-y: auto; display: none; padding: 30px;">
+                    <div id="country-data-panel" class="card" style="flex: 1 1 320px; max-height: 70vh; overflow-y: auto; display: none; padding: 30px;">
                         <div style="text-align: center; margin-bottom: 20px;">
                             <img id="c-flag" src="" style="width: 120px; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); margin-bottom: 15px;">
                             <h2 id="c-name" style="margin: 0 0 5px 0; color: #fff; font-size: 28px; text-shadow: 0 0 15px var(--glow);">Country Name</h2>
@@ -5538,18 +5538,25 @@
             }
         }
 
+        // 🟢 FIX: Dynamic WebGL Resizer
+        function resizeGlobeEngine() {
+            const container = document.getElementById('globe-container');
+            if (myGlobe && container) {
+                myGlobe.width(container.clientWidth);
+                myGlobe.height(container.clientHeight);
+            }
+        }
+        
+        // Ensure globe resizes if user rotates tablet/phone
+        window.addEventListener('resize', resizeGlobeEngine);
+
         async function fetchCountryAnalytics(isoCode, countryName) {
             const panel = document.getElementById('country-data-panel');
             panel.style.display = 'block';
             
-            // 🟢 FIX 1: Trigger WebGL Resize IMMEDIATELY so the canvas doesn't overlap on iPads!
-            setTimeout(() => {
-                const container = document.getElementById('globe-viz');
-                if (myGlobe && container) {
-                    myGlobe.width(container.clientWidth);
-                    myGlobe.height(container.clientHeight);
-                }
-            }, 50); // Delay allows flexbox to calculate new widths
+            // Trigger resize immediately, and again after DOM settles (fixes iPad squishing)
+            resizeGlobeEngine();
+            setTimeout(resizeGlobeEngine, 150);
 
             document.getElementById('c-name').innerText = "Scanning Data...";
             document.getElementById('c-wiki').innerHTML = '<span style="color:var(--accent);">Fetching geopolitical records...</span>';
@@ -5558,74 +5565,91 @@
 
             let countryData = null;
 
-            // 🟢 BLOCK 1: Fetch Core Demographic & Time Data (Direct first, then Proxy)
-            try {
-                let res;
-                let rawJson;
-                
-                // 1. Try hitting RESTCountries directly via Browser to bypass server IP blocks
-                try {
-                    if (isoCode && isoCode !== "-99") {
-                        res = await fetch("https://restcountries.com/v3.1/alpha/" + isoCode);
-                    } else {
-                        res = await fetch("https://restcountries.com/v3.1/name/" + encodeURIComponent(countryName) + "?fullText=true");
-                    }
-                    
-                    if (!res.ok) throw new Error("Direct API Failed");
-                    rawJson = await res.json();
-                    
-                } catch (directErr) {
-                    console.log("Direct browser fetch failed, falling back to proxy...");
-                    
-                    // 2. Fallback to Proxy
-                    const proxyUrl = '/api/proxy/country?iso=' + (isoCode || '') + '&name=' + encodeURIComponent(countryName);
-                    res = await fetch(proxyUrl);
-                    const rawText = await res.text();
-                    
-                    try {
-                        rawJson = JSON.parse(rawText);
-                    } catch (e) {
-                        throw new Error("Invalid JSON from server: " + rawText.substring(0, 40) + "...");
-                    }
-                    
-                    if (!res.ok) {
-                        throw new Error(rawJson.error || "HTTP " + res.status);
-                    }
-                }
-                
-                // 🟢 BULLETPROOF FIX: Safely handle both Array [ {data} ] and Object {data} responses
-                let data = null;
-                if (Array.isArray(rawJson) && rawJson.length > 0) {
-                    data = rawJson[0];
-                } else if (typeof rawJson === 'object' && rawJson !== null && !Array.isArray(rawJson)) {
-                    data = rawJson;
-                }
-                
-                if (!data || !data.flags) {
-                    throw new Error("API returned an unrecognizable structure.");
-                }
-                
-                countryData = data; 
-                
-                document.getElementById('c-flag').src = (data.flags && (data.flags.svg || data.flags.png)) || '';
-                document.getElementById('c-name').innerText = (data.name && data.name.common) || countryName;
-                document.getElementById('c-cap').innerText = data.capital ? data.capital[0] : 'N/A';
-                document.getElementById('c-reg').innerText = ((data.region || '') + ' (' + (data.subregion || '') + ')').replace(' ()', '');
-                document.getElementById('c-pop').innerText = data.population ? data.population.toLocaleString() : 'N/A';
-                document.getElementById('c-lang').innerText = data.languages ? Object.values(data.languages).join(', ') : 'Unknown';
-                document.getElementById('c-curr').innerText = data.currencies ? Object.values(data.currencies).map(c => c.name + ' (' + c.symbol + ')').join(', ') : 'Unknown';
+            // 🟢 MULTI-TIER API FALLBACK ENGINE
+            // Tries v3.1 Direct -> v2 Direct -> Python Backend Proxy
+            const apiEndpoints = [
+                isoCode !== "-99" ? "https://restcountries.com/v3.1/alpha/" + isoCode : "https://restcountries.com/v3.1/name/" + encodeURIComponent(countryName) + "?fullText=true",
+                isoCode !== "-99" ? "https://restcountries.com/v2/alpha/" + isoCode : "https://restcountries.com/v2/name/" + encodeURIComponent(countryName) + "?fullText=true",
+                "/api/proxy/country?iso=" + (isoCode || '') + "&name=" + encodeURIComponent(countryName)
+            ];
 
+            for (let url of apiEndpoints) {
+                try {
+                    const res = await fetch(url);
+                    if (!res.ok) continue; // Skip to next API if this one blocks us
+                    
+                    const rawJson = await res.json();
+                    
+                    let parsedData = null;
+                    if (Array.isArray(rawJson) && rawJson.length > 0) {
+                        parsedData = rawJson[0];
+                    } else if (typeof rawJson === 'object' && rawJson !== null && !Array.isArray(rawJson)) {
+                        parsedData = rawJson;
+                    }
+                    
+                    // If we got valid data, break the loop!
+                    if (parsedData && (parsedData.name || parsedData.capital)) {
+                        countryData = parsedData;
+                        break; 
+                    }
+                } catch (err) {
+                    console.warn("API Endpoint Failed, trying next:", url);
+                }
+            }
+
+            // 🟢 FORGIVING DATA PARSER
+            if (countryData) {
+                // Handle naming differences between API v2 and v3.1
+                const cName = (countryData.name && countryData.name.common) ? countryData.name.common : (countryData.name || countryName);
+                const cCap = countryData.capital ? (Array.isArray(countryData.capital) ? countryData.capital[0] : countryData.capital) : 'N/A';
+                const cPop = countryData.population ? countryData.population.toLocaleString() : 'N/A';
+                
+                let cReg = countryData.region || '';
+                if (countryData.subregion) cReg += ' (' + countryData.subregion + ')';
+                
+                // Safely extract Languages (v2 uses arrays, v3 uses objects)
+                let cLang = 'Unknown';
+                if (countryData.languages) {
+                    if (Array.isArray(countryData.languages)) {
+                        cLang = countryData.languages.map(l => l.name).join(', ');
+                    } else {
+                        cLang = Object.values(countryData.languages).join(', ');
+                    }
+                }
+                
+                // Safely extract Currencies
+                let cCurr = 'Unknown';
+                if (countryData.currencies) {
+                    if (Array.isArray(countryData.currencies)) {
+                        cCurr = countryData.currencies.map(c => c.name + (c.symbol ? ' ('+c.symbol+')' : '')).join(', ');
+                    } else {
+                        cCurr = Object.values(countryData.currencies).map(c => c.name + (c.symbol ? ' ('+c.symbol+')' : '')).join(', ');
+                    }
+                }
+
+                // Safely extract Flags
+                const cFlag = (countryData.flags && countryData.flags.svg) || (countryData.flags && countryData.flags.png) || countryData.flag || "https://cdn-icons-png.flaticon.com/512/44/44386.png";
+
+                // Update UI
+                document.getElementById('c-flag').src = cFlag;
+                document.getElementById('c-name').innerText = cName;
+                document.getElementById('c-cap').innerText = cCap;
+                document.getElementById('c-reg').innerText = cReg;
+                document.getElementById('c-pop').innerText = cPop;
+                document.getElementById('c-lang').innerText = cLang;
+                document.getElementById('c-curr').innerText = cCurr;
+
+                // Timezone Clock
                 clearInterval(liveClockInterval);
-                if (data.timezones && data.timezones.length > 0) {
-                    const primaryTz = data.timezones[0];
+                if (countryData.timezones && countryData.timezones.length > 0) {
+                    const primaryTz = countryData.timezones[0];
                     updateLiveCountryTime(primaryTz);
                     liveClockInterval = setInterval(() => updateLiveCountryTime(primaryTz), 1000);
                 } else {
                     document.getElementById('c-time').innerText = "Time Unknown";
                 }
-
-            } catch (err) {
-                console.error("Fetch API failed:", err);
+            } else {
+                // Ultimate Fallback if ALL 3 APIs fail or your network drops entirely
                 document.getElementById('c-name').innerText = countryName;
                 document.getElementById('c-cap').innerText = "Unavailable";
                 document.getElementById('c-pop').innerText = "Unavailable";
@@ -5638,14 +5662,13 @@
 
             // 🟢 BLOCK 2: Fetch Wikipedia via Backend Proxy
             try {
-                const wikiQuery = countryData ? (countryData.name && countryData.name.common) || countryName : countryName;
+                const wikiQuery = countryData ? ((countryData.name && countryData.name.common) ? countryData.name.common : countryData.name) : countryName;
                 const wikiRes = await fetch('/api/proxy/wiki?q=' + encodeURIComponent(wikiQuery));
                 
                 if (wikiRes.ok) {
                     const wikiData = await wikiRes.json();
                     if (wikiData.type !== "disambiguation" && wikiData.extract) {
                         const pageUrl = (wikiData.content_urls && wikiData.content_urls.desktop) ? wikiData.content_urls.desktop.page : 'https://en.wikipedia.org/wiki/' + encodeURIComponent(wikiQuery);
-                        // 🟢 Python-Safe String concatenation
                         document.getElementById('c-wiki').innerHTML = '<p>' + wikiData.extract + '</p><a href="' + pageUrl + '" target="_blank" style="color: var(--accent); text-decoration: none; font-weight: bold; font-size: 11px; text-transform: uppercase; border: 1px solid var(--accent); padding: 5px 10px; border-radius: 6px; display: inline-block; margin-top: 10px;">Read Full Wikipedia Article</a>';
                     } else {
                         document.getElementById('c-wiki').innerText = "Wikipedia summary requires disambiguation.";
