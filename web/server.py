@@ -1543,7 +1543,11 @@ async def _api_editor_progress(request):
         return web.json_response({"status": "error", "message": "Task not found"})
     
     state = EDITOR_UI_STATE[task_uuid]
-    resp = {"status": "success", "phase": state["phase"], "done": state["done"], "error": state["error"]}
+    resp = {
+        "status": "success", "phase": state["phase"], "done": state["done"], 
+        "error": state["error"], "fetcher": state.get("fetcher", "🤖 Unknown"), 
+        "uploader": state.get("uploader", "🤖 Unknown")
+    }
     
     # 🟢 Bridge download AND split uploads ("Uploading Part 1/3") into the Web UI
     typ = "down" if "Downloading" in state["phase"] else ("up" if "Uploading" in state["phase"] else None)
@@ -1557,6 +1561,31 @@ async def _api_editor_progress(request):
             resp["eta"] = prog.get("eta", 0)
                 
     return web.json_response(resp)
+
+# 🟢 NEW ENDPOINT: Restores tasks when you refresh your browser
+async def _api_editor_active_tasks(request):
+    uid = int(request.query.get("user_id", 0))
+    active = {}
+    for t_uuid, t_info in list(EDITOR_ACTIVE_TASKS.items()):
+        if t_info.get("user_id") == uid:
+            state = EDITOR_UI_STATE.get(t_uuid, {})
+            active[t_uuid] = {
+                "file_name": state.get("file_name", "Media Task"),
+                "fetcher": state.get("fetcher", "🌐 Direct Link"),
+                "uploader": state.get("uploader", "🤖 Pending")
+            }
+    return web.json_response({"status": "success", "tasks": active})
+    uid = int(request.query.get("user_id", 0))
+    active = {}
+    for t_uuid, t_info in list(EDITOR_ACTIVE_TASKS.items()):
+        if t_info.get("user_id") == uid:
+            state = EDITOR_UI_STATE.get(t_uuid, {})
+            active[t_uuid] = {
+                "file_name": state.get("file_name", "Media Task"),
+                "fetcher": state.get("fetcher", "🤖 Pending"),
+                "uploader": state.get("uploader", "🤖 Pending")
+            }
+    return web.json_response({"status": "success", "tasks": active})          
     
 async def _api_edit_media_handler(request):
     data = await request.json()
@@ -1619,8 +1648,19 @@ async def _api_edit_media_handler(request):
     
     task_uuid = uuid.uuid4().hex[:8]
     temp_dir = Path(f"./temp_remux_{uid}_{task_uuid}")
-    EDITOR_UI_STATE[task_uuid] = {"phase": "Starting...", "status_msg_id": None, "error": None, "done": False}
+    EDITOR_UI_STATE[task_uuid] = {
+        "phase": "Starting...", "status_msg_id": None, "error": None, "done": False,
+        "file_name": new_name, "fetcher": "🌐 Direct Link", "uploader": "🤖 Pending..."
+    }
     
+    def _lbl(c):
+        if not c: return "Unknown"
+        nm = getattr(c, "name", "Unknown")
+        if "User_" in nm or "temp_acc_" in nm: return "👤 User Session"
+        if "worker_bot_" in nm or "stream_bot_" in nm or "task_bot_" in nm: return f"🤖 Worker {nm.split('_')[-1]}"
+        if nm == "RestrictedBot": return "🤖 Main Bot"
+        return f"🤖 {nm}"
+
     async def safe_tg_edit(msg, text):
         try: await msg.edit_text(text)
         except Exception: pass
@@ -1799,6 +1839,7 @@ async def _api_edit_media_handler(request):
                 
                 working_pool, _ = await _get_working_tg_pool(uid, chat_id, start_id)
                 client_to_use = working_pool[0] if working_pool else app
+                EDITOR_UI_STATE[task_uuid]["fetcher"] = _lbl(client_to_use)
                 
                 messages_to_stitch = []
                 total_bytes = 0
@@ -1929,6 +1970,8 @@ async def _api_edit_media_handler(request):
                     upload_client = uclient
                     is_bot = False
                     
+                EDITOR_UI_STATE[task_uuid]["uploader"] = _lbl(upload_client)
+                    
                 # Process and upload each track cleanly
                 for t_idx, track_path in enumerate(all_media, start=1):
                     is_audio = track_path in audio_files
@@ -2053,10 +2096,11 @@ async def _api_edit_media_handler(request):
                 upload_client = app
                 is_bot = True
 
-                # If file is >2GB and user is premium, MUST use User Session
-                if file_size > (1980 * 1024 * 1024) and is_premium and not needs_split:
-                    upload_client = uclient
-                    is_bot = False
+                # 🟢 CRITICAL FIX: If ANY chunk is going to be >2GB, we absolutely MUST use the User Session!
+                if file_size > (1980 * 1024 * 1024) and is_premium:
+                    if uclient and getattr(uclient, "is_connected", False):
+                        upload_client = uclient
+                        is_bot = False
                 else:
                     # 🟢 FIX: Bot Load Balancer (Prevents File Splits from Failing)
                     stream_bots = USER_STREAM_BOTS.get(uid, [])
@@ -2083,6 +2127,7 @@ async def _api_edit_media_handler(request):
                                 upload_client = uclient
                                 is_bot = False
 
+                EDITOR_UI_STATE[task_uuid]["uploader"] = _lbl(upload_client)
                 total_parts = math.ceil(file_size / max_size)
                 final_thumb = str(thumb_path) if (thumb_path and thumb_path.exists()) else None
 
@@ -2301,7 +2346,8 @@ async def start_koyeb_health_check(host: str = "0.0.0.0"):
     # Editor & Proxies
     app_web.router.add_post("/api/edit_media", _api_edit_media_handler)
     app_web.router.add_get("/api/editor_progress", _api_editor_progress)
-    app_web.router.add_post("/api/editor_cancel", _api_editor_cancel)  # 🟢 Added Cancel Route
+    app_web.router.add_get("/api/editor_active", _api_editor_active_tasks)
+    app_web.router.add_post("/api/editor_cancel", _api_editor_cancel)
     app_web.router.add_get("/api/bg", _api_bg_proxy)
     app_web.router.add_get("/api/proxy/country", _api_proxy_country)
     app_web.router.add_get("/api/proxy/wiki", _api_proxy_wiki)
