@@ -315,6 +315,7 @@ async def handle_restricted_live(client, acc, chat_id, msgid, **kwargs):
 
 async def build_rich_caption(file_path, msg_type, msg):
     try:
+        import re
         file_name = "Unknown"
         if msg_type == "Audio" and getattr(msg, "audio", None): file_name = getattr(msg.audio, "file_name", "Audio.m4a")
         elif msg_type == "Video" and getattr(msg, "video", None): file_name = getattr(msg.video, "file_name", "Video.mp4")
@@ -325,6 +326,11 @@ async def build_rich_caption(file_path, msg_type, msg):
             
         size_bytes = os.path.getsize(file_path)
         size_str = _pretty_bytes(size_bytes)
+        
+        # 🟢 CRITICAL FIX: Bypass MediaInfo for Archives and Split Parts!
+        file_name_lower = str(file_name).lower()
+        if file_name_lower.endswith(('.zip', '.rar', '.7z', '.tar', '.gz')) or re.search(r'\.\d{3}$', file_name_lower):
+            return f"<b>{html.escape(file_name)}</b>\n\n🗂 <code>{size_str}</code>"
         
         if msg_type == "Audio":
             bitrate_str = "Unknown Quality"
@@ -370,7 +376,21 @@ async def build_rich_caption(file_path, msg_type, msg):
             w = getattr(msg.video, "width", 0) if getattr(msg, "video", None) else 0
             h = getattr(msg.video, "height", 0) if getattr(msg, "video", None) else 0
             dur = getattr(msg.video, "duration", 0) if getattr(msg, "video", None) else 0
-            dur_str = f"{dur//60}m{dur%60}s" if dur else "Unknown"
+            
+            # 🟢 NEW: Dynamic Time Formatter (Days, Hours, Mins, Secs)
+            if dur:
+                import math
+                d = math.floor(dur / 86400)
+                hr = math.floor((dur % 86400) / 3600)
+                m = math.floor((dur % 3600) / 60)
+                s = math.floor(dur % 60)
+                
+                if d > 0: dur_str = f"{d}d {hr}h {m}m {s}s"
+                elif hr > 0: dur_str = f"{hr}h {m}m {s}s"
+                elif m > 0: dur_str = f"{m}m {s}s"
+                else: dur_str = f"{s}s"
+            else:
+                dur_str = "Unknown"
             
             audio_lng = "Unknown"
             sub_lng = "None"
@@ -745,3 +765,4 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
                 shutil.rmtree(task_folder_path)
         except Exception: pass
         gc.collect()
+
