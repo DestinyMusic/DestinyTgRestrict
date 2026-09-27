@@ -1675,13 +1675,33 @@ async def _api_edit_media_handler(request):
         # 🟢 MOVED TO TOP: RICH CAPTION & METADATA EXTRACTORS
         async def generate_rich_caption(file_path, file_name):
             try:
-                import json, math
+                import json, math, os, re
+                
+                # 1. Always get the exact file size from the OS first
+                try:
+                    size_bytes = os.path.getsize(file_path)
+                except Exception:
+                    size_bytes = 0
+                    
+                k = 1024
+                sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+                i = 0 if size_bytes == 0 else math.floor(math.log(size_bytes) / math.log(k))
+                size_str = f"{(size_bytes / (k**i)):.1f} {sizes[i]}"
+                
+                base_caption = f"`{file_name}`\n\n🗂 {size_str}"
+                
+                # 2. 🟢 CRITICAL FIX: Bypass FFprobe for Archives and Split Parts!
+                # Prevents hallucinating audio/video tracks on raw .001 or .zip chunks
+                file_name_lower = str(file_name).lower()
+                if file_name_lower.endswith(('.zip', '.rar', '.7z', '.tar', '.gz')) or re.search(r'\.\d{3}$', file_name_lower):
+                    return base_caption
+
+                # 3. Only probe actual media files
                 cmd = ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", str(file_path)]
                 proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
                 stdout, _ = await proc.communicate()
                 info = json.loads(stdout)
                 
-                size_bytes = int(info.get('format', {}).get('size', 0))
                 dur_sec = float(info.get('format', {}).get('duration', 0))
                 m = math.floor(dur_sec / 60)
                 s = math.floor(dur_sec % 60)
