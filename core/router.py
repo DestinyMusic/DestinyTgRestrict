@@ -313,36 +313,31 @@ async def handle_restricted_private(client, acc, chat_id, msgid, **kwargs):
 async def handle_restricted_live(client, acc, chat_id, msgid, **kwargs):
     return await _execute_restricted_download_upload(client, acc, chat_id, msgid, **kwargs)
 
-async def build_rich_caption(file_path, msg_type, msg):
+async def build_rich_caption(file_path, msg_type, msg, override_name=None, override_size=None):
     try:
-        import re
-        file_name = "Unknown"
-        if msg_type == "Audio" and getattr(msg, "audio", None): file_name = getattr(msg.audio, "file_name", "Audio.m4a")
-        elif msg_type == "Video" and getattr(msg, "video", None): file_name = getattr(msg.video, "file_name", "Video.mp4")
-        elif getattr(msg, "document", None): file_name = getattr(msg.document, "file_name", "File.dat")
+        import math, re
+        file_name = override_name
+        if not file_name:
+            file_name = "Unknown"
+            if msg_type == "Audio" and getattr(msg, "audio", None): file_name = getattr(msg.audio, "file_name", "Audio.m4a")
+            elif msg_type == "Video" and getattr(msg, "video", None): file_name = getattr(msg.video, "file_name", "Video.mp4")
+            elif getattr(msg, "document", None): file_name = getattr(msg.document, "file_name", "File.dat")
         
         if not file_path or not os.path.exists(file_path):
             return None
             
-        size_bytes = os.path.getsize(file_path)
+        size_bytes = override_size if override_size is not None else os.path.getsize(file_path)
         size_str = _pretty_bytes(size_bytes)
         
-        # 🟢 CRITICAL FIX: Bypass MediaInfo for Archives and Split Parts!
-        file_name_lower = str(file_name).lower()
-        if file_name_lower.endswith(('.zip', '.rar', '.7z', '.tar', '.gz')) or re.search(r'\.\d{3}$', file_name_lower):
-            return f"<b>{html.escape(file_name)}</b>\n\n🗂 <code>{size_str}</code>"
+        meta_str = ""
         
         if msg_type == "Audio":
             bitrate_str = "Unknown Quality"
             try:
-                # 🟢 FIX: Fetch Format, BitDepth, Bitrate, and SampleRate simultaneously
                 cmd = ["mediainfo", "--Inform=Audio;%Format%|%BitDepth%|%BitRate/String%|%SamplingRate/String%", str(file_path)]
                 proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
                 stdout, _ = await proc.communicate()
-                
-                # Get the first audio stream only to prevent multiline errors
                 out = stdout.decode('utf-8', errors='ignore').strip().split('\n')[0] 
-                
                 if out:
                     parts = out.split('|')
                     if len(parts) >= 4:
@@ -351,7 +346,6 @@ async def build_rich_caption(file_path, msg_type, msg):
                         bitrate = parts[2].strip().replace(" ", "")
                         sample_rate = parts[3].strip().replace(" ", "")
                         
-                        # Clean up technical formats for a beautiful UI display
                         if "MPEG Audio" in fmt: fmt = "MP3"
                         elif "AAC" in fmt: fmt = "AAC"
                         elif "FLAC" in fmt: fmt = "FLAC"
@@ -360,26 +354,18 @@ async def build_rich_caption(file_path, msg_type, msg):
                         elif "Opus" in fmt: fmt = "OPUS"
                         elif "Vorbis" in fmt: fmt = "OGG"
                         
-                        # Lossless formats show Bit Depth (e.g. 24Bit), Lossy show Bitrate (e.g. 320kbps)
-                        if depth:
-                            bitrate_str = f"{fmt} • {depth}Bit - {sample_rate}"
-                        elif bitrate:
-                            bitrate_str = f"{fmt} • {bitrate} - {sample_rate}"
-                        else:
-                            bitrate_str = f"{fmt} • {sample_rate}"
-            except: 
-                pass
-                
-            return f"<b>{html.escape(file_name)}</b>\n\n🗂 <code>{size_str}</code>\n🎧 <code>{bitrate_str}</code>"
+                        if depth: bitrate_str = f"{fmt} • {depth}Bit - {sample_rate}"
+                        elif bitrate: bitrate_str = f"{fmt} • {bitrate} - {sample_rate}"
+                        else: bitrate_str = f"{fmt} • {sample_rate}"
+            except: pass
+            meta_str = f"\n🎧 <code>{bitrate_str}</code>"
             
         elif msg_type == "Video":
             w = getattr(msg.video, "width", 0) if getattr(msg, "video", None) else 0
             h = getattr(msg.video, "height", 0) if getattr(msg, "video", None) else 0
             dur = getattr(msg.video, "duration", 0) if getattr(msg, "video", None) else 0
             
-            # 🟢 NEW: Dynamic Time Formatter (Days, Hours, Mins, Secs)
             if dur:
-                import math
                 d = math.floor(dur / 86400)
                 hr = math.floor((dur % 86400) / 3600)
                 m = math.floor((dur % 3600) / 60)
@@ -401,19 +387,19 @@ async def build_rich_caption(file_path, msg_type, msg):
                 out = stdout.decode().strip().split('|')
                 if len(out) == 2:
                     a_list, s_list = out[0].strip(), out[1].strip()
-                    # 🟢 FIX: Replace MediaInfo's ' / ' separator with a clean comma
                     if a_list: audio_lng = a_list.replace(" / ", ", ")
                     if s_list: sub_lng = s_list.replace(" / ", ", ")
                 elif len(out) == 1 and out[0].strip():
                     audio_lng = out[0].strip().replace(" / ", ", ")
             except: pass
             
-            return f"<b>{html.escape(file_name)}</b>\n\n🗂 <code>{size_str}</code> 💎 <code>{w}x{h}</code>\n⏳ <code>{dur_str}</code> 💬 <code>{sub_lng}</code>\n🔊 <code>{audio_lng}</code>"
+            meta_str = f" 💎 <code>{w}x{h}</code>\n⏳ <code>{dur_str}</code> 💬 <code>{sub_lng}</code>\n🔊 <code>{audio_lng}</code>"
             
+        return f"<b>{html.escape(file_name)}</b>\n\n🗂 <code>{size_str}</code>{meta_str}"
     except Exception as e:
         logger.debug(f"Rich caption generation failed: {e}")
     return None
-    
+
 # ==============================================================================
 # --- CORE RESTRICTED DOWNLOAD / UPLOAD ENGINE ---
 # ==============================================================================
@@ -467,14 +453,15 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
     ph_path = None
     download_success = False
 
-    split_limit = 2000 * 1024 * 1024 
     is_premium = False
-    
     try:
         if acc:
             me = acc.me if acc.me else await acc.get_me()
             if me.is_premium: is_premium = True
     except Exception: pass
+    
+    # 🟢 DYNAMIC SPLIT LIMIT: Calculates 4GB vs 2GB buffers cleanly
+    split_limit = (3980 * 1024 * 1024) if is_premium else (1980 * 1024 * 1024)
 
     # 🟢 Define the watcher shield variable
     is_w_task = False
@@ -592,7 +579,8 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
                             caption_entities = msg_fresh.caption_entities if getattr(msg_fresh, "caption_entities", None) else None
                             p_mode = None
 
-                        parts = await split_file_python(file_path, chunk_size=1900*1024*1024)
+                        # 🟢 USE DYNAMIC CHUNK SIZE (Based on Premium)
+                        parts = await split_file_python(file_path, chunk_size=split_limit)
                         
                         if task_uuid and f"{task_uuid}:up" in PROGRESS: del PROGRESS[f"{task_uuid}:up"]
                     
@@ -600,10 +588,17 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
                         async with SERVER_UPLOAD_LIMIT:
                             for part in parts:
                                 if (batch_temp.IS_BATCH.get(user_id) and not is_w_task) or (task_uuid and CANCEL_FLAGS.get(task_uuid)): raise Exception("CANCELLED")
+                                
+                                # 🟢 DYNAMIC CAPTION: Reads intact MediaInfo metadata, but displays chunk size!
+                                part_size = os.path.getsize(part)
+                                part_name = Path(part).name
+                                part_cap = await build_rich_caption(file_path, msg_type, msg_fresh, override_name=part_name, override_size=part_size)
+                                final_cap = part_cap if part_cap else caption
+
                                 while True:
                                     await USER_FLOOD_LOCKS[user_id].wait_if_locked() 
                                     try:
-                                        kwargs = {"chat_id": dest_chat_id, "document": str(part), "caption": caption}
+                                        kwargs = {"chat_id": dest_chat_id, "document": str(part), "caption": final_cap}
                                         if caption_entities: kwargs["caption_entities"] = caption_entities
                                         if p_mode: kwargs["parse_mode"] = p_mode
                                         if dest_thread_id: kwargs["message_thread_id"] = dest_thread_id
@@ -679,8 +674,14 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
         upload_success = False
 
         # 🟢 NEW: Select an Upload Client (Worker Bot > Main Bot)
-        upload_client = get_dynamic_upload_client(client, acc, user_id, task_uuid, index)
+        file_size_final = os.path.getsize(file_path) if file_path and os.path.exists(file_path) else 0
         
+        # 🟢 FORCE USER SESSION: Standard bots crash if handed files > 2GB!
+        if file_size_final > (1980 * 1024 * 1024) and is_premium and acc:
+            upload_client = acc
+        else:
+            upload_client = get_dynamic_upload_client(client, acc, user_id, task_uuid, index)
+            
         async with SERVER_UPLOAD_LIMIT:
             async with USER_SEMAPHORES[user_id]:
                 while True:
@@ -765,4 +766,3 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
                 shutil.rmtree(task_folder_path)
         except Exception: pass
         gc.collect()
-
