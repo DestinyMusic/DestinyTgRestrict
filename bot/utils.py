@@ -209,8 +209,9 @@ def sanitize_filename(filename: str) -> str:
     filename = re.sub(r'[:]', "-", filename)
     filename = re.sub(r'[\\/*?"<>|\[\]]', "", filename)
     name, ext = os.path.splitext(filename)
-    if len(name) > 60:
-        name = name[:60]
+    # 🟢 FIX: Expanded to 240 chars so long titles aren't truncated before zipping!
+    if len(name) > 240:
+        name = name[:240]
         
     reserved = {"CON", "PRN", "AUX", "NUL", "COM1", "LPT1"}
     if name.upper() in reserved:
@@ -482,4 +483,3 @@ def get_message_type(msg: Message):
     if msg.photo: return "Photo"
     if msg.text: return "Text"
     return None
-
