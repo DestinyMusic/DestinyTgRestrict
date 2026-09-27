@@ -105,6 +105,37 @@
         [data-style="neo_brutal"] .input-group input, [data-style="neo_brutal"] .input-group select {
             border: 3px solid var(--text) !important; box-shadow: 4px 4px 0px var(--text) !important; border-radius: 8px !important;
         }
+        
+        /* 4. Minimalist Style (Flat, No Borders, Soft Shadows) */
+        [data-style="minimalist"] .card, [data-style="minimalist"] .modal-content, [data-style="minimalist"] .login-card {
+            border: none !important; border-radius: 24px !important;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.05) !important; background: var(--card) !important;
+            backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
+        }
+        [data-style="minimalist"] .primary-btn {
+            border: none !important; border-radius: 99px !important; box-shadow: none !important;
+        }
+        [data-style="minimalist"] .input-group input, [data-style="minimalist"] .input-group select {
+            border: none !important; background: color-mix(in srgb, var(--bg) 80%, transparent) !important; border-radius: 12px !important;
+        }
+
+        /* 5. Cyber Glitch (Sharp Edges, Neon Outlines) */
+        [data-style="cyber_glitch"] .card, [data-style="cyber_glitch"] .navbar, [data-style="cyber_glitch"] .sidebar, [data-style="cyber_glitch"] .modal-content, [data-style="cyber_glitch"] .login-card {
+            border-radius: 0px !important; border: 1px solid var(--accent) !important;
+            background: var(--card) !important; box-shadow: 0 0 10px var(--glow), inset 0 0 10px var(--glow) !important;
+            backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
+        }
+        [data-style="cyber_glitch"] .primary-btn {
+            border-radius: 0px !important; border: 1px solid var(--accent) !important;
+            background: transparent !important; color: var(--accent) !important;
+            box-shadow: 0 0 15px var(--glow) !important; text-transform: uppercase !important; letter-spacing: 2px !important;
+        }
+        [data-style="cyber_glitch"] .primary-btn:hover {
+            background: var(--accent) !important; color: var(--bg) !important;
+        }
+        [data-style="cyber_glitch"] .input-group input, [data-style="cyber_glitch"] .input-group select {
+            border-radius: 0px !important; border: 1px solid var(--accent) !important; background: transparent !important;
+        }
 
         * { box-sizing: border-box; }
         /* 🌊 Dynamic Glowing Orbs */
@@ -212,8 +243,8 @@
         .sidebar { position: fixed; top: 0; left: -320px; width: clamp(280px, 25vw, 380px); height: 100%; background: color-mix(in srgb, var(--sidebar) var(--glass-bg, 80%), transparent); backdrop-filter: blur(calc(30px + var(--glass-blur, 0px))); -webkit-backdrop-filter: blur(calc(30px + var(--glass-blur, 0px))); z-index: 201; border-right: 1px solid rgba(255,255,255,0.1); box-shadow: 10px 0 50px rgba(0, 0, 0, 0.8); transition: left 0.4s cubic-bezier(0.4, 0, 0.2, 1), background 0.3s; padding: 30px 0; overflow-y: auto; }
         .sidebar.open { left: 0; }
         .sidebar-overlay.open { opacity: 1; pointer-events: auto; }
-        .menu-item { padding: clamp(16px, 2vh, 24px) clamp(24px, 2vw, 32px); display: flex; align-items: center; gap: 20px; color: #cbd5e1; font-weight: 800; font-size: clamp(14px, 1.2vw, 18px); cursor: pointer; transition: all 0.25s; border-left: 0px solid transparent; }
-        .menu-item:hover, .menu-item:focus, .menu-item.active { background: linear-gradient(90deg, rgba(255,255,255,0.1) 0%, transparent 100%); color: #fff; border-left: 6px solid var(--accent); padding-left: clamp(30px, 2.5vw, 38px); outline: none; }
+        .menu-item { padding: clamp(16px, 2vh, 24px) clamp(24px, 2vw, 32px); display: flex; align-items: center; gap: 20px; color: var(--subtext); font-weight: 800; font-size: clamp(14px, 1.2vw, 18px); cursor: pointer; transition: all 0.25s; border-left: 0px solid transparent; }
+        .menu-item:hover, .menu-item:focus, .menu-item.active { background: linear-gradient(90deg, color-mix(in srgb, var(--text) 10%, transparent) 0%, transparent 100%); color: var(--text); border-left: 6px solid var(--accent); padding-left: clamp(30px, 2.5vw, 38px); outline: none; }
         
         .profile-menu { 
             position: absolute; top: 65px; right: 15px; 
@@ -686,9 +717,9 @@
             border: 1px solid var(--card-border) !important;
         }
 
-        /* Fallback solid colors so menus don't become transparent without the blur */
-        body.fast-mode .navbar { background: #0a0a0a !important; border-bottom: 1px solid #1f2937 !important; }
-        body.fast-mode .sidebar { background: #050505 !important; }
+        /* Fallback solid colors so menus don't become transparent without the blur, properly mapped to Theme variables! */
+        body.fast-mode .navbar { background: var(--sidebar) !important; border-bottom: 1px solid var(--card-border) !important; }
+        body.fast-mode .sidebar { background: var(--sidebar) !important; }
     </style>
 </head>
 <body>
@@ -1660,6 +1691,8 @@
                         <button class="theme-btn active" id="style-btn-default" onclick="setStyle('default')">Default Clean</button>
                         <button class="theme-btn" id="style-btn-glassy" onclick="setStyle('glassy')">Glassy Frosted</button>
                         <button class="theme-btn" id="style-btn-neo_brutal" onclick="setStyle('neo_brutal')">Neo-Brutalism</button>
+                        <button class="theme-btn" id="style-btn-minimalist" onclick="setStyle('minimalist')">Minimalist</button>
+                        <button class="theme-btn" id="style-btn-cyber_glitch" onclick="setStyle('cyber_glitch')">Cyberpunk</button>
                     </div>
 
                     <h3 style="margin-top: 0; font-size: 16px; color: var(--text);">Performance Mode (Anti-Lag)</h3>
@@ -2209,7 +2242,7 @@
         }
 
         function setStyle(styleName) {
-            const validStyles = ['default', 'glassy', 'neo_brutal'];
+            const validStyles = ['default', 'glassy', 'neo_brutal', 'minimalist', 'cyber_glitch'];
             const selected = validStyles.includes(styleName) ? styleName : 'default';
             
             document.documentElement.setAttribute('data-style', selected);
