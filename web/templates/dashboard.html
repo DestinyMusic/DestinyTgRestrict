@@ -78,6 +78,34 @@
         [data-theme="sage-linen"] { --bg: #f4f7f4; --card: #ffffff; --card-border: #ccfbf1; --text: #134e4a; --subtext: #0f766e; --accent: #0d9488; --glow: rgba(13, 148, 136, 0.25); --sidebar: #e6f4f1; --anime-bg: none; }
         [data-theme="golden-hour"] { --bg: #fffbeb; --card: #ffffff; --card-border: #fde68a; --text: #451a03; --subtext: #92400e; --accent: #d97706; --glow: rgba(217, 119, 6, 0.25); --sidebar: #fef3c7; --anime-bg: none; }
 
+        /* --- 🎨 STRUCTURAL STYLES (Glassy vs Neo-Brutalism) --- */
+        [data-style="default"] .card, [data-style="default"] .modal-content, [data-style="default"] .login-card {
+            border-radius: 20px; border: 1px solid var(--card-border);
+        }
+        [data-style="glassy"] .card, [data-style="glassy"] .navbar, [data-style="glassy"] .sidebar, [data-style="glassy"] .modal-content, [data-style="glassy"] .login-card {
+            background: color-mix(in srgb, var(--card) var(--glass-bg, 75%), transparent) !important;
+            backdrop-filter: blur(calc(18px + var(--glass-blur, 0px))) !important;
+            -webkit-backdrop-filter: blur(calc(18px + var(--glass-blur, 0px))) !important;
+            border: 1px solid color-mix(in srgb, var(--card-border) var(--glass-border, 100%), transparent) !important;
+            box-shadow: 0 12px 35px rgba(0, 0, 0, var(--glass-shadow, 0.25)) !important;
+        }
+        [data-style="neo_brutal"] .card, [data-style="neo_brutal"] .navbar, [data-style="neo_brutal"] .sidebar, [data-style="neo_brutal"] .modal-content, [data-style="neo_brutal"] .login-card, [data-style="neo_brutal"] .task-row {
+            backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
+            background: var(--card) !important; border: 3px solid var(--text) !important;
+            box-shadow: 5px 5px 0px var(--text) !important; border-radius: 8px !important;
+        }
+        [data-style="neo_brutal"] .primary-btn {
+            background: var(--accent) !important; color: var(--bg) !important; font-weight: 900 !important;
+            border: 3px solid var(--text) !important; box-shadow: 5px 5px 0px var(--text) !important;
+            border-radius: 8px !important; transform: none !important;
+        }
+        [data-style="neo_brutal"] .primary-btn:hover {
+            transform: translate(-2px, -2px) !important; box-shadow: 7px 7px 0px var(--text) !important;
+        }
+        [data-style="neo_brutal"] .input-group input, [data-style="neo_brutal"] .input-group select {
+            border: 3px solid var(--text) !important; box-shadow: 4px 4px 0px var(--text) !important; border-radius: 8px !important;
+        }
+
         * { box-sizing: border-box; }
         /* 🌊 Dynamic Glowing Orbs */
         @keyframes flowPrimary {
@@ -169,10 +197,10 @@
         #login-view { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; background: transparent; }
         .login-card { background: color-mix(in srgb, var(--card) var(--glass-bg, 100%), transparent); backdrop-filter: blur(var(--glass-blur, 0px)); -webkit-backdrop-filter: blur(var(--glass-blur, 0px)); border: 1px solid color-mix(in srgb, var(--card-border) var(--glass-border, 100%), transparent); border-radius: 28px; width: 100%; max-width: 420px; padding: 36px 28px; box-shadow: 0 20px 50px rgba(0,0,0,0.8), 0 8px 32px rgba(0, 0, 0, var(--glass-shadow, 0)); text-align: center; transition: 0.3s; }
         .login-logo { width: 56px; height: 56px; background: var(--accent); border-radius: 50%; margin: 0 auto 20px auto; display: flex; align-items: center; justify-content: center; font-size: 24px; box-shadow: 0 0 25px var(--glow); color: #fff; }
-        .login-title { font-size: 22px; font-weight: 800; color: #fff; margin-bottom: 6px; }
+        .login-title { font-size: 22px; font-weight: 800; color: var(--text); margin-bottom: 6px; }
         .login-subtitle { font-size: 13px; color: #94a3b8; margin-bottom: 28px; }
 
-        .navbar { display: flex; justify-content: space-between; align-items: center; padding: clamp(15px, 2vh, 25px) clamp(20px, 3vw, 40px); background: color-mix(in srgb, rgba(10, 10, 10, 0.6) var(--glass-bg, 100%), transparent); backdrop-filter: blur(calc(24px + var(--glass-blur, 0px))); -webkit-backdrop-filter: blur(calc(24px + var(--glass-blur, 0px))); border-bottom: 1px solid rgba(255,255,255,0.1); position: sticky; top: 0; z-index: 100; box-shadow: 0 4px 30px rgba(0,0,0,0.5); }
+        .navbar { display: flex; justify-content: space-between; align-items: center; padding: clamp(15px, 2vh, 25px) clamp(20px, 3vw, 40px); background: color-mix(in srgb, var(--sidebar) var(--glass-bg, 85%), transparent); backdrop-filter: blur(calc(24px + var(--glass-blur, 0px))); -webkit-backdrop-filter: blur(calc(24px + var(--glass-blur, 0px))); border-bottom: 1px solid var(--card-border); position: sticky; top: 0; z-index: 100; color: var(--text); }
         .nav-brand { display: flex; align-items: center; gap: 16px; font-size: clamp(18px, 1.5vw, 24px); font-weight: 900; letter-spacing: 1px; text-transform: uppercase; text-shadow: 0 2px 10px rgba(0,0,0,0.5); }
         .nav-brand-icon { width: clamp(34px, 3vw, 48px); height: clamp(34px, 3vw, 48px); background: linear-gradient(135deg, var(--accent), #8b5cf6); border-radius: 12px; transform: rotate(10deg); display: flex; align-items: center; justify-content: center; box-shadow: 0 0 20px var(--glow); color: white; font-size: clamp(14px, 1.2vw, 20px); transition: transform 0.3s; }
         .nav-brand:hover .nav-brand-icon { transform: rotate(0deg) scale(1.1); }
@@ -210,7 +238,7 @@
             padding: env(safe-area-inset-top, 20px) env(safe-area-inset-right, 20px) env(safe-area-inset-bottom, 40px) env(safe-area-inset-left, 20px); 
             transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); 
         }
-        .section-title { font-size: clamp(1.25rem, 2vw + 1rem, 2.5rem); font-weight: 900; margin: 30px 0 20px 0; color: #fff; text-shadow: 0 0 15px var(--glow); display: flex; justify-content: space-between; align-items: center; text-transform: uppercase; letter-spacing: 1.5px; }
+        .section-title { font-size: clamp(1.25rem, 2vw + 1rem, 2.5rem); font-weight: 900; margin: 30px 0 20px 0; color: var(--text); display: flex; justify-content: space-between; align-items: center; text-transform: uppercase; letter-spacing: 1.5px; }
         
         /* Modernized Auto-Fit Grid with TV Support */
         .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(clamp(250px, 20vw, 400px), 1fr)); gap: clamp(16px, 2vw, 32px); margin-bottom: 20px; }
@@ -240,7 +268,7 @@
         .primary-btn:hover, .primary-btn:focus { transform: translateY(-4px) scale(1.02); box-shadow: 0 12px 35px var(--glow), inset 0 2px 5px rgba(255,255,255,0.3); outline: none; }
         .input-group { margin-bottom: clamp(18px, 2vh, 24px); text-align: left; }
         .input-group label { display: block; font-size: clamp(11px, 1vw, 14px); color: var(--subtext); margin-bottom: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
-        .input-group input, .input-group select { width: 100%; padding: clamp(14px, 2vh, 20px) 16px; border-radius: 16px; border: 2px solid var(--card-border); background: rgba(0,0,0,0.3); color: #fff; font-size: clamp(14px, 1.2vw, 18px); outline: none; transition: 0.3s; backdrop-filter: blur(10px); }
+        .input-group input, .input-group select { width: 100%; padding: clamp(14px, 2vh, 20px) 16px; border-radius: 16px; border: 2px solid var(--card-border); background: color-mix(in srgb, var(--bg) 50%, transparent); color: var(--text); font-size: clamp(14px, 1.2vw, 18px); outline: none; transition: 0.3s; backdrop-filter: blur(10px); }
         .input-group input:focus, .input-group select:focus { border-color: var(--accent); box-shadow: 0 0 20px var(--glow), inset 0 0 10px var(--glow); background: rgba(0,0,0,0.5); }
 
         .task-row { background: linear-gradient(90deg, color-mix(in srgb, var(--card) var(--glass-bg, 60%), transparent), transparent); border: 1px solid rgba(255,255,255,0.1); border-left: 4px solid var(--accent); border-radius: 16px; padding: clamp(16px, 2vw, 24px); margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; gap: 15px; transition: 0.3s; backdrop-filter: blur(10px); }
@@ -1626,7 +1654,15 @@
                 <div class="section-title">Interface Settings</div>
                 <div class="card" style="margin-bottom: 20px;">
 
-                    <h3 style="margin-top: 0; font-size: 16px; color: #fff;">Performance Mode (Anti-Lag)</h3>
+                    <h3 style="margin-top: 0; font-size: 16px; color: var(--text);">UI Design Style</h3>
+                    <p style="font-size: 12px; color: var(--subtext); margin-bottom: 15px;">Choose how interface surfaces, borders, and shadows behave.</p>
+                    <div style="display: flex; gap: 8px; margin-bottom: 25px; flex-wrap: wrap;">
+                        <button class="theme-btn active" id="style-btn-default" onclick="setStyle('default')">Default Clean</button>
+                        <button class="theme-btn" id="style-btn-glassy" onclick="setStyle('glassy')">Glassy Frosted</button>
+                        <button class="theme-btn" id="style-btn-neo_brutal" onclick="setStyle('neo_brutal')">Neo-Brutalism</button>
+                    </div>
+
+                    <h3 style="margin-top: 0; font-size: 16px; color: var(--text);">Performance Mode (Anti-Lag)</h3>
                     <p style="font-size: 12px; color: #94a3b8; margin-bottom: 15px;">Disables 3D background blobs, glassmorphism, and heavy shadows. Highly recommended for Android TVs.</p>
                     <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 25px;">
                         <input type="checkbox" id="perf-mode-toggle" style="width: 18px; height: 18px; accent-color: var(--accent);" onchange="togglePerformanceMode(this.checked)">
@@ -2172,6 +2208,26 @@
             localStorage.setItem('app_theme', themeName);
         }
 
+        function setStyle(styleName) {
+            const validStyles = ['default', 'glassy', 'neo_brutal'];
+            const selected = validStyles.includes(styleName) ? styleName : 'default';
+            
+            document.documentElement.setAttribute('data-style', selected);
+            localStorage.setItem('app_style', selected);
+
+            validStyles.forEach(s => {
+                const btn = document.getElementById(`style-btn-${s}`);
+                if (btn) btn.classList.toggle('active', s === selected);
+            });
+
+            if (selected === 'neo_brutal') {
+                document.documentElement.style.setProperty('--glass-blur', '0px');
+            } else {
+                const savedGlass = localStorage.getItem('liquid_glass_val') || '0';
+                applyLiquidGlass(savedGlass);
+            }
+        }
+
         const savedTheme = localStorage.getItem('app_theme') || 'amoled';
         document.documentElement.setAttribute('data-theme', savedTheme);
         document.querySelectorAll('.theme-pill').forEach(b => {
@@ -2183,6 +2239,9 @@
                 b.classList.remove('active');
             }
         });
+
+        const savedStyle = localStorage.getItem('app_style') || 'default';
+        setStyle(savedStyle);
 
         /* --- 📲 PWA INSTALLATION ENGINE --- */
         let deferredPwaPrompt = null;
