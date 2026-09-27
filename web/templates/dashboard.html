@@ -267,12 +267,38 @@
             max-width: 100%; 
             margin: 0 auto; 
             padding: env(safe-area-inset-top, 20px) env(safe-area-inset-right, 20px) env(safe-area-inset-bottom, 40px) env(safe-area-inset-left, 20px); 
-            transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); 
+            transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1), margin-left 0.4s; 
         }
+        
+        /* 💻 DYNAMIC DESKTOP & TABLET MODE */
+        @media (min-width: 1024px) {
+            .sidebar { left: 0 !important; box-shadow: none !important; }
+            .sidebar-overlay { display: none !important; }
+            .icon-btn[onclick="toggleSidebar()"] { display: none !important; } /* Hide hamburger */
+            .navbar { padding-left: clamp(300px, 26vw, 400px); } /* Shift navbar text */
+            .container { 
+                margin-left: clamp(280px, 25vw, 380px); 
+                width: calc(100% - clamp(280px, 25vw, 380px)); 
+            }
+        }
+
         .section-title { font-size: clamp(1.25rem, 2vw + 1rem, 2.5rem); font-weight: 900; margin: 30px 0 20px 0; color: var(--text); display: flex; justify-content: space-between; align-items: center; text-transform: uppercase; letter-spacing: 1.5px; }
         
         /* Modernized Auto-Fit Grid with TV Support */
         .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(clamp(250px, 20vw, 400px), 1fr)); gap: clamp(16px, 2vw, 32px); margin-bottom: 20px; }
+        
+        /* 📱 ULTRA-MOBILE RESPONSIVENESS */
+        @media (max-width: 768px) {
+            .filter-grid, .matrix-grid { grid-template-columns: 1fr; } /* Stack filters on small phones */
+            #view-globe > div { flex-direction: column; } /* Stack the 3D globe vertically */
+            .task-row { flex-direction: column; align-items: stretch; text-align: left; }
+            .task-kill { width: 100%; text-align: center; margin-top: 10px; }
+            
+            /* Shift the settings popup to use full screen width on mobile */
+            .settings-popup {
+                width: 95vw !important; right: 2.5vw !important; bottom: 85px !important;
+            }
+        }
         
         /* Anime Glass Card */
         .card { 
@@ -291,7 +317,13 @@
         }
         
         /* D-Pad / TV Focus outlines */
-        *:focus { outline: none; } /* 🟢 FIX: Removes the ugly blue tap box on mobile */
+        *:focus { outline: none; } /* Kills mouse/touch tap boxes */
+        *:focus-visible { 
+            outline: 3px solid var(--accent) !important; 
+            outline-offset: 4px; 
+            box-shadow: 0 0 20px var(--glow) !important;
+            border-radius: inherit;
+        }
         .card-stat { font-size: clamp(24px, 2.5vw, 36px); font-weight: 900; color: var(--text); margin-top: 8px; }
         .card-label { font-size: clamp(11px, 1vw, 14px); color: var(--accent); text-transform: uppercase; font-weight: 800; letter-spacing: 1.5px; }
 
