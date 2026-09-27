@@ -1369,15 +1369,15 @@
                     <button class="primary-btn" style="width: auto; padding: 0 25px;" onclick="searchGlobeCountry()">Search</button>
                 </div>
 
-                <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+                <div style="display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start;">
                     <!-- The 3D Canvas -->
-                    <div class="card" style="flex: 1; min-width: 320px; padding: 0; overflow: hidden; height: 65vh; position: relative; border-radius: 20px; display: flex; align-items: center; justify-content: center; background: #000;">
+                    <div class="card" style="flex: 1.5; min-width: 320px; padding: 0; overflow: hidden; height: clamp(400px, 60vh, 600px); position: relative; border-radius: 20px; display: flex; align-items: center; justify-content: center; background: #000;">
                         <div id="globe-loading" style="position: absolute; z-index: 5; color: var(--accent); font-weight: bold; font-size: 16px; text-transform: uppercase; letter-spacing: 2px;">⏳ Booting Global Satellites...</div>
                         <div id="globe-viz" style="width: 100%; height: 100%;"></div>
                     </div>
 
                     <!-- The Information Panel -->
-                    <div id="country-data-panel" class="card" style="flex: 1; min-width: 320px; max-height: 65vh; overflow-y: auto; display: none; padding: 30px;">
+                    <div id="country-data-panel" class="card" style="flex: 1; min-width: 320px; max-height: clamp(400px, 60vh, 600px); overflow-y: auto; display: none; padding: 30px;">
                         <div style="text-align: center; margin-bottom: 20px;">
                             <img id="c-flag" src="" style="width: 120px; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); margin-bottom: 15px;">
                             <h2 id="c-name" style="margin: 0 0 5px 0; color: #fff; font-size: 28px; text-shadow: 0 0 15px var(--glow);">Country Name</h2>
@@ -5520,19 +5520,74 @@
             }
         }
         
+        // 🟢 FIX: Added the missing Search Function
+        function searchGlobeCountry() {
+            const query = document.getElementById('globe-search').value.trim().toLowerCase();
+            if (!query) return;
+            
+            // Search local GeoJSON to grab ISO code if possible
+            const country = globalGeoData.find(d => 
+                (d.properties.ADMIN && d.properties.ADMIN.toLowerCase().includes(query)) || 
+                (d.properties.ISO_A2 && d.properties.ISO_A2.toLowerCase() === query)
+            );
+            
+            if (country) {
+                fetchCountryAnalytics(country.properties.ISO_A2, country.properties.ADMIN);
+            } else {
+                fetchCountryAnalytics("-99", query);
+            }
+        }
+
         async function fetchCountryAnalytics(isoCode, countryName) {
-            document.getElementById('country-data-panel').style.display = 'block';
+            const panel = document.getElementById('country-data-panel');
+            panel.style.display = 'block';
+            
+            // 🟢 FIX 1: Trigger WebGL Resize IMMEDIATELY so the canvas doesn't overlap on iPads!
+            setTimeout(() => {
+                const container = document.getElementById('globe-viz');
+                if (myGlobe && container) {
+                    myGlobe.width(container.clientWidth);
+                    myGlobe.height(container.clientHeight);
+                }
+            }, 50); // Delay allows flexbox to calculate new widths
+
             document.getElementById('c-name').innerText = "Scanning Data...";
-            document.getElementById('c-wiki').innerHTML = '<span style="color:var(--accent);">Fetching geopolitical records via Secure Backend Proxy...</span>';
+            document.getElementById('c-wiki').innerHTML = '<span style="color:var(--accent);">Fetching geopolitical records...</span>';
             
             if (myGlobe) myGlobe.controls().autoRotate = false;
 
             let countryData = null;
 
-            // 🟢 BLOCK 1: Fetch Core Demographic & Time Data via Backend Proxy
+            // 🟢 FIX 2: Hit RESTCountries directly via Browser (Bypasses Server IP Blocks!)
             try {
-                const proxyUrl = '/api/proxy/country?iso=' + (isoCode || '') + '&name=' + encodeURIComponent(countryName);
-                const res = await fetch(proxyUrl);
+                let res;
+                if (isoCode && isoCode !== "-99") {
+                    res = await fetch(`https://restcountries.com/v3.1/alpha/${isoCode}`);
+                } else {
+                    res = await fetch(`https://restcountries.com/v3.1/name/${encodeURIComponent(countryName)}?fullText=true`);
+                }
+                
+                if (!res.ok) throw new Error("Direct API Failed");
+                
+                const rawJson = await res.json();
+                countryData = (Array.isArray(rawJson) && rawJson.length > 0) ? rawJson[0] : rawJson;
+                
+            } catch (directErr) {
+                console.log("Direct browser fetch failed, falling back to proxy...");
+                // Fallback to Proxy
+                try {
+                    const proxyUrl = '/api/proxy/country?iso=' + (isoCode || '') + '&name=' + encodeURIComponent(countryName);
+                    const res = await fetch(proxyUrl);
+                    const rawJson = await res.json();
+                    if (Array.isArray(rawJson) && rawJson.length > 0) {
+                        countryData = rawJson[0];
+                    } else if (typeof rawJson === 'object') {
+                        countryData = rawJson;
+                    }
+                } catch (proxyErr) {
+                    console.error("Proxy also failed:", proxyErr);
+                }
+            }
                 
                 const rawText = await res.text();
                 let rawJson;
