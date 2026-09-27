@@ -1673,49 +1673,48 @@ async def _api_edit_media_handler(request):
         thumb_path = None
 
         # 🟢 MOVED TO TOP: RICH CAPTION & METADATA EXTRACTORS
-        async def generate_rich_caption(file_path, file_name):
+        async def generate_rich_caption(file_path, file_name, pre_probed_info=None):
             try:
                 import json, math, os, re
                 
-                # 1. Always get the exact file size from the OS first
-                try:
-                    size_bytes = os.path.getsize(file_path)
-                except Exception:
-                    size_bytes = 0
-                    
-                k = 1024
-                sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-                i = 0 if size_bytes == 0 else math.floor(math.log(size_bytes) / math.log(k))
-                size_str = f"{(size_bytes / (k**i)):.1f} {sizes[i]}"
-                
-                base_caption = f"`{file_name}`\n\n🗂 {size_str}"
-                
-                # 2. 🟢 CRITICAL FIX: Bypass FFprobe for Archives and Split Parts!
-                # Prevents hallucinating audio/video tracks on raw .001 or .zip chunks
-                file_name_lower = str(file_name).lower()
-                if file_name_lower.endswith(('.zip', '.rar', '.7z', '.tar', '.gz')) or re.search(r'\.\d{3}$', file_name_lower):
-                    return base_caption
-
-                # 3. Only probe actual media files
-                cmd = ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", str(file_path)]
-                proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-                stdout, _ = await proc.communicate()
-                info = json.loads(stdout)
-                
-                dur_sec = float(info.get('format', {}).get('duration', 0))
-                m = math.floor(dur_sec / 60)
-                s = math.floor(dur_sec % 60)
-                
-                v_stream = next((st for st in info.get('streams', []) if st['codec_type'] == 'video' and st['codec_name'] not in ['mjpeg', 'png']), None)
-                a_streams = [st for st in info.get('streams', []) if st['codec_type'] == 'audio']
-                s_streams = [st for st in info.get('streams', []) if st['codec_type'] == 'subtitle']
-                
+                # 1. Exact Size
+                try: size_bytes = os.path.getsize(file_path)
+                except Exception: size_bytes = 0
                 k = 1024
                 sizes = ['B', 'KB', 'MB', 'GB', 'TB']
                 i = 0 if size_bytes == 0 else math.floor(math.log(size_bytes) / math.log(k))
                 size_str = f"{(size_bytes / (k**i)):.1f} {sizes[i]}"
                 
                 caption = f"`{file_name}`\n\n🗂 {size_str}"
+                
+                # 2. Bypass FFprobe for chunks if we don't have pre-probed info
+                info = pre_probed_info
+                file_name_lower = str(file_name).lower()
+                is_archive_or_split = file_name_lower.endswith(('.zip', '.rar', '.7z', '.tar', '.gz')) or re.search(r'\.\d{3}$', file_name_lower)
+                
+                if not info:
+                    if is_archive_or_split:
+                        return caption
+                    cmd = ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", str(file_path)]
+                    proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                    stdout, _ = await proc.communicate()
+                    info = json.loads(stdout)
+                
+                # 3. Dynamic Time Formatter (Days, Hours, Mins, Secs)
+                dur_sec = float(info.get('format', {}).get('duration', 0))
+                d = math.floor(dur_sec / 86400)
+                h = math.floor((dur_sec % 86400) / 3600)
+                m = math.floor((dur_sec % 3600) / 60)
+                s = math.floor(dur_sec % 60)
+                
+                if d > 0: dur_str = f"{d}d {h}h {m}m {s}s"
+                elif h > 0: dur_str = f"{h}h {m}m {s}s"
+                elif m > 0: dur_str = f"{m}m {s}s"
+                else: dur_str = f"{s}s"
+                
+                v_stream = next((st for st in info.get('streams', []) if st.get('codec_type') == 'video' and st.get('codec_name') not in ['mjpeg', 'png']), None)
+                a_streams = [st for st in info.get('streams', []) if st.get('codec_type') == 'audio']
+                s_streams = [st for st in info.get('streams', []) if st.get('codec_type') == 'subtitle']
                 
                 if v_stream:
                     w = v_stream.get('width', '?')
@@ -1734,8 +1733,12 @@ async def _api_edit_media_handler(request):
                     a_str = ", ".join(a_langs) if a_langs else "Unknown"
                     s_str = ", ".join(s_langs) if s_langs else "None"
                     
-                    caption += f" 💎 {w}x{h}\n⏳ {m}m {s}s 💬 {s_str}\n🔊 {a_str}"
+                    caption += f" 💎 {w}x{h}\n⏳ {dur_str} 💬 {s_str}\n🔊 {a_str}"
                 elif a_streams:
+                    # 🟢 Hide Audio Tags if zipped/split (per your request)
+                    if is_archive_or_split:
+                        return caption
+                        
                     a = a_streams[0]
                     codec = str(a.get('codec_name', 'Unknown')).upper()
                     
@@ -2075,6 +2078,17 @@ async def _api_edit_media_handler(request):
                 await safe_tg_edit(status_msg, f"⚙️ **Remuxing Tracks (MKVToolNix)...**\n\n📄 `{new_name}`")
                 await process_remux(str(input_file), str(output_file), config, global_tags)
             
+            # 🟢 PRE-PROBE INTact MEDIA HERE (Before Zipping/Splitting)
+            intact_media_info = None
+            try:
+                import json
+                cmd = ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", str(output_file)]
+                proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                stdout, _ = await proc.communicate()
+                intact_media_info = json.loads(stdout)
+            except:
+                pass
+            
             # ZIP COMPRESSION
             if upload_mode == "zip":
                 EDITOR_UI_STATE[task_uuid]["phase"] = "Zipping"
@@ -2169,7 +2183,7 @@ async def _api_edit_media_handler(request):
                             await safe_tg_edit(status_msg, f"☁️ **Uploading Part {part_num} of {total_parts}...**")
                             
                             # Generate rich caption for parts
-                            part_caption = await generate_rich_caption(part_path, part_path.name)
+                            part_caption = await generate_rich_caption(part_path, part_path.name, pre_probed_info=intact_media_info)
                             
                             await safe_send(
                                 upload_client, uid, final_chat_id, task_uuid, is_bot, upload_client.send_document, 
@@ -2216,7 +2230,7 @@ async def _api_edit_media_handler(request):
                         doc_key = "document"
                     
                     # Generate rich caption for single file
-                    final_caption = await generate_rich_caption(output_file, new_name)
+                    final_caption = await generate_rich_caption(output_file, new_name, pre_probed_info=intact_media_info)
                         
                     await safe_send(
                         upload_client, uid, final_chat_id, task_uuid, is_bot, send_fn,
