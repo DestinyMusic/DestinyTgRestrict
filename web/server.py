@@ -99,7 +99,7 @@ async def _api_stats_handler(request):
     # 🟢 TOKEN CHECK
     token = request.query.get("token", "")
     user_doc = await db.col.find_one({"id": user_id})
-        if not user_doc or token not in (user_doc.get("web_tokens") or [user_doc.get("web_token")] or []):
+    if not user_doc or token not in (user_doc.get("web_tokens") or [user_doc.get("web_token")] or []):
         return web.json_response({"status": "error", "message": "Unauthorized: Invalid or expired Web Token."})
 
     uptime_seconds = int(time.time() - BOT_START_TIME)
