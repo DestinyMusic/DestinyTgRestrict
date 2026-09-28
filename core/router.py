@@ -26,13 +26,19 @@ async def _fetch_and_validate_msg(client, acc, chatid, msgid, user_id, filter_th
     if not msg or msg.empty: return None, None
 
     if filter_thread_id is not None:
-        actual_thread = getattr(msg, "message_thread_id", None)
-        if actual_thread is None:
-            # 🟢 FIX: If targeting General Topic (1), a missing thread ID is a valid match!
-            if filter_thread_id != 1 and getattr(msg, "reply_to_top_message_id", None) != filter_thread_id and getattr(msg, "reply_to_message_id", None) != filter_thread_id and msg.id != filter_thread_id:
+        # 🟢 FIX: Bot DMs and Chat DMs do not have topics. 
+        # Ignore thread filters for DMs so live watchers don't drop new messages!
+        chat_type = str(getattr(getattr(msg, "chat", None), "type", ""))
+        is_private_dm = "PRIVATE" in chat_type or "BOT" in chat_type
+        
+        if not is_private_dm:
+            actual_thread = getattr(msg, "message_thread_id", None)
+            if actual_thread is None:
+                # 🟢 FIX: If targeting General Topic (1), a missing thread ID is a valid match!
+                if filter_thread_id != 1 and getattr(msg, "reply_to_top_message_id", None) != filter_thread_id and getattr(msg, "reply_to_message_id", None) != filter_thread_id and msg.id != filter_thread_id:
+                    return None, None
+            elif actual_thread != filter_thread_id:
                 return None, None
-        elif actual_thread != filter_thread_id:
-            return None, None
 
     msg_type = get_message_type(msg)
     if not msg_type: return None, None
@@ -73,17 +79,22 @@ async def handle_private(client: Client, acc, message: Message, chatid, msgid: i
     # 3. Route the task
     is_content_protected = is_restricted or getattr(msg, "has_protected_content", False) or getattr(msg.chat, "has_protected_content", False)
     
+    # 🟢 FIX: Determine if it's a DM so we can force it to use the private route
+    chat_type = str(getattr(getattr(msg, "chat", None), "type", "")) if msg else ""
+    is_private_dm = "PRIVATE" in chat_type or "BOT" in chat_type
+    
     if not is_content_protected:
-        if is_live_watch:
+        # 🟢 FIX: Route Live DMs to the private handler (same one /dl uses)
+        if is_live_watch and not is_private_dm:
             return await handle_unrestricted_live(client, acc, chatid, msgid, **kwargs)
-        elif is_public:
+        elif is_public and not is_private_dm:
             return await handle_unrestricted_public(client, acc, chatid, msgid, **kwargs)
         else:
             return await handle_unrestricted_private(client, acc, chatid, msgid, **kwargs)
     else:
-        if is_live_watch:
+        if is_live_watch and not is_private_dm:
             return await handle_restricted_live(client, acc, chatid, msgid, **kwargs)
-        elif is_public:
+        elif is_public and not is_private_dm:
             return await handle_restricted_public(client, acc, chatid, msgid, **kwargs)
         else:
             return await handle_restricted_private(client, acc, chatid, msgid, **kwargs)
@@ -147,12 +158,8 @@ def get_dynamic_upload_client(client, acc, user_id, task_uuid, msg_index):
     return my_slice[msg_index % len(my_slice)]
 
 async def _execute_unrestricted_copy(client, acc, chat_id, msgid, dest_chat_id, dest_thread_id, msg, msg_type, user_id, task_uuid, delay, index=1):
-    # 🟢 CRITICAL FIX: If the source is a DM (Positive Integer ID), Worker Bots cannot access it. Force User Session!
-    is_dm = isinstance(chat_id, int) and chat_id > 0
-    if is_dm and acc:
-        upload_client = acc
-    else:
-        upload_client = get_dynamic_upload_client(client, acc, user_id, task_uuid, index)
+    # 🟢 Select an Upload Client (Dynamic Slicing)
+    upload_client = get_dynamic_upload_client(client, acc, user_id, task_uuid, index)
             
     if task_uuid and user_id in ACTIVE_PROCESSES and task_uuid in ACTIVE_PROCESSES[user_id]:
         ACTIVE_PROCESSES[user_id][task_uuid]["fetcher"] = _get_client_label(acc if acc else client)
@@ -185,19 +192,9 @@ async def _execute_unrestricted_copy(client, acc, chat_id, msgid, dest_chat_id, 
             try:
                 copy_res = await safe_send(upload_client, user_id, dest_chat_id, task_uuid, True, upload_client.copy_media_group, chat_id=dest_chat_id, from_chat_id=chat_id, message_id=msgid, message_thread_id=dest_thread_id)
             except Exception:
-                copy_res = False
                 if acc:
-                    try:
-                        copy_res = await safe_send(acc, user_id, dest_chat_id, task_uuid, False, acc.copy_media_group, chat_id=dest_chat_id, from_chat_id=chat_id, message_id=msgid, message_thread_id=dest_thread_id)
-                    except: pass
-                
-                # 🟢 CRITICAL FIX: If copy_media_group fails (like in Bot DMs), fallback to single copy so it isn't skipped!
-                if not copy_res:
-                    try:
-                        copy_res = await safe_send(upload_client, user_id, dest_chat_id, task_uuid, True, upload_client.copy_message, chat_id=dest_chat_id, from_chat_id=chat_id, message_id=msgid, message_thread_id=dest_thread_id)
-                    except:
-                        if acc:
-                            copy_res = await safe_send(acc, user_id, dest_chat_id, task_uuid, False, acc.copy_message, chat_id=dest_chat_id, from_chat_id=chat_id, message_id=msgid, message_thread_id=dest_thread_id)
+                    copy_res = await safe_send(acc, user_id, dest_chat_id, task_uuid, False, acc.copy_media_group, chat_id=dest_chat_id, from_chat_id=chat_id, message_id=msgid, message_thread_id=dest_thread_id)
+                else: copy_res = False
             
             if copy_res:
                 if delay > 0 and group_size > 1: await asyncio.sleep(delay * (group_size - 1))
@@ -209,6 +206,7 @@ async def _execute_unrestricted_copy(client, acc, chat_id, msgid, dest_chat_id, 
             return True
         except Exception:
             if acc:
+                # 🟢 UPDATE UI: Show User Session taking over!
                 if task_uuid and user_id in ACTIVE_PROCESSES and task_uuid in ACTIVE_PROCESSES[user_id]:
                     ACTIVE_PROCESSES[user_id][task_uuid]["uploader"] = _get_client_label(acc)
                     
@@ -227,12 +225,8 @@ async def _execute_unrestricted_copy(client, acc, chat_id, msgid, dest_chat_id, 
     except Exception: return False
 
 async def _execute_public_live_unrestricted_copy(client, acc, chat_id, msgid, dest_chat_id, dest_thread_id, msg, msg_type, user_id, task_uuid, delay, index=1):
-    # 🟢 CRITICAL FIX: If the source is a DM (Positive Integer ID), Worker Bots cannot access it. Force User Session!
-    is_dm = isinstance(chat_id, int) and chat_id > 0
-    if is_dm and acc:
-        upload_client = acc
-    else:
-        upload_client = get_dynamic_upload_client(client, acc, user_id, task_uuid, index)
+    # 🟢 Select an Upload Client (Dynamic Slicing)
+    upload_client = get_dynamic_upload_client(client, acc, user_id, task_uuid, index)
 
     if task_uuid and user_id in ACTIVE_PROCESSES and task_uuid in ACTIVE_PROCESSES[user_id]:
         ACTIVE_PROCESSES[user_id][task_uuid]["fetcher"] = _get_client_label(acc if acc else client)
@@ -269,19 +263,9 @@ async def _execute_public_live_unrestricted_copy(client, acc, chat_id, msgid, de
                 copy_res = await safe_send(upload_client, user_id, dest_chat_id, task_uuid, True, upload_client.copy_media_group, chat_id=dest_chat_id, from_chat_id=chat_id, message_id=msgid, message_thread_id=dest_thread_id)
                 if not copy_res: raise ValueError("Bot copy None")
             except Exception:
-                copy_res = False
                 if acc:
-                    try:
-                        copy_res = await safe_send(acc, user_id, dest_chat_id, task_uuid, False, acc.copy_media_group, chat_id=dest_chat_id, from_chat_id=chat_id, message_id=msgid, message_thread_id=dest_thread_id)
-                    except: pass
-                
-                # 🟢 CRITICAL FIX: Fallback to single message copy for Bot DMs
-                if not copy_res:
-                    try:
-                        copy_res = await safe_send(upload_client, user_id, dest_chat_id, task_uuid, True, upload_client.copy_message, chat_id=dest_chat_id, from_chat_id=chat_id, message_id=msgid, message_thread_id=dest_thread_id)
-                    except:
-                        if acc:
-                            copy_res = await safe_send(acc, user_id, dest_chat_id, task_uuid, False, acc.copy_message, chat_id=dest_chat_id, from_chat_id=chat_id, message_id=msgid, message_thread_id=dest_thread_id)
+                    copy_res = await safe_send(acc, user_id, dest_chat_id, task_uuid, False, acc.copy_media_group, chat_id=dest_chat_id, from_chat_id=chat_id, message_id=msgid, message_thread_id=dest_thread_id)
+                else: copy_res = False
             
             if copy_res:
                 if delay > 0 and group_size > 1: await asyncio.sleep(delay * (group_size - 1))
@@ -294,6 +278,7 @@ async def _execute_public_live_unrestricted_copy(client, acc, chat_id, msgid, de
             return True
         except Exception:
             if acc:
+                # 🟢 UPDATE UI: Show User Session taking over!
                 if task_uuid and user_id in ACTIVE_PROCESSES and task_uuid in ACTIVE_PROCESSES[user_id]:
                     ACTIVE_PROCESSES[user_id][task_uuid]["uploader"] = _get_client_label(acc)
                     
