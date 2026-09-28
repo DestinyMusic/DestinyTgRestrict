@@ -154,27 +154,27 @@ async def resolve_direct_link(url):
                         m = re.search(r'(?:<source[^>]+src=["\']|<video[^>]+src=["\'])(https?://[^"\']+\.(?:mp4|mkv|webm|m4v|mp3|m4a|flac|opus)(?:\?[^"\']*)?)["\']', html_text, re.I)
                         if m:
                             result = m.group(1).replace('&amp;', '&')
+                        else:
+                            m = re.search(r'href=["\'](https?://[^"\']+\.(?:mp4|mkv|webm|m4v|mp3|m4a|flac|opus)(?:\?[^"\']*)?)["\']', html_text, re.I)
+                            if m:
+                                result = m.group(1).replace('&amp;', '&')
                             else:
-                                m = re.search(r'href=["\'](https?://[^"\']+\.(?:mp4|mkv|webm|m4v|mp3|m4a|flac|opus)(?:\?[^"\']*)?)["\']', html_text, re.I)
-                                if m:
-                                    result = m.group(1).replace('&amp;', '&')
-                                else:
-                                    # 🟢 FIX: Ultimate Fallback -> Route ANY website through yt-dlp
-                                    try:
-                                        from yt_stream_resolver import resolve_yt_dlp_stream
-                                    except ImportError:
-                                        from streaming.yt_stream_resolver import resolve_yt_dlp_stream
-                                        
-                                    yt_info = await resolve_yt_dlp_stream(original)
+                                # 🟢 FIX: Ultimate Fallback -> Route ANY website through yt-dlp
+                                try:
+                                    from yt_stream_resolver import resolve_yt_dlp_stream
+                                except ImportError:
+                                    from streaming.yt_stream_resolver import resolve_yt_dlp_stream
                                     
-                                    if yt_info and yt_info.get("stream_url"):
-                                        result = yt_info["stream_url"]
-                                        
-                                        if yt_info.get("headers"):
-                                            DIRECT_HEADER_CACHE[original] = yt_info["headers"]
-                                            DIRECT_HEADER_CACHE[result] = yt_info["headers"]
-                                    else:
-                                        raise ValueError("Unsupported Website: No direct media found on this page (yt-dlp also failed).")
+                                yt_info = await resolve_yt_dlp_stream(original)
+                                
+                                if yt_info and yt_info.get("stream_url"):
+                                    result = yt_info["stream_url"]
+                                    
+                                    if yt_info.get("headers"):
+                                        DIRECT_HEADER_CACHE[original] = yt_info["headers"]
+                                        DIRECT_HEADER_CACHE[result] = yt_info["headers"]
+                                else:
+                                    raise ValueError("Unsupported Website: No direct media found on this page (yt-dlp also failed).")
                     else:
                         result = str(r.url) 
             except Exception as e:
