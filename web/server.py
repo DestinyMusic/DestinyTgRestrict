@@ -876,9 +876,14 @@ async def _api_topics_handler(request):
     try:
         async def fetch_tg_topics():
             try:
-                async for topic in uclient.get_forum_topics(chat_id, limit=300):
+                count = 0
+                # 🟢 SPEED FIX: Lowered limit to 250 and batched the sleeps!
+                async for topic in uclient.get_forum_topics(chat_id, limit=250):
                     topics.append({"id": topic.id, "title": topic.title})
-                    await asyncio.sleep(0.01) # 🟢 FIX: Yield event loop to prevent queue blocks
+                    count += 1
+                    # 🟢 CRITICAL: Yield only every 25 topics to eliminate artificial lag!
+                    if count % 25 == 0:
+                        await asyncio.sleep(0.01)
             except Exception as e:
                 # Graceful handling of Pyrogram pagination bug
                 if "'NoneType'" not in str(e):
