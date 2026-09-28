@@ -18,6 +18,30 @@ from curl_cffi import Session as CurlSession
 import os
 import re
 
+# 🟢 FIX 1: GLOBAL TIMEOUT PATCH
+# Prevents the bot from freezing forever if a file hoster goes offline or rate-limits you.
+import niquests
+import cloudscraper
+from curl_cffi import requests as curl_requests
+
+original_niquests_req = niquests.Session.request
+def safe_niquests_req(self, method, url, **kwargs):
+    kwargs.setdefault('timeout', 15)
+    return original_niquests_req(self, method, url, **kwargs)
+niquests.Session.request = safe_niquests_req
+
+original_cs_req = cloudscraper.CloudScraper.request
+def safe_cs_req(self, method, url, **kwargs):
+    kwargs.setdefault('timeout', 15)
+    return original_cs_req(self, method, url, **kwargs)
+cloudscraper.CloudScraper.request = safe_cs_req
+
+original_curl_req = curl_requests.Session.request
+def safe_curl_req(self, method, url, **kwargs):
+    kwargs.setdefault('timeout', 15)
+    return original_curl_req(self, method, url, **kwargs)
+curl_requests.Session.request = safe_curl_req
+
 class DirectDownloadLinkException(Exception):
     pass
 
@@ -352,7 +376,7 @@ def direct_link_generator(link):
     ):
         return linkBox(link)
     elif is_share_link(link):
-        return filepress(link) if "filepress" in domain else sharer_scraper(link)
+        return filepress(link) if ("filepress" in domain or "filebee" in domain) else sharer_scraper(link)
     elif any(
         x in domain
         for x in [
