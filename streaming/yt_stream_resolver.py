@@ -23,11 +23,9 @@ async def _extract_cli(url: str, use_cookies: bool = True):
     # 🟢 DYNAMIC SPOOFING: YouTube vs Rest of the Internet
     if "youtu" in url.lower():
         # YouTube BotGuard detects fingerprint mismatches. 
-        # By combining 'chrome' TLS impersonation with the 'tv' (Chromium Smart TV) API,
-        # we perfectly mimic a living room TV, bypassing both Datacenter IP drops AND PO Tokens!
+        # By using standard Python TLS + Android/iOS APIs, we bypass BotGuard & Datacenter drops.
         cmd.extend([
-            "--impersonate", "chrome",
-            "--extractor-args", "youtube:player_client=tv,android;player_skip=web,mweb,ios"
+            "--extractor-args", "youtube:player_client=android,ios;player_skip=web,mweb,tv"
         ])
     else:
         # Sites like Eporner need standard Chrome impersonation to bypass Cloudflare/BotGuard hashes
