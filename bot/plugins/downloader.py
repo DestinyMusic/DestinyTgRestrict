@@ -1457,7 +1457,7 @@ async def finalize_watcher_setup(client, message, data, delay, user_id=None):
             except: pass
             chat = await user_client.get_chat(parsed["join_target"])
             source_id = chat.id
-            source_title = chat.title or str(source_id)
+            source_title = chat.title or getattr(chat, "first_name", None) or str(source_id)
 
         elif parsed["kind"] == "public":
             try:
@@ -1468,11 +1468,11 @@ async def finalize_watcher_setup(client, message, data, delay, user_id=None):
                 chat = await user_client.get_chat(parsed["join_target"])
                 
             source_id = chat.id
-            source_title = chat.title or str(source_id)
+            source_title = chat.title or getattr(chat, "first_name", None) or str(source_id)
 
         else:
             chat = await user_client.get_chat(source_id)
-            source_title = chat.title or str(source_id)
+            source_title = chat.title or getattr(chat, "first_name", None) or str(source_id)
 
         if parsed.get("topic_id"):
             source_title += await get_topic_title(user_client, source_id, parsed["topic_id"])
@@ -1548,3 +1548,4 @@ async def finalize_watcher_setup(client, message, data, delay, user_id=None):
             )
     except Exception:
         pass
+    
