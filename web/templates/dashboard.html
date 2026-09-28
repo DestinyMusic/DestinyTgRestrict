@@ -2661,6 +2661,15 @@
                 const res = await fetch(`/api/stats?user_id=${currentUser}&token=${currentToken}`);
                 const data = await res.json();
                 
+                // 🟢 CRITICAL FIX: Prevent 'undefined' UI bugs if the token is invalid or overwritten
+                if (data.status === 'error') {
+                    if (data.message.includes('Unauthorized') || data.message.includes('Token')) {
+                        console.warn("Session invalidated by another device.");
+                        logout(); 
+                    }
+                    return;
+                }
+                
                 if (data.is_admin) {
                     isAdminGlobal = true;
                     document.getElementById('nav-admin').style.display = 'flex';
