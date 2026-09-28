@@ -350,7 +350,8 @@ async def _api_add_watcher(request):
                 except Exception: pass
                 chat = await user_client.get_chat(parsed["chat_id"])
             source_id = chat.id
-            source_title = chat.title or str(source_id)
+            # 🟢 FIX: Extract first_name so Bot DMs dynamically show the actual Bot name instead of raw IDs
+            source_title = chat.title or getattr(chat, "first_name", None) or str(source_id)
             if parsed.get("topic_id"): 
                 source_title += await get_topic_title(user_client, source_id, parsed["topic_id"])
         except Exception:
