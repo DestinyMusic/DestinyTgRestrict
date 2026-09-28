@@ -39,6 +39,9 @@ ENV PATH="/app/venv/bin:$PATH"
 # Install Python requirements
 COPY requirements.txt .
 
+# 🟢 FIX: This forces HuggingFace/Docker to completely wipe the cache from this step forward
+ARG CACHE_BUSTER=1 
+
 RUN pip install --upgrade pip setuptools wheel && \
     pip install --no-cache-dir -r requirements.txt
 
