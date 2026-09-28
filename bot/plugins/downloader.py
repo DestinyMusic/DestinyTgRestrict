@@ -1499,11 +1499,16 @@ async def finalize_watcher_setup(client, message, data, delay, user_id=None):
                 last_msg_id = m.id
         except: pass
 
+    # 🟢 FIX: Ensure we don't accidentally save a message ID as a topic ID for Bot DMs
+    chat_type = getattr(chat, "type", None) if 'chat' in locals() and chat else None
+    is_private_source = str(chat_type) in ["ChatType.PRIVATE", "ChatType.BOT"] or (isinstance(source_id, int) and source_id > 0)
+    final_source_thread = None if is_private_source else data.get("source_thread_id")
+
     await db.add_watcher(
         user_id=user_id,
         source_id=source_id,
         dest_id=data.get("dest_chat_id"),
-        source_thread=data.get("source_thread_id"),
+        source_thread=final_source_thread,
         dest_thread=data.get("dest_thread_id"),
         delay=delay,
         is_restricted=data["is_restricted"],
@@ -1543,4 +1548,3 @@ async def finalize_watcher_setup(client, message, data, delay, user_id=None):
             )
     except Exception:
         pass
-    
