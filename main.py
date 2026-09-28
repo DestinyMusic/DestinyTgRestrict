@@ -289,7 +289,8 @@ GLOBAL_WATCHER_SOURCES = set()
 async def check_if_watched(_, __, message):
     return bool(message.chat and message.chat.id in GLOBAL_WATCHER_SOURCES)
 
-is_watched_chat = filters.create(check_if_watched)
+# 🟢 FIX: Explicitly bind both incoming & outgoing traffic so manual user forwards are caught instantly!
+is_watched_chat = filters.create(check_if_watched) & (filters.incoming | filters.outgoing)
 # 👆 END NEW
 
 # 🟢 FIX: Apply the dynamic RAM-based limits to prevent server nukes
