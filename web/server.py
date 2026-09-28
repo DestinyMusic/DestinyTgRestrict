@@ -973,7 +973,7 @@ async def _api_chat_details_handler(request):
                         "top_msg": str(getattr(top_msg_data, "id", top_msg_data))
                     })
                     count += 1
-                    # Only yield every 25 topics to eliminate artificial lag!
+                    # 🟢 CRITICAL: Yield every 25 topics so the 250-item loop doesn't freeze the server
                     if count % 25 == 0:
                         await asyncio.sleep(0.01) 
             except Exception as inner_e:
