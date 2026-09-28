@@ -36,7 +36,10 @@ def _ouo(link):
     final_url = f"{base}/xreallcygo/{short_id}"
 
     try:
-        with cffi_requests.Session(impersonate="chrome136", timeout=30) as s:
+        # 🟢 FIX 1: Change impersonate to just "chrome" so the library auto-selects 
+        # the highest safe version it has installed without crashing.
+        # 🟢 FIX 2: Lowered timeout to 10s so the max UI freeze is 30s instead of 90s.
+        with cffi_requests.Session(impersonate="chrome", timeout=10) as s:
             r1 = s.get(normalized, allow_redirects=True)
             if r1.status_code == 403:
                 raise DirectDownloadLinkException("ERROR: ouo.io blocked the request (403)")
