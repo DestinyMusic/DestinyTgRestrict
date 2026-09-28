@@ -20,6 +20,18 @@ if not hasattr(pyrogram.enums, "ButtonStyle"):
     class DummyButtonStyle:
         DEFAULT = 0
     pyrogram.enums.ButtonStyle = DummyButtonStyle
+
+import pyrogram.types
+if not hasattr(pyrogram.types.RichText, "lstrip"):
+    def _richtext_lstrip(self, chars=None):
+        # Safely extract text from nested RichText objects to prevent .lstrip() crashes
+        if hasattr(self, "text"):
+            if isinstance(self.text, str):
+                return self.text.lstrip(chars)
+            if hasattr(self.text, "lstrip"):
+                return self.text.lstrip(chars)
+        return "Unknown"
+    pyrogram.types.RichText.lstrip = _richtext_lstrip
 # -----------------------------------------
 
 import re
