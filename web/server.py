@@ -215,7 +215,7 @@ async def _api_add_task(request):
         
         # 2. 🟢 VERIFY TOKEN AGAINST DATABASE
         user_doc = await db.col.find_one({"id": user_id})
-            if not user_doc or token not in (user_doc.get("web_tokens") or [user_doc.get("web_token")] or []):
+        if not user_doc or token not in (user_doc.get("web_tokens") or [user_doc.get("web_token")] or []):
             return web.json_response({"status": "error", "message": "Unauthorized: Invalid or expired Web Token. Please logout and login again."})
 
         # 3. Proceed with the rest of the code normally
@@ -2417,7 +2417,7 @@ async def start_koyeb_health_check(host: str = "0.0.0.0"):
         # 🟢 TOKEN CHECK
         token = request.query.get("token", "")
         user_doc = await db.col.find_one({"id": uid})
-            if not user_doc or token not in (user_doc.get("web_tokens") or [user_doc.get("web_token")] or []):
+        if not user_doc or token not in (user_doc.get("web_tokens") or [user_doc.get("web_token")] or []):
             return web.json_response({"status": "error", "message": "Unauthorized: Invalid or expired Web Token."})
             
         if not await db.is_user_admin(uid):
