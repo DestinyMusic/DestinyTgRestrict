@@ -27,9 +27,9 @@ async def _fetch_and_validate_msg(client, acc, chatid, msgid, user_id, filter_th
 
     if filter_thread_id is not None:
         # 🟢 FIX: Bot DMs and Chat DMs do not have topics. 
-        # Ignore thread filters for DMs so live watchers don't drop new messages!
+        # Ignore thread filters for DMs so live watchers detect them!
         chat_type = str(getattr(getattr(msg, "chat", None), "type", ""))
-        is_private_dm = "PRIVATE" in chat_type or "BOT" in chat_type
+        is_private_dm = "PRIVATE" in chat_type or "BOT" in chat_type or (isinstance(chatid, int) and chatid > 0)
         
         if not is_private_dm:
             actual_thread = getattr(msg, "message_thread_id", None)
@@ -79,22 +79,17 @@ async def handle_private(client: Client, acc, message: Message, chatid, msgid: i
     # 3. Route the task
     is_content_protected = is_restricted or getattr(msg, "has_protected_content", False) or getattr(msg.chat, "has_protected_content", False)
     
-    # 🟢 FIX: Determine if it's a DM so we can force it to use the private route
-    chat_type = str(getattr(getattr(msg, "chat", None), "type", "")) if msg else ""
-    is_private_dm = "PRIVATE" in chat_type or "BOT" in chat_type
-    
     if not is_content_protected:
-        # 🟢 FIX: Route Live DMs to the private handler (same one /dl uses)
-        if is_live_watch and not is_private_dm:
+        if is_live_watch:
             return await handle_unrestricted_live(client, acc, chatid, msgid, **kwargs)
-        elif is_public and not is_private_dm:
+        elif is_public:
             return await handle_unrestricted_public(client, acc, chatid, msgid, **kwargs)
         else:
             return await handle_unrestricted_private(client, acc, chatid, msgid, **kwargs)
     else:
-        if is_live_watch and not is_private_dm:
+        if is_live_watch:
             return await handle_restricted_live(client, acc, chatid, msgid, **kwargs)
-        elif is_public and not is_private_dm:
+        elif is_public:
             return await handle_restricted_public(client, acc, chatid, msgid, **kwargs)
         else:
             return await handle_restricted_private(client, acc, chatid, msgid, **kwargs)
@@ -158,8 +153,14 @@ def get_dynamic_upload_client(client, acc, user_id, task_uuid, msg_index):
     return my_slice[msg_index % len(my_slice)]
 
 async def _execute_unrestricted_copy(client, acc, chat_id, msgid, dest_chat_id, dest_thread_id, msg, msg_type, user_id, task_uuid, delay, index=1):
-    # 🟢 Select an Upload Client (Dynamic Slicing)
-    upload_client = get_dynamic_upload_client(client, acc, user_id, task_uuid, index)
+    # 🟢 FIX: Force User Session for Bot DMs and Chat DMs because Worker Bots can't access them!
+    is_source_dm = isinstance(chat_id, int) and chat_id > 0
+    is_dest_dm = isinstance(dest_chat_id, int) and dest_chat_id > 0
+    
+    if (is_source_dm or is_dest_dm) and acc:
+        upload_client = acc
+    else:
+        upload_client = get_dynamic_upload_client(client, acc, user_id, task_uuid, index)
             
     if task_uuid and user_id in ACTIVE_PROCESSES and task_uuid in ACTIVE_PROCESSES[user_id]:
         ACTIVE_PROCESSES[user_id][task_uuid]["fetcher"] = _get_client_label(acc if acc else client)
@@ -225,8 +226,14 @@ async def _execute_unrestricted_copy(client, acc, chat_id, msgid, dest_chat_id, 
     except Exception: return False
 
 async def _execute_public_live_unrestricted_copy(client, acc, chat_id, msgid, dest_chat_id, dest_thread_id, msg, msg_type, user_id, task_uuid, delay, index=1):
-    # 🟢 Select an Upload Client (Dynamic Slicing)
-    upload_client = get_dynamic_upload_client(client, acc, user_id, task_uuid, index)
+    # 🟢 FIX: Force User Session for Bot DMs and Chat DMs
+    is_source_dm = isinstance(chat_id, int) and chat_id > 0
+    is_dest_dm = isinstance(dest_chat_id, int) and dest_chat_id > 0
+    
+    if (is_source_dm or is_dest_dm) and acc:
+        upload_client = acc
+    else:
+        upload_client = get_dynamic_upload_client(client, acc, user_id, task_uuid, index)
 
     if task_uuid and user_id in ACTIVE_PROCESSES and task_uuid in ACTIVE_PROCESSES[user_id]:
         ACTIVE_PROCESSES[user_id][task_uuid]["fetcher"] = _get_client_label(acc if acc else client)
@@ -687,8 +694,9 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
         # 🟢 NEW: Select an Upload Client (Worker Bot > Main Bot)
         file_size_final = os.path.getsize(file_path) if file_path and os.path.exists(file_path) else 0
         
-        # 🟢 FORCE USER SESSION: Standard bots crash if handed files > 2GB!
-        if file_size_final > (1980 * 1024 * 1024) and is_premium and acc:
+        # 🟢 FORCE USER SESSION: Standard bots crash if handed files > 2GB, AND Worker bots can't upload to DMs!
+        is_dest_dm = isinstance(dest_chat_id, int) and dest_chat_id > 0
+        if (file_size_final > (1980 * 1024 * 1024) and is_premium and acc) or (is_dest_dm and acc):
             upload_client = acc
         else:
             upload_client = get_dynamic_upload_client(client, acc, user_id, task_uuid, index)
