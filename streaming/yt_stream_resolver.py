@@ -16,11 +16,13 @@ async def _extract_cli(url: str, use_cookies: bool = True):
         "--no-playlist",
         "--force-ipv4",
         "--impersonate", "chrome",  
-        "--socket-timeout", "30",      
-        "--retries", "10",           
+        "--socket-timeout", "30",       
+        "--retries", "10",              
         "--extractor-retries", "10",    
-        # 🟢 FIX: Force Smart TV & Mobile APIs to bypass BotGuard and the "Live event has ended" cookie bug!
-        "--extractor-args", "youtube:player_client=tv,mweb,ios,android"
+        # 🟢 CRITICAL FIX: Kill the 'web' and 'mweb' clients completely!
+        # This forces YouTube to serve the video through the internal Mobile App APIs,
+        # completely bypassing the BotGuard Captcha wall on HuggingFace/Datacenter IPs.
+        "--extractor-args", "youtube:player_client=android,ios;player_skip=web,mweb"
     ]
     
     if use_cookies and os.path.exists("cookies.txt"):
