@@ -947,44 +947,46 @@ async def _api_chat_details_handler(request):
             except Exception as inner_e:
                 raise Exception(f"Fatal resolution failure. ({inner_e})")
         
-        # Safely fetch total message count (Only works on Groups/Channels/PMs)
-        try:
-            total_msgs = await asyncio.wait_for(uclient.get_chat_history_count(chat_id), timeout=6.0)
-        except Exception:
-            total_msgs = "Unknown"
-
-        topics = []
         is_forum = getattr(chat, "is_forum", False)
+        is_supergroup = getattr(chat, "type", None) == enums.ChatType.SUPERGROUP
+        topics = []
         
-        # 🟢 FIX 2: Only fetch topics if it's explicitly a SUPERGROUP and a FORUM!
-        # Prevents crashing on normal Groups, Channels, Bots, or Users.
-        if is_forum and getattr(chat, "type", None) == enums.ChatType.SUPERGROUP:
-            async def fetch_forum_topology():
-                try:
-                    # 🟢 FIX 3: HARD LIMIT to 250 topics so it finishes in 1-2 seconds and never times out!
-                    async for t in uclient.get_forum_topics(chat_id, limit=250):
-                        top_msg_data = getattr(t, "top_message", "?")
-                        if hasattr(top_msg_data, "id"):
-                            top_msg_val = str(top_msg_data.id)
-                        else:
-                            top_msg_val = str(top_msg_data)
-                        topics.append({
-                            "id": t.id,
-                            "title": t.title,
-                            "top_msg": top_msg_val
-                        })
-                        await asyncio.sleep(0.01) # 🟢 FIX: Yield event loop to prevent queue blocks
-                except Exception as inner_e:
-                    if "'NoneType'" not in str(inner_e):
-                        logger.warning(f"[CHAT DETAILS] Topic pagination interrupted: {inner_e}")
-                        
+        # 🟢 SPEED FIX 1: Wrap message count in its own async function
+        async def fetch_msg_count():
             try:
-                # Give it 8 seconds to fetch the 250 topics
-                await asyncio.wait_for(fetch_forum_topology(), timeout=8.0)
-            except asyncio.TimeoutError:
-                logger.warning(f"[CHAT DETAILS] Topic fetch timed out. Returning {len(topics)} topics found so far.")
-            except Exception as e:
-                logger.warning(f"[CHAT DETAILS] Could not fetch topics: {repr(e)}")
+                return await asyncio.wait_for(uclient.get_chat_history_count(chat_id), timeout=3.0)
+            except Exception:
+                return "Unknown"
+                
+        # 🟢 SPEED FIX 2: Optimize the Topic Fetcher
+        async def fetch_forum_topology():
+            if not (is_forum and is_supergroup):
+                return
+            try:
+                count = 0
+                # Lowered limit to 250 for instant UI preview
+                async for t in uclient.get_forum_topics(chat_id, limit=250):
+                    top_msg_data = getattr(t, "top_message", "?")
+                    topics.append({
+                        "id": t.id,
+                        "title": t.title,
+                        "top_msg": str(getattr(top_msg_data, "id", top_msg_data))
+                    })
+                    count += 1
+                    # Only yield every 25 topics to eliminate artificial lag!
+                    if count % 25 == 0:
+                        await asyncio.sleep(0.01) 
+            except Exception as inner_e:
+                if "'NoneType'" not in str(inner_e):
+                    logger.warning(f"[CHAT DETAILS] Topic pagination interrupted: {inner_e}")
+
+        # 🟢 SPEED FIX 3: Run both network requests at the EXACT SAME TIME!
+        total_msgs_result, _ = await asyncio.gather(
+            fetch_msg_count(),
+            asyncio.wait_for(fetch_forum_topology(), timeout=5.0) if (is_forum and is_supergroup) else asyncio.sleep(0)
+        )
+        
+        total_msgs = total_msgs_result
 
         return web.json_response({
             "status": "success",
