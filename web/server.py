@@ -26,10 +26,26 @@ async def _api_login_handler(request):
         stored_pwd = user.get("web_password")
         if not stored_pwd or stored_pwd == password:
             import secrets
-            # 🟢 FIX: Generate a secure session token
+            
             web_token = secrets.token_hex(16)
             
-            update_data = {"web_token": web_token}
+            # 🟢 MULTI-DEVICE FIX: Store up to 5 concurrent device tokens
+            existing_tokens = user.get("web_tokens", [])
+            # Fallback for old single-string accounts
+            if not isinstance(existing_tokens, list): 
+                existing_tokens = [user.get("web_token")] if user.get("web_token") else []
+            
+            existing_tokens.append(web_token)
+            
+            # Keep only the 5 most recent logins (FIFO)
+            if len(existing_tokens) > 5:
+                existing_tokens = existing_tokens[-5:]
+                
+            update_data = {
+                "web_tokens": existing_tokens, 
+                "web_token": web_token # Keep fallback for legacy compatibility
+            }
+            
             if not stored_pwd:
                 update_data["web_password"] = password
                 
@@ -84,7 +100,7 @@ async def _api_stats_handler(request):
     # 🟢 TOKEN CHECK
     token = request.query.get("token", "")
     user_doc = await db.col.find_one({"id": user_id})
-    if not user_doc or user_doc.get("web_token") != token:
+    if not user_doc or token not in user_doc.get("web_tokens", [user_doc.get("web_token")]):
         return web.json_response({"status": "error", "message": "Unauthorized: Invalid or expired Web Token."})
 
     uptime_seconds = int(time.time() - BOT_START_TIME)
@@ -200,7 +216,7 @@ async def _api_add_task(request):
         
         # 2. 🟢 VERIFY TOKEN AGAINST DATABASE
         user_doc = await db.col.find_one({"id": user_id})
-        if not user_doc or user_doc.get("web_token") != token:
+        if not user_doc or token not in user_doc.get("web_tokens", [user_doc.get("web_token")]):
             return web.json_response({"status": "error", "message": "Unauthorized: Invalid or expired Web Token. Please logout and login again."})
 
         # 3. Proceed with the rest of the code normally
@@ -432,7 +448,7 @@ async def _api_logs_handler(request):
     # 🟢 TOKEN CHECK
     token = request.query.get("token", "")
     user_doc = await db.col.find_one({"id": uid})
-    if not user_doc or user_doc.get("web_token") != token:
+    if not user_doc or token not in user_doc.get("web_tokens", [user_doc.get("web_token")]):
         return web.json_response({"logs": "⚠️ Unauthorized: Invalid or expired Web Token. Please log in again."})
         
     if uid not in ADMINS and uid not in SUDOS:
@@ -569,7 +585,7 @@ async def _api_chats_handler(request):
     # 🟢 TOKEN CHECK
     token = request.query.get("token", "")
     user_doc = await db.col.find_one({"id": uid})
-    if not user_doc or user_doc.get("web_token") != token:
+    if not user_doc or token not in user_doc.get("web_tokens", [user_doc.get("web_token")]):
         return web.json_response({"status": "error", "message": "Unauthorized: Invalid or expired Web Token."})
         
     session_str = await db.get_session(uid)
@@ -732,7 +748,7 @@ async def _api_speedtest_handler(request):
     # 🟢 TOKEN CHECK
     token = request.query.get("token", "")
     user_doc = await db.col.find_one({"id": uid})
-    if not user_doc or user_doc.get("web_token") != token:
+    if not user_doc or token not in user_doc.get("web_tokens", [user_doc.get("web_token")]):
         return web.json_response({"status": "error", "message": "Unauthorized: Invalid or expired Web Token."})
     
     session_str = await db.get_session(uid)
@@ -789,7 +805,7 @@ async def _api_sos_handler(request):
     # 🟢 TOKEN CHECK
     token = request.query.get("token", "")
     user_doc = await db.col.find_one({"id": uid})
-    if not user_doc or user_doc.get("web_token") != token:
+    if not user_doc or token not in user_doc.get("web_tokens", [user_doc.get("web_token")]):
         return web.json_response({"status": "error", "message": "Unauthorized: Invalid or expired Web Token."})
         
     session_str = await db.get_session(uid)
@@ -911,7 +927,7 @@ async def _api_chat_details_handler(request):
     # 🟢 TOKEN CHECK
     token = request.query.get("token", "")
     user_doc = await db.col.find_one({"id": uid})
-    if not user_doc or user_doc.get("web_token") != token:
+    if not user_doc or token not in user_doc.get("web_tokens", [user_doc.get("web_token")]):
         return web.json_response({"status": "error", "message": "Unauthorized: Invalid or expired Web Token."})
     
     if not raw_chat_string:
@@ -1244,7 +1260,7 @@ async def _api_get_worker_tokens(request):
     # 🟢 TOKEN CHECK
     token = request.query.get("token", "")
     doc = await db.col.find_one({"id": uid})
-    if not doc or doc.get("web_token") != token:
+    if not doc or token not in doc.get("web_tokens", [doc.get("web_token")]):
         return web.json_response({"status": "error", "message": "Unauthorized: Invalid or expired Web Token."})
         
     # 🟢 FIX: Auto-load your old "bot_tokens" into the streaming box if you haven't saved new ones yet!
@@ -1285,7 +1301,7 @@ async def _api_network_stats(request):
     # 🟢 TOKEN CHECK
     token = request.query.get("token", "")
     user_doc = await db.col.find_one({"id": uid})
-    if not user_doc or user_doc.get("web_token") != token:
+    if not user_doc or token not in user_doc.get("web_tokens", [user_doc.get("web_token")]):
         return web.json_response({"status": "error", "message": "Unauthorized: Invalid or expired Web Token."})
         
     # 🟢 PRIVACY FIX: Filter streams so normal users only see their own!
@@ -2402,7 +2418,7 @@ async def start_koyeb_health_check(host: str = "0.0.0.0"):
         # 🟢 TOKEN CHECK
         token = request.query.get("token", "")
         user_doc = await db.col.find_one({"id": uid})
-        if not user_doc or user_doc.get("web_token") != token:
+        if not user_doc or token not in user_doc.get("web_tokens", [user_doc.get("web_token")]):
             return web.json_response({"status": "error", "message": "Unauthorized: Invalid or expired Web Token."})
             
         if not await db.is_user_admin(uid):
