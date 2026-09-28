@@ -15,15 +15,13 @@ async def _extract_cli(url: str, use_cookies: bool = True):
         "--no-warnings",
         "--no-playlist",
         "--force-ipv4",
-        # 🟢 CRITICAL FIX: Removed --impersonate completely. 
-        # We must let yt-dlp generate pure mobile headers to match the mobile APIs!
-        "--socket-timeout", "30",       
-        "--retries", "10",              
-        "--extractor-retries", "10",    
-        # 🟢 Force internal Android/iOS app APIs to bypass BotGuard & Datacenter blocks
+        # 🟢 FIX: Lowered timeouts and retries so the Web UI fails fast instead of freezing for 5 minutes!
+        "--socket-timeout", "10",       
+        "--retries", "2",              
+        "--extractor-retries", "2",    
         "--extractor-args", "youtube:player_client=android,ios;player_skip=web,mweb"
     ]
-    
+
     if use_cookies and os.path.exists("cookies.txt"):
         cmd.extend(["--cookies", "cookies.txt"])
         
