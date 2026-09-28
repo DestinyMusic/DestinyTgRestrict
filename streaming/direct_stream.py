@@ -375,8 +375,9 @@ async def _api_direct_stream_handler(request):
         except Exception as e:
             logger.warning(f"Direct ZIP resolution failed: {e}")
 
+    # 🟢 FIX 1: Match yt-dlp's Chrome Impersonation to prevent Google 403s
     req_headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         "Accept": "video/webm,video/ogg,video/*;q=0.9,application/ogg;q=0.7,audio/*;q=0.6,*/*;q=0.5",
     }
     
@@ -384,6 +385,18 @@ async def _api_direct_stream_handler(request):
     for h_key in ["Cookie", "Referer", "Authorization", "User-Agent"]:
         if h_key in cached_h:
             req_headers[h_key] = cached_h[h_key]
+
+    # 🟢 FIX 2: Inject cookies for Google videoplayback URLs to authorize private files
+    if "googlevideo.com" in resolved or "drive.google.com" in resolved:
+        try:
+            import http.cookiejar
+            jar = http.cookiejar.MozillaCookieJar('cookies.txt')
+            jar.load(ignore_discard=True, ignore_expires=True)
+            cookie_str = "; ".join([f"{c.name}={c.value}" for c in jar])
+            if cookie_str:
+                req_headers["Cookie"] = cookie_str
+        except Exception:
+            pass
             
     client_range = request.headers.get("Range", "")
     start_byte = 0
