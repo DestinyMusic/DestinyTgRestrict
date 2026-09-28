@@ -584,7 +584,7 @@ async def _api_chats_handler(request):
     # 🟢 TOKEN CHECK
     token = request.query.get("token", "")
     user_doc = await db.col.find_one({"id": uid})
-        if not user_doc or token not in (user_doc.get("web_tokens") or [user_doc.get("web_token")] or []):
+    if not user_doc or token not in (user_doc.get("web_tokens") or [user_doc.get("web_token")] or []):
         return web.json_response({"status": "error", "message": "Unauthorized: Invalid or expired Web Token."})
         
     session_str = await db.get_session(uid)
@@ -747,7 +747,7 @@ async def _api_speedtest_handler(request):
     # 🟢 TOKEN CHECK
     token = request.query.get("token", "")
     user_doc = await db.col.find_one({"id": uid})
-        if not user_doc or token not in (user_doc.get("web_tokens") or [user_doc.get("web_token")] or []):
+    if not user_doc or token not in (user_doc.get("web_tokens") or [user_doc.get("web_token")] or []):
         return web.json_response({"status": "error", "message": "Unauthorized: Invalid or expired Web Token."})
     
     session_str = await db.get_session(uid)
