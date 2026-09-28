@@ -7,7 +7,6 @@ logger = logging.getLogger("BotLogger")
 
 async def _extract_cli(url: str, use_cookies: bool = True):
     # 🟢 BULLETPROOF FIX: Run yt-dlp natively via CLI subprocess!
-    # This completely bypasses all Python API thread crashes and AssertionError bugs.
     cmd = [
         "python", "-m", "yt_dlp",
         "--dump-json",
@@ -16,9 +15,12 @@ async def _extract_cli(url: str, use_cookies: bool = True):
         "--no-warnings",
         "--no-playlist",
         "--force-ipv4",
-        "--impersonate", "chrome",  # Flawless Chrome TLS spoofing via CLI
-        "--socket-timeout", "15",
-        "--extractor-retries", "1"
+        "--impersonate", "chrome",  
+        "--socket-timeout", "30",      
+        "--retries", "10",           
+        "--extractor-retries", "10",    
+        # 🟢 FIX: Force Smart TV & Mobile APIs to bypass BotGuard and the "Live event has ended" cookie bug!
+        "--extractor-args", "youtube:player_client=tv,mweb,ios,android"
     ]
     
     if use_cookies and os.path.exists("cookies.txt"):
