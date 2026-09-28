@@ -15,13 +15,24 @@ async def _extract_cli(url: str, use_cookies: bool = True):
         "--no-warnings",
         "--no-playlist",
         "--force-ipv4",
-        # 🟢 FIX: Lowered timeouts and retries so the Web UI fails fast instead of freezing for 5 minutes!
         "--socket-timeout", "10",       
-        "--retries", "2",              
-        "--extractor-retries", "2",    
-        "--extractor-args", "youtube:player_client=android,ios;player_skip=web,mweb"
+        "--retries", "3",              
+        "--extractor-retries", "3",    
     ]
 
+    # 🟢 DYNAMIC SPOOFING: YouTube vs Rest of the Internet
+    if "youtu" in url.lower():
+        # YouTube BotGuard detects fingerprint mismatches. 
+        # By combining 'chrome' TLS impersonation with the 'tv' (Chromium Smart TV) API,
+        # we perfectly mimic a living room TV, bypassing both Datacenter IP drops AND PO Tokens!
+        cmd.extend([
+            "--impersonate", "chrome",
+            "--extractor-args", "youtube:player_client=tv,android;player_skip=web,mweb,ios"
+        ])
+    else:
+        # Sites like Eporner need standard Chrome impersonation to bypass Cloudflare/BotGuard hashes
+        cmd.extend(["--impersonate", "chrome"])
+    
     if use_cookies and os.path.exists("cookies.txt"):
         cmd.extend(["--cookies", "cookies.txt"])
         
