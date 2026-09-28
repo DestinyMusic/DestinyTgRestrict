@@ -15,16 +15,14 @@ async def _extract_cli(url: str, use_cookies: bool = True):
         "--no-warnings",
         "--no-playlist",
         "--force-ipv4",
-        "--impersonate", "chrome",  
+        # 🟢 CRITICAL FIX: Removed "--impersonate", "chrome" 
+        # You cannot impersonate a Desktop Browser while asking for Mobile App APIs!
         "--socket-timeout", "30",       
         "--retries", "10",              
         "--extractor-retries", "10",    
-        # 🟢 CRITICAL FIX: Kill the 'web' and 'mweb' clients completely!
-        # This forces YouTube to serve the video through the internal Mobile App APIs,
-        # completely bypassing the BotGuard Captcha wall on HuggingFace/Datacenter IPs.
         "--extractor-args", "youtube:player_client=android,ios;player_skip=web,mweb"
     ]
-    
+
     if use_cookies and os.path.exists("cookies.txt"):
         cmd.extend(["--cookies", "cookies.txt"])
         
