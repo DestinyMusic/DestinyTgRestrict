@@ -137,6 +137,26 @@ async def list_watchers(client, message):
         dest_id = w['dest_id']
         dst_display = w.get('dest_title') or str(dest_id)
         
+        # 🟢 FIX: AUTO-RESOLVE SOURCE NAME (Fixes Bot DMs showing as raw numbers)
+        if src_display == str(src_id) or str(src_display).lstrip("-").isdigit():
+            try:
+                try: await client.resolve_peer(src_id)
+                except Exception: pass
+                chat_info = await client.get_chat(src_id)
+                src_display = chat_info.title or chat_info.first_name or getattr(chat_info, "username", None) or "Source Chat"
+            except Exception:
+                owner_client = USER_CLIENTS.get(user_id) if "USER_CLIENTS" in globals() else None
+                if owner_client and getattr(owner_client, "is_connected", False):
+                    try:
+                        try: await owner_client.resolve_peer(src_id)
+                        except Exception: pass
+                        chat_info = await owner_client.get_chat(src_id)
+                        src_display = chat_info.title or chat_info.first_name or getattr(chat_info, "username", None) or "Source Chat"
+                    except Exception: pass
+            
+            # Silently update DB so the name stays cached for Web UI
+            await db.db.watchers.update_one({"_id": w["_id"]}, {"$set": {"source_title": src_display}})
+
         # 🟢 AUTO-RESOLVE DESTINATION NAME IF IT'S JUST A NUMERIC ID
         if dst_display == str(dest_id) or str(dst_display).lstrip("-").isdigit():
             if dest_id == user_id:
@@ -266,4 +286,3 @@ async def unwatch_callback(client, query):
         
     try: await query.message.edit(msg)
     except Exception: pass
-
