@@ -158,9 +158,15 @@ async def resolve_direct_link(url):
                             m = re.search(r'href=["\'](https?://[^"\']+\.(?:mp4|mkv|webm|m4v|mp3|m4a|flac|opus)(?:\?[^"\']*)?)["\']', html_text, re.I)
                             if m:
                                 result = m.group(1).replace('&amp;', '&')
+                            else:
+                                # 🟢 FIX: If it's a webpage and no video was found, ABORT! 
+                                # Do NOT pass raw HTML to FFmpeg.
+                                raise ValueError(f"Unsupported Website: No direct media found on this page (yt-dlp also failed).")
                     else:
                         result = str(r.url) 
-            except Exception: pass
+            except Exception as e:
+                # Bubble the exception up so the probe aborts cleanly
+                if "Unsupported" in str(e): raise e
 
         # 8. Last resort: a single ranged GET resolves redirects and captures useful headers
         if result == original:
@@ -564,4 +570,3 @@ def _guess_browser_compatibility(mime_type, filename, streams):
         } and ac not in bad_audio
 
     return False
-
