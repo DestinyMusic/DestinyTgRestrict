@@ -1339,8 +1339,15 @@
                 </div>
 
                 <div id="web-chats-content">
-                    <div class="input-group">
-                        <input type="text" id="web-chat-search" placeholder="🔍 Search by name or chat ID..." oninput="renderFilteredChats()">
+                    <div class="input-group" style="display: flex; gap: 10px; flex-wrap: wrap;">
+                        <input type="text" id="web-chat-search" placeholder="🔍 Search by name or chat ID..." oninput="renderFilteredChats()" style="flex: 2; min-width: 200px;">
+                        <select id="chat-sort-select" onchange="renderFilteredChats()" style="flex: 1; min-width: 140px; padding: clamp(14px, 2vh, 20px) 16px; border-radius: 16px; border: 2px solid var(--card-border); background: color-mix(in srgb, var(--bg) 50%, transparent); color: var(--text); font-size: clamp(14px, 1.2vw, 18px); outline: none; cursor: pointer;">
+                            <option value="default">Sort: Default</option>
+                            <option value="name_asc">Name: A ➔ Z</option>
+                            <option value="name_desc">Name: Z ➔ A</option>
+                            <option value="id_asc">ID: Lowest ➔ Highest</option>
+                            <option value="id_desc">ID: Highest ➔ Lowest</option>
+                        </select>
                     </div>
                     
                     <div style="display: flex; gap: 8px; margin-bottom: 16px; overflow-x: auto; padding-bottom: 4px;">
@@ -2373,9 +2380,10 @@
 
         function renderFilteredChats() {
             const query = (document.getElementById('web-chat-search').value || '').toLowerCase();
+            const sortVal = document.getElementById('chat-sort-select')?.value || 'default';
             const listEl = document.getElementById('web-chats-list');
             
-            const filtered = allLoadedChats.filter(c => {
+            let filtered = allLoadedChats.filter(c => {
                 let catMatchStr = '';
                 if (currentChatCat === 'Group') catMatchStr = '👥 group';
                 if (currentChatCat === 'Channel') catMatchStr = '📢 channel';
@@ -2386,6 +2394,18 @@
                 const matchesQuery = c.name.toLowerCase().includes(query) || c.id.includes(query);
                 return matchesCat && matchesQuery;
             });
+
+            // 🟢 Apply Sorting Engine
+            if (sortVal === 'name_asc') {
+                filtered.sort((a, b) => a.name.localeCompare(b.name));
+            } else if (sortVal === 'name_desc') {
+                filtered.sort((a, b) => b.name.localeCompare(a.name));
+            } else if (sortVal === 'id_asc') {
+                // parseFloat handles standard and negative TG IDs (-100xxxx) perfectly
+                filtered.sort((a, b) => parseFloat(a.id) - parseFloat(b.id)); 
+            } else if (sortVal === 'id_desc') {
+                filtered.sort((a, b) => parseFloat(b.id) - parseFloat(a.id));
+            }
 
             if (!filtered.length) {
                 listEl.innerHTML = '<div style="color: var(--subtext); padding: 12px 0;">No matching dialogs found.</div>';
