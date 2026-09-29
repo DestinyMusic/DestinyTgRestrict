@@ -204,21 +204,35 @@ def generate_bar(percent: float, length: int = 12) -> str:
     return f"〘{bar}〙 {percent:.1f}%"
 
 
-def clean_media_text(value: str) -> str:
-    """Remove only explicitly configured source tags from media text."""
+def clean_media_text(value: str, custom_tags=None) -> str:
+    """Remove explicitly configured source tags from media text."""
     text = str(value or "")
-    for tag in CLEANUP_TAGS:
-        pattern = rf"(?<![\w]){re.escape(tag)}(?![\w])"
-        text = re.sub(pattern, "", text, flags=re.IGNORECASE)
-    text = re.sub(r"[ \t]{2,}", " ", text)
+    
+    # Combine global CLEANUP_TAGS (if defined in config) with per-task custom_tags
+    global_tags = CLEANUP_TAGS if 'CLEANUP_TAGS' in globals() else []
+    all_tags = global_tags + (custom_tags or [])
+    
+    for tag in all_tags:
+        if not str(tag).strip(): continue
+        # Robust regex: erases the tag and any weird spacing hugging it
+        pattern = rf"(?i)\s*{re.escape(str(tag))}\s*"
+        text = re.sub(pattern, " ", text)
+        
+    # 🟢 MAGIC FIX: Erase stray hyphens and spaces left behind
+    text = re.sub(r"^[ \t\-~_]+", "", text) # Removes stray "-" at the very beginning
+    text = re.sub(r"[ \t\-~_]+(\.[a-zA-Z0-9]+)$", r"\1", text) # Removes stray "-" right before .mkv
+    text = re.sub(r"[ \t\-~_]+$", "", text) # Removes stray "-" at the very end of a caption
+    
+    text = re.sub(r"[ \t]{2,}", " ", text) # Compresses double spaces into one
     text = re.sub(r"[ \t]+([,.;!?])", r"\1", text)
-    text = re.sub(r"[\(\[\{][ \t]*[\)\]\}]", "", text)
+    text = re.sub(r"[\(\[\{][ \t]*[\)\]\}]", "", text) # Removes empty brackets left over
     return text.strip()
 
 
-def clean_caption(text, entities=None):
+def clean_caption(text, entities=None, custom_tags=None):
     original = text or ""
-    cleaned = clean_media_text(original)
+    # Pass the per-task tags down to the cleaner
+    cleaned = clean_media_text(original, custom_tags=custom_tags)
     return cleaned, entities if cleaned == original else None
 
 
@@ -249,22 +263,25 @@ def media_filename(message, fallback_id=None):
 
 def log_file_result(scope, user_id, task_id, source_id, message_id, filename, result, reason=None):
     status = str(result).upper()
+    
+    # 🟢 MINIMIZE LOGS: If it's not a failure, don't spam the console!
+    if status in {"SUCCESS", "OK", "TRUE", "SKIPPED"}:
+        return
+        
     failed = status in {"FAIL", "FAILED", "ERROR"}
     level = logging.ERROR if failed else logging.INFO
-    icon = "❌" if failed else "✅" if status in {"SUCCESS", "OK", "TRUE"} else "🛑" if status == "CANCELLED" else "⏭"
+    icon = "❌" if failed else "🛑" if status == "CANCELLED" else "⚠️"
+    
+    # Remove the ugly " -> 9347.jpg" artifact from the log name
+    clean_name = clean_media_text(filename or "unknown_media")
+    if " -> " in clean_name:
+        clean_name = clean_name.split(" -> ")[0].strip()
+        
     reason_text = str(reason or "")[:400]
     logger.log(
         level,
-        "FILE_RESULT scope=%s user_id=%s task_id=%s source_id=%s message_id=%s file=%r result=%s %s reason=%r",
-        scope,
-        user_id,
-        task_id or "-",
-        source_id if source_id is not None else "-",
-        message_id if message_id is not None else "-",
-        clean_media_text(filename or "unknown_media"),
-        status,
-        icon,
-        reason_text,
+        "FILE_RESULT scope=%s user_id=%s task_id=%s msg_id=%s file='%s' result=%s %s reason=%r",
+        scope, user_id, task_id or "-", message_id or "-", clean_name, status, icon, reason_text
     )
     
 def sanitize_filename(filename: str) -> str:
