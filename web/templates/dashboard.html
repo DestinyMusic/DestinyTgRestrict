@@ -1905,6 +1905,10 @@
                     <input type="text" id="task-exclude-keywords" placeholder="sample, trailer">
                 </div>
                 <div class="input-group">
+                    <label for="task-cleanup-keywords">Cleanup Tags (Erases exact words from caption/filename)</label>
+                    <input type="text" id="task-cleanup-keywords" placeholder="@Animee_4u, ~ _𝓗𝖆𝖗𝖎𝖆𝖐𝖘𝖆_">
+                </div>
+                <div class="input-group">
                     <label for="task-custom-thumbnail">Custom thumbnail (optional)</label>
                     <input type="file" id="task-custom-thumbnail" accept="image/*">
                 </div>
@@ -2890,8 +2894,10 @@
                 .split(',').map(value => value.trim()).filter(Boolean).slice(0, 20);
             const includeKeywords = readKeywords('task-include-keywords');
             const excludeKeywords = readKeywords('task-exclude-keywords');
+            const cleanupKeywords = readKeywords('task-cleanup-keywords'); // 🟢 NEW
             const thumbFile = document.getElementById('task-custom-thumbnail').files[0];
-            if (thumbFile && thumbFile.size > 1_000_000) return alert("Choose an image smaller than 1 MB.");
+            
+            // 🟢 REMOVED 1MB LIMIT: Let the Python backend handle compression automatically
             const thumbB64 = thumbFile ? await new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 reader.onload = () => resolve(reader.result);
@@ -2900,7 +2906,7 @@
             }) : null;
 
             const endpoint = mode === 'watch' ? '/api/watcher/add' : '/api/task/add';
-            const res = await fetch(endpoint, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({user_id: currentUser, link, dest, delay, filters: filtersArr, include_keywords: includeKeywords, exclude_keywords: excludeKeywords, thumb_b64: thumbB64}) });
+            const res = await fetch(endpoint, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({user_id: currentUser, link, dest, delay, filters: filtersArr, include_keywords: includeKeywords, exclude_keywords: excludeKeywords, cleanup_keywords: cleanupKeywords, thumb_b64: thumbB64}) });
             const data = await res.json();
             if (data.status === 'success') {
                 alert("Task started successfully!");
