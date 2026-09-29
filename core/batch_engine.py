@@ -131,6 +131,7 @@ async def start_task_final(client: Client, message_context: Message, task_data: 
         "started": time.time(),
         "include_keywords": list(task_data.get("include_keywords", [])),
         "exclude_keywords": list(task_data.get("exclude_keywords", [])),
+        "cleanup_keywords": list(task_data.get("cleanup_keywords", [])), # 🟢 NEW
         "thumb_file_id": task_data.get("thumb_file_id"),
         "thumb_b64": task_data.get("thumb_b64"),
     }
@@ -153,6 +154,7 @@ async def start_task_final(client: Client, message_context: Message, task_data: 
             allowed_types=task_snapshot.get("allowed_types"),
             include_keywords=task_snapshot.get("include_keywords"),
             exclude_keywords=task_snapshot.get("exclude_keywords"),
+            cleanup_keywords=task_snapshot.get("cleanup_keywords"), # 🟢 NEW
             thumb_file_id=task_snapshot.get("thumb_file_id"),
             thumb_b64=task_snapshot.get("thumb_b64"),
         )
@@ -317,7 +319,7 @@ async def handle_public_unrestricted(client: Client, acc, chatid: str, msgid: in
         _set_task_result_reason(user_id, task_uuid, f"copy failure: {type(e).__name__}: {e}")
         return "FAILED"
 
-async def process_links_logic(client: Client, message: Message, text: str, dest_chat_id=None, dest_thread_id=None, dest_title="Direct Message", delay=3, acc_user_id=None, task_uuid=None, is_restricted=False, allowed_types=None, resume_from_id=None, saved_source_title=None, include_keywords=None, exclude_keywords=None, thumb_file_id=None, thumb_b64=None):
+async def process_links_logic(client: Client, message: Message, text: str, dest_chat_id=None, dest_thread_id=None, dest_title="Direct Message", delay=3, acc_user_id=None, task_uuid=None, is_restricted=False, allowed_types=None, resume_from_id=None, saved_source_title=None, include_keywords=None, exclude_keywords=None, cleanup_keywords=None, thumb_file_id=None, thumb_b64=None):
     user_id = acc_user_id or (message.from_user.id if message and message.from_user else 0)
     
     # 🟢 Resolve Real User Name (Not Bot Name)
@@ -360,6 +362,7 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
         "started": time.time(),
         "include_keywords": list(include_keywords or []),
         "exclude_keywords": list(exclude_keywords or []),
+        "cleanup_keywords": list(cleanup_keywords or []), # 🟢 NEW
         "thumb_file_id": thumb_file_id,
         "thumb_b64": thumb_b64,
     }
@@ -525,6 +528,7 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
                 is_restricted=is_restricted, allowed_types=allowed_types,
                 source_title=source_title, current_msg_id=fromID, to_id=toID,
                 include_keywords=include_keywords, exclude_keywords=exclude_keywords,
+                cleanup_keywords=cleanup_keywords, # 🟢 NEW
                 thumb_file_id=thumb_file_id, thumb_b64=thumb_b64
             )
 
