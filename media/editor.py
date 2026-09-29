@@ -3,6 +3,8 @@
 # ==============================================================================
 import aiohttp
 import os
+import re
+import xml.etree.ElementTree as ET
 
 async def upload_to_gofile(file_path: str):
     """Uploads a file to GoFile.io and returns the public download link."""
@@ -21,6 +23,24 @@ async def upload_to_gofile(file_path: str):
                 if upload_data.get("status") == "ok":
                     return upload_data["data"]["downloadPage"]
                 raise Exception(f"GoFile Error: {upload_data}")
+
+
+def _build_global_tags_xml(global_tags):
+    root = ET.Element("Tags")
+    tag = ET.SubElement(root, "Tag")
+    ET.SubElement(tag, "Targets")
+    for key, value in global_tags.items():
+        tag_name = str(key).strip().upper()
+        if not re.fullmatch(r"[A-Z0-9_.-]{1,128}", tag_name):
+            continue
+        tag_value = clean_media_text(value)
+        if not tag_value:
+            continue
+        simple = ET.SubElement(tag, "Simple")
+        ET.SubElement(simple, "Name").text = tag_name
+        ET.SubElement(simple, "String").text = tag_value
+    return ET.tostring(root, encoding="unicode")
+
 
 async def process_remux(input_file, output_file, stream_config, global_tags=None):
     """Instantly reshuffles, delays, adds external tracks, and renames streams using MKVToolNix."""
@@ -86,6 +106,23 @@ async def process_remux(input_file, output_file, stream_config, global_tags=None
         out_str = out.decode('utf-8', errors='ignore').strip()
         full_error = f"{err_str}\n{out_str}".strip()
         raise Exception(f"MKVMerge Error:\n{full_error}")
+
+    if global_tags is not None:
+        tags_path = f"{output_file}.tags.xml"
+        try:
+            root = ET.fromstring(_build_global_tags_xml(global_tags))
+            ET.ElementTree(root).write(tags_path, encoding="utf-8", xml_declaration=True)
+            proc = await asyncio.create_subprocess_exec(
+                "mkvpropedit", output_file, "--tags", f"global:{tags_path}",
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            )
+            out, err = await proc.communicate()
+            if proc.returncode != 0:
+                error = err.decode("utf-8", errors="ignore").strip() or out.decode("utf-8", errors="ignore").strip()
+                raise Exception(f"MKV metadata update failed: {error}")
+        finally:
+            if os.path.exists(tags_path):
+                os.remove(tags_path)
         
     return output_file
 

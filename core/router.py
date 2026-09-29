@@ -86,6 +86,9 @@ async def handle_private(client: Client, acc, message: Message, chatid, msgid: i
 
     # 3. Route the task
     is_content_protected = is_restricted or getattr(msg, "has_protected_content", False) or getattr(msg.chat, "has_protected_content", False)
+    task_info = ACTIVE_PROCESSES.get(user_id, {}).get(task_uuid, {})
+    if (task_info.get("thumb_file_id") or task_info.get("thumb_b64")) and msg_type != "Text":
+        return await _execute_restricted_download_upload(client, acc, chatid, msgid, **kwargs)
     
     if not is_content_protected:
         if is_live_watch:
@@ -427,6 +430,49 @@ async def build_rich_caption(file_path, msg_type, msg, override_name=None, overr
         logger.debug(f"Rich caption generation failed: {e}")
     return None
 
+
+async def _prepare_task_thumbnail(client, task_folder_path, user_id, task_uuid):
+    task_info = ACTIVE_PROCESSES.get(user_id, {}).get(task_uuid, {})
+    file_id = task_info.get("thumb_file_id")
+    thumb_b64 = task_info.get("thumb_b64")
+    if not file_id and not thumb_b64:
+        return None
+
+    thumb_path = task_folder_path / "task_thumbnail.jpg"
+    if thumb_path.exists():
+        return str(thumb_path)
+
+    source_path = task_folder_path / "task_thumbnail_source"
+    try:
+        if file_id:
+            downloaded = await client.download_media(file_id, file_name=str(source_path))
+        else:
+            import base64
+            encoded = thumb_b64.split(",", 1)[-1]
+            source_path.write_bytes(base64.b64decode(encoded, validate=True))
+            downloaded = str(source_path)
+        if not downloaded:
+            return None
+        from PIL import Image
+        with Image.open(downloaded) as image:
+            image = image.convert("RGB")
+            for dimensions in ((320, 320), (256, 256), (160, 160)):
+                image.thumbnail(dimensions)
+                for quality in (80, 65, 50):
+                    image.save(thumb_path, format="JPEG", quality=quality, optimize=True)
+                    if thumb_path.stat().st_size <= 200_000:
+                        break
+                if thumb_path.stat().st_size <= 200_000:
+                    break
+        if thumb_path.stat().st_size > 200_000:
+            thumb_path.unlink(missing_ok=True)
+            return None
+        os.remove(downloaded)
+        return str(thumb_path)
+    except Exception as exc:
+        logger.warning(f"Custom task thumbnail could not be prepared: {exc}")
+        return None
+
 # ==============================================================================
 # --- CORE RESTRICTED DOWNLOAD / UPLOAD ENGINE ---
 # ==============================================================================
@@ -459,6 +505,7 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
     safe_filename = build_media_filename(original_filename, msg, index)
     if not safe_filename.strip(): safe_filename = f"{msgid}.dat"
     file_path_to_save = task_folder_path / safe_filename
+    ph_path = await _prepare_task_thumbnail(client, task_folder_path, user_id, task_uuid)
 
     # 🟢 DEFINED EARLY: Define fetcher first before we use it in the UI label!
     fetcher = acc if acc else client
@@ -477,7 +524,6 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
         PROGRESS.pop(f"{task_uuid}:up", None)
         
     file_path = None
-    ph_path = None
     download_success = False
 
     is_premium = False
@@ -539,6 +585,8 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
                         a_dur = getattr(msg_fresh.audio, "duration", 0) if getattr(msg_fresh, "audio", None) else 0
                         a_perf = getattr(msg_fresh.audio, "performer", None) if getattr(msg_fresh, "audio", None) else None
                         a_tit = getattr(msg_fresh.audio, "title", None) if getattr(msg_fresh, "audio", None) else None
+                        a_perf = clean_media_text(a_perf) if a_perf else a_perf
+                        a_tit = clean_media_text(a_tit) if a_tit else a_tit
 
                         # 🟢 SMART AUDIO TAG EXTRACTOR: Fixes <unknown> artists!
                         if msg_type == "Audio":
@@ -565,6 +613,7 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
                             if log_topic_id: kwargs["message_thread_id"] = log_topic_id
                             if caption_entities: kwargs["caption_entities"] = caption_entities
                             if p_mode: kwargs["parse_mode"] = p_mode
+                            if ph_path and os.path.exists(ph_path): kwargs["thumb"] = ph_path
                             p_args = ["up", task_uuid]
                             
                             if "Document" == msg_type: sent_msg = await acc.send_document(document=file_path, progress=progress, progress_args=p_args, **kwargs)
@@ -633,6 +682,7 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
                                         if caption_entities: kwargs["caption_entities"] = caption_entities
                                         if p_mode: kwargs["parse_mode"] = p_mode
                                         if dest_thread_id: kwargs["message_thread_id"] = dest_thread_id
+                                        if ph_path and os.path.exists(ph_path): kwargs["thumb"] = ph_path
                                         
                                         try:
                                             await safe_send(upload_client, user_id, dest_chat_id, task_uuid, True, upload_client.send_document, **kwargs)
@@ -671,7 +721,7 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
                     if msg_fresh.document and msg_fresh.document.thumbs: thumb = msg_fresh.document.thumbs[0]
                     elif msg_fresh.video and msg_fresh.video.thumbs: thumb = msg_fresh.video.thumbs[0]
                     elif msg_fresh.audio and msg_fresh.audio.thumbs: thumb = msg_fresh.audio.thumbs[0]
-                    if thumb: ph_path = await fetcher.download_media(thumb.file_id, file_name=str(task_folder_path / "thumb.jpg"))
+                    if thumb and not ph_path: ph_path = await fetcher.download_media(thumb.file_id, file_name=str(task_folder_path / "thumb.jpg"))
                 except Exception: pass
 
                 download_success = True
@@ -734,6 +784,8 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
                         a_dur = getattr(msg_fresh.audio, "duration", 0) if getattr(msg_fresh, "audio", None) else 0
                         a_perf = getattr(msg_fresh.audio, "performer", None) if getattr(msg_fresh, "audio", None) else None
                         a_tit = getattr(msg_fresh.audio, "title", None) if getattr(msg_fresh, "audio", None) else None
+                        a_perf = clean_media_text(a_perf) if a_perf else a_perf
+                        a_tit = clean_media_text(a_tit) if a_tit else a_tit
 
                         if msg_type == "Audio":
                             if not a_perf or a_perf.lower() in ["unknown", "<unknown>"]:

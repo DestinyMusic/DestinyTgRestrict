@@ -660,6 +660,12 @@ async def save(client: Client, message: Message):
         
     user_id = message.from_user.id
     if user_id in PENDING_TASKS:
+        if PENDING_TASKS[user_id].get("status") == "waiting_task_thumbnail" and message.photo:
+            PENDING_TASKS[user_id]["thumb_file_id"] = message.photo[-1].file_id
+            PENDING_TASKS[user_id]["status"] = "waiting_filter"
+            await message.reply("✅ Custom thumbnail saved for this task. It will be used when media is re-uploaded.")
+            await show_filter_menu(message, user_id)
+            return
         if PENDING_TASKS[user_id].get("status") == "waiting_id":
             await process_custom_destination(client, message)
             return
@@ -712,6 +718,24 @@ async def save(client: Client, message: Message):
         [InlineKeyboardButton("🛠 Inspect & Edit Media", callback_data="dest_remux")],
         [InlineKeyboardButton("❌ Cancel Setup", callback_data="cancel_setup")]
     ]
+    await message.reply(
+        f"✨ **Link Detected!**\n\n{status_text}\n\n"
+        "I am ready to process this content. Please tell me where you want the files sent:",
+        reply_markup=InlineKeyboardMarkup(buttons),
+        quote=True,
+    )
+
+
+@app.on_message(filters.photo & (filters.private | filters.group))
+async def capture_task_thumbnail(client: Client, message: Message):
+    user_id = message.from_user.id if message.from_user else 0
+    task_data = PENDING_TASKS.get(user_id)
+    if not task_data or task_data.get("status") != "waiting_task_thumbnail":
+        return
+    task_data["thumb_file_id"] = message.photo[-1].file_id
+    task_data["status"] = "waiting_filter"
+    await message.reply("✅ Custom thumbnail saved for this task. It will be used when media is re-uploaded.")
+    await show_filter_menu(message, user_id)
 
 @app.on_callback_query(filters.regex("^dest_remux$"))
 async def remux_tg_callback(client: Client, query):
@@ -1240,7 +1264,7 @@ async def destination_callback(client: Client, query):
             )
         except Exception: pass
 
-def get_filter_keyboard(current_types):
+def get_filter_keyboard(current_types, has_thumb=False):
     buttons = []
     row = []
     for t in ALL_MSG_TYPES:
@@ -1254,6 +1278,8 @@ def get_filter_keyboard(current_types):
         InlineKeyboardButton("✅ Select All", callback_data="filter_all"), 
         InlineKeyboardButton("❌ Clear All", callback_data="filter_none")
     ])
+    thumb_label = "🖼 Thumbnail: custom" if has_thumb else "🖼 Custom Thumbnail"
+    buttons.append([InlineKeyboardButton(thumb_label, callback_data="filter_thumbnail")])
     buttons.append([InlineKeyboardButton("🔎 Filename Keywords", callback_data="filter_keywords")])
     buttons.append([InlineKeyboardButton("🚀 Proceed / Save Setup", callback_data="filter_start")])
     buttons.append([InlineKeyboardButton("🛑 Cancel Setup", callback_data="cancel_setup")])
@@ -1268,8 +1294,10 @@ async def show_filter_menu(message_or_query, user_id):
         task_data["allowed_types"] = ALL_MSG_TYPES.copy()
     task_data["status"] = "waiting_filter"
 
-    kb = get_filter_keyboard(task_data["allowed_types"])
+    kb = get_filter_keyboard(task_data["allowed_types"], bool(task_data.get("thumb_file_id")))
     text = "🎛 **Content Filter**\n\nSelect the media types you want to forward or download.\n*(Default: Strictly Videos & Documents)*"
+    if task_data.get("thumb_file_id"):
+        text += "\n🖼 Custom thumbnail is set; matching media will be downloaded and re-uploaded to apply it."
 
     if hasattr(message_or_query, "message") and hasattr(message_or_query, "data"):
         await message_or_query.message.edit_text(text, reply_markup=kb)
@@ -1290,6 +1318,35 @@ async def filter_keywords_cb(client, query):
         "`exclude: sample, trailer`\n\n"
         "Include matches any listed word. Exclude skips any listed word. Send `skip` for no rules."
     )
+    @app.on_callback_query(filters.regex("^filter_thumbnail$"))
+    async def filter_thumbnail_cb(client, query):
+        user_id = query.from_user.id
+        task_data = PENDING_TASKS.get(user_id)
+        if not task_data:
+            return await query.answer("Expired.", show_alert=True)
+        if task_data.get("thumb_file_id"):
+            task_data.pop("thumb_file_id", None)
+            await show_filter_menu(query, user_id)
+            return await query.answer("Custom thumbnail cleared.")
+        task_data["status"] = "waiting_task_thumbnail"
+        await query.message.edit_text(
+            "🖼 Send a photo to use as the thumbnail for this task.\n\n"
+            "It will be applied to files that are re-uploaded; normal fast-copied files keep their original thumbnail.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("Use original thumbnails", callback_data="filter_thumbnail_clear")],
+                [InlineKeyboardButton("❌ Cancel Setup", callback_data="cancel_setup")],
+            ]),
+        )
+        await query.answer()
+
+    @app.on_callback_query(filters.regex("^filter_thumbnail_clear$"))
+    async def filter_thumbnail_clear_cb(client, query):
+        user_id = query.from_user.id
+        if user_id not in PENDING_TASKS:
+            return await query.answer("Expired.", show_alert=True)
+        PENDING_TASKS[user_id].pop("thumb_file_id", None)
+        await show_filter_menu(query, user_id)
+        await query.answer("Using original thumbnails.")
     await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup([
         [InlineKeyboardButton("❌ Cancel Setup", callback_data="cancel_setup")]
     ]))
@@ -1304,7 +1361,7 @@ async def filter_toggle_cb(client, query):
     if mtype in allowed: allowed.remove(mtype)
     else: allowed.append(mtype)
     PENDING_TASKS[user_id]["allowed_types"] = allowed
-    try: await query.message.edit_reply_markup(get_filter_keyboard(allowed))
+    try: await query.message.edit_reply_markup(get_filter_keyboard(allowed, bool(PENDING_TASKS[user_id].get("thumb_file_id"))))
     except: pass
     await query.answer()
 
@@ -1313,7 +1370,7 @@ async def filter_all_cb(client, query):
     user_id = query.from_user.id
     if user_id not in PENDING_TASKS: return await query.answer("Expired.", show_alert=True)
     PENDING_TASKS[user_id]["allowed_types"] = ALL_MSG_TYPES.copy()
-    try: await query.message.edit_reply_markup(get_filter_keyboard(ALL_MSG_TYPES))
+    try: await query.message.edit_reply_markup(get_filter_keyboard(ALL_MSG_TYPES, bool(PENDING_TASKS[user_id].get("thumb_file_id"))))
     except: pass
     await query.answer()
 
@@ -1322,7 +1379,7 @@ async def filter_none_cb(client, query):
     user_id = query.from_user.id
     if user_id not in PENDING_TASKS: return await query.answer("Expired.", show_alert=True)
     PENDING_TASKS[user_id]["allowed_types"] = []
-    try: await query.message.edit_reply_markup(get_filter_keyboard([]))
+    try: await query.message.edit_reply_markup(get_filter_keyboard([], bool(PENDING_TASKS[user_id].get("thumb_file_id"))))
     except: pass
     await query.answer()
 
@@ -1611,6 +1668,7 @@ async def finalize_watcher_setup(client, message, data, delay, user_id=None):
         allowed_types=data.get("allowed_types"),
         include_keywords=data.get("include_keywords", []),
         exclude_keywords=data.get("exclude_keywords", []),
+        thumb_file_id=data.get("thumb_file_id"),
         dashboard_chat=message.chat.id,
         dashboard_msg=message.id,
         last_msg_id=last_msg_id   # 🟢 PASS THE ID HERE

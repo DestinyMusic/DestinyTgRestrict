@@ -42,7 +42,7 @@ ERROR_MESSAGE = str(os.environ.get("ERROR_MESSAGE", "True")).strip().lower() == 
 WAITING_TIME = int(os.environ.get("WAITING_TIME") or 3)
 CLEANUP_TAGS = tuple(
   tag.strip()
-  for tag in os.environ.get("CLEANUP_TAGS", "@animefile").split(",")
+  for tag in os.environ.get("CLEANUP_TAGS", "@animefile,@anime,encodes - telugu").split(",")
   if tag.strip()
 )
 FILENAME_TEMPLATE = os.environ.get("FILENAME_TEMPLATE", "{original}{ext}").strip() or "{original}{ext}"

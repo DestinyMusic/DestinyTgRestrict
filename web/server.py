@@ -77,6 +77,34 @@ def _normalize_keyword_list(value):
     return list(dict.fromkeys(str(item).strip() for item in values if str(item).strip()))[:20]
 
 
+def _normalize_task_thumb_data(value):
+    if not value:
+        return None
+    if not isinstance(value, str) or len(value) > 2_000_000:
+        raise ValueError("Thumbnail image is too large.")
+    import base64
+    import io
+    from PIL import Image
+
+    encoded = value.split(",", 1)[-1]
+    try:
+        raw = base64.b64decode(encoded, validate=True)
+        if not raw or len(raw) > 1_000_000:
+            raise ValueError("Thumbnail image is too large.")
+        with Image.open(io.BytesIO(raw)) as source:
+            image = source.convert("RGB")
+            for dimensions in ((320, 320), (256, 256), (160, 160)):
+                image.thumbnail(dimensions)
+                for quality in (80, 65, 50):
+                    output = io.BytesIO()
+                    image.save(output, format="JPEG", quality=quality, optimize=True)
+                    if output.tell() <= 200_000:
+                        return "data:image/jpeg;base64," + base64.b64encode(output.getvalue()).decode("ascii")
+        raise ValueError("Could not compress thumbnail below 200 KB.")
+    except (OSError, base64.binascii.Error) as exc:
+        raise ValueError("Invalid thumbnail image.") from exc
+
+
 def _get_signed_stream_user(request):
     try:
         expires = int(request.query.get("expires", "0"))
@@ -480,6 +508,10 @@ async def _api_add_task(request):
         allowed_types = [t for t in allowed_types if t in ALL_MSG_TYPES]
         include_keywords = _normalize_keyword_list(data.get("include_keywords"))
         exclude_keywords = _normalize_keyword_list(data.get("exclude_keywords"))
+        try:
+            thumb_b64 = _normalize_task_thumb_data(data.get("thumb_b64"))
+        except ValueError as exc:
+            return web.json_response({"status": "error", "message": str(exc)}, status=400)
 
         if not link: return web.json_response({"status": "error", "message": "No link provided"})
 
@@ -538,6 +570,7 @@ async def _api_add_task(request):
             "current": 0,
             "include_keywords": include_keywords,
             "exclude_keywords": exclude_keywords,
+            "thumb_b64": thumb_b64,
         }
 
         asyncio.create_task(
@@ -555,6 +588,7 @@ async def _api_add_task(request):
                 allowed_types=allowed_types,
                 include_keywords=include_keywords,
                 exclude_keywords=exclude_keywords,
+                thumb_b64=thumb_b64,
             )
         )
         return web.json_response({"status": "success"})
@@ -587,6 +621,10 @@ async def _api_add_watcher(request):
         allowed_types = [t for t in allowed_types if t in ALL_MSG_TYPES]
         include_keywords = _normalize_keyword_list(data.get("include_keywords"))
         exclude_keywords = _normalize_keyword_list(data.get("exclude_keywords"))
+        try:
+            thumb_b64 = _normalize_task_thumb_data(data.get("thumb_b64"))
+        except ValueError as exc:
+            return web.json_response({"status": "error", "message": str(exc)}, status=400)
 
         dest_chat_id = user_id
         dest_thread_id = None
@@ -676,6 +714,7 @@ async def _api_add_watcher(request):
             allowed_types=allowed_types,
             include_keywords=include_keywords,
             exclude_keywords=exclude_keywords,
+            thumb_b64=thumb_b64,
             last_msg_id=last_msg_id
         )
         GLOBAL_WATCHER_SOURCES.add(source_id) # 🟢 UPDATE CACHE
@@ -2299,13 +2338,16 @@ async def _api_edit_media_handler(request):
                 EDITOR_UI_STATE[task_uuid]["phase"] = "Processing Audio"
                 await safe_tg_edit(status_msg, f"⚙️ **Processing Audio File (Preserving Tags)...**\n\n📄 `{new_name}`")
                 
-                # If a new title was typed in Global Metadata, safely inject it via FFmpeg. Otherwise, copy natively.
-                new_title = global_tags.get("title") or global_tags.get("TITLE")
-                if new_title:
+                # Re-apply cleaned global tags; empty values explicitly clear existing metadata fields.
+                metadata_args = []
+                for key, value in global_tags.items():
+                    if re.fullmatch(r"[A-Za-z0-9_.-]+", key):
+                        metadata_args.extend(["-metadata", f"{key}={clean_media_text(value)}"])
+                if metadata_args:
                     ffmpeg_cmd = [
                         "ffmpeg", "-y", "-i", str(input_file),
                         "-c", "copy",
-                        "-metadata", f"title={new_title}",
+                        *metadata_args,
                         str(output_file)
                     ]
                     proc = await asyncio.create_subprocess_exec(*ffmpeg_cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)

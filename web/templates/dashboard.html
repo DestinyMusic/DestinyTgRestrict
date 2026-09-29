@@ -1904,6 +1904,10 @@
                     <label for="task-exclude-keywords">Exclude filename keywords</label>
                     <input type="text" id="task-exclude-keywords" placeholder="sample, trailer">
                 </div>
+                <div class="input-group">
+                    <label for="task-custom-thumbnail">Custom thumbnail (optional)</label>
+                    <input type="file" id="task-custom-thumbnail" accept="image/*">
+                </div>
                 <div class="modal-actions">
                     <button type="button" class="btn-cancel" onclick="closeTaskModal()">Cancel</button>
                     <button type="submit" class="primary-btn" style="flex:1; margin:0;">Launch Task</button>
@@ -2356,6 +2360,7 @@
         function openTaskModal() {
             document.getElementById('task-include-keywords').value = '';
             document.getElementById('task-exclude-keywords').value = '';
+            document.getElementById('task-custom-thumbnail').value = '';
             document.getElementById('taskModal').classList.add('show');
         }
         function closeTaskModal() { document.getElementById('taskModal').classList.remove('show'); }
@@ -2885,9 +2890,17 @@
                 .split(',').map(value => value.trim()).filter(Boolean).slice(0, 20);
             const includeKeywords = readKeywords('task-include-keywords');
             const excludeKeywords = readKeywords('task-exclude-keywords');
+            const thumbFile = document.getElementById('task-custom-thumbnail').files[0];
+            if (thumbFile && thumbFile.size > 1_000_000) return alert("Choose an image smaller than 1 MB.");
+            const thumbB64 = thumbFile ? await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(thumbFile);
+            }) : null;
 
             const endpoint = mode === 'watch' ? '/api/watcher/add' : '/api/task/add';
-            const res = await fetch(endpoint, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({user_id: currentUser, link, dest, delay, filters: filtersArr, include_keywords: includeKeywords, exclude_keywords: excludeKeywords}) });
+            const res = await fetch(endpoint, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({user_id: currentUser, link, dest, delay, filters: filtersArr, include_keywords: includeKeywords, exclude_keywords: excludeKeywords, thumb_b64: thumbB64}) });
             const data = await res.json();
             if (data.status === 'success') {
                 alert("Task started successfully!");

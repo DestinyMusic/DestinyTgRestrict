@@ -689,7 +689,9 @@ async def main():
                 resume_from_id=task["current_msg_id"],
                 saved_source_title=task.get("source_title"),
                 include_keywords=task.get("include_keywords", []),
-                exclude_keywords=task.get("exclude_keywords", [])
+                exclude_keywords=task.get("exclude_keywords", []),
+                thumb_file_id=task.get("thumb_file_id"),
+                thumb_b64=task.get("thumb_b64"),
             )
         )
         logger.info(f"▶️ Auto-Resumed task {t_uuid} for User {t_user_id}")

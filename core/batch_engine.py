@@ -131,6 +131,8 @@ async def start_task_final(client: Client, message_context: Message, task_data: 
         "started": time.time(),
         "include_keywords": list(task_data.get("include_keywords", [])),
         "exclude_keywords": list(task_data.get("exclude_keywords", [])),
+        "thumb_file_id": task_data.get("thumb_file_id"),
+        "thumb_b64": task_data.get("thumb_b64"),
     }
     
     is_restricted = task_data.get("is_restricted", False)
@@ -151,6 +153,8 @@ async def start_task_final(client: Client, message_context: Message, task_data: 
             allowed_types=task_snapshot.get("allowed_types"),
             include_keywords=task_snapshot.get("include_keywords"),
             exclude_keywords=task_snapshot.get("exclude_keywords"),
+            thumb_file_id=task_snapshot.get("thumb_file_id"),
+            thumb_b64=task_snapshot.get("thumb_b64"),
         )
     )   
 
@@ -300,7 +304,7 @@ async def handle_public_unrestricted(client: Client, acc, chatid: str, msgid: in
         logger.error(f"Total copy failure for {msgid}: {e}")
         return "FAILED"
 
-async def process_links_logic(client: Client, message: Message, text: str, dest_chat_id=None, dest_thread_id=None, dest_title="Direct Message", delay=3, acc_user_id=None, task_uuid=None, is_restricted=False, allowed_types=None, resume_from_id=None, saved_source_title=None, include_keywords=None, exclude_keywords=None):
+async def process_links_logic(client: Client, message: Message, text: str, dest_chat_id=None, dest_thread_id=None, dest_title="Direct Message", delay=3, acc_user_id=None, task_uuid=None, is_restricted=False, allowed_types=None, resume_from_id=None, saved_source_title=None, include_keywords=None, exclude_keywords=None, thumb_file_id=None, thumb_b64=None):
     user_id = acc_user_id or (message.from_user.id if message and message.from_user else 0)
     
     # 🟢 Resolve Real User Name (Not Bot Name)
@@ -343,6 +347,8 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
         "started": time.time(),
         "include_keywords": list(include_keywords or []),
         "exclude_keywords": list(exclude_keywords or []),
+        "thumb_file_id": thumb_file_id,
+        "thumb_b64": thumb_b64,
     }
 
     if dest_chat_id is None: dest_chat_id = msg_chat_id
@@ -505,7 +511,8 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
                 dest_thread_id=dest_thread_id, dest_title=dest_title, delay=delay,
                 is_restricted=is_restricted, allowed_types=allowed_types,
                 source_title=source_title, current_msg_id=fromID, to_id=toID,
-                include_keywords=include_keywords, exclude_keywords=exclude_keywords
+                include_keywords=include_keywords, exclude_keywords=exclude_keywords,
+                thumb_file_id=thumb_file_id, thumb_b64=thumb_b64
             )
 
             # 🟢 [DETAILED LOGGING] Cleaned up to prevent double Topic IDs!
@@ -633,7 +640,9 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
                             if "BOT" in chat_type_str or "PRIVATE" in chat_type_str:
                                 is_bot_or_user_pm = True
 
-                        if is_pub and not is_restricted and not is_bot_or_user_pm:
+                        task_info = ACTIVE_PROCESSES.get(user_id, {}).get(task_uuid, {})
+                        has_custom_thumb = bool(task_info.get("thumb_file_id") or task_info.get("thumb_b64"))
+                        if is_pub and not is_restricted and not is_bot_or_user_pm and not has_custom_thumb:
                             task_result = await handle_public_unrestricted(
                                 client, acc, chatid, msgid, dest_chat_id, dest_thread_id, 
                                 user_id, task_uuid, filter_thread_id, allowed_types, delay, pre_fetched_msg=pre_fetched_msg
