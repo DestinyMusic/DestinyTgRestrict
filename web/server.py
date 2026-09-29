@@ -115,10 +115,10 @@ async def _api_diagnostics_middleware(request, handler):
         except (TypeError, ValueError):
             pass
 
-    if result == "FAILED" or request.path in API_SUCCESS_LOG_PATHS:
+    # 🟢 FIX: Hard-block 401 HTTP codes from triggering the logger under any circumstance
+    if (result == "FAILED" or request.path in API_SUCCESS_LOG_PATHS) and response.status != 401:
         _log_api_result(request, result, response.status, (time.monotonic() - started) * 1000, reason)
     return response
-
 
 def _hash_web_password(password):
     salt = secrets.token_bytes(16)
