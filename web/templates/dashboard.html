@@ -1906,7 +1906,6 @@
 
     <script>
         let currentUser = localStorage.getItem('tg_uid') || null;
-        let currentToken = localStorage.getItem('web_token') || null; // 🟢 ADD TOKEN VAR
         let chatsLoaded = false;
         let isAdminGlobal = false;
 
@@ -2079,9 +2078,8 @@
                 const data = await res.json();
                 if (data.status === 'success') {
                     localStorage.setItem('tg_uid', uid);
-                    localStorage.setItem('web_token', data.token); // 🟢 SAVE TOKEN
                     currentUser = uid;
-                    currentToken = data.token; // 🟢 SET IN MEMORY
+                    localStorage.removeItem('web_token');
                     document.getElementById('login-view').style.display = 'none';
                     document.getElementById('app-view').style.display = 'block';
                     document.getElementById('profile-id').innerText = "ID: " + uid;
@@ -2111,6 +2109,20 @@
                 });
                 const data = await res.json();
                 alert(data.message);
+                if (data.status !== 'success') return;
+
+                const resetToken = prompt("Enter the reset token sent to your Telegram account:");
+                if (!resetToken) return;
+                const newPassword = prompt("Choose a new password with at least 12 characters:");
+                if (!newPassword) return;
+
+                const resetRes = await fetch('/api/auth/reset', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({user_id: uid, reset_token: resetToken, password: newPassword})
+                });
+                const resetData = await resetRes.json();
+                alert(resetData.message || "Password reset failed.");
             } catch(err) {
                 alert("Error connecting to server.");
             } finally {
@@ -2118,7 +2130,10 @@
             }
         }
 
-        function logout() {
+        async function logout() {
+            try {
+                await fetch('/api/auth/logout', { method: 'POST' });
+            } catch (err) {}
             localStorage.removeItem('tg_uid');
             localStorage.removeItem('web_token'); // 🟢 CLEAR TOKEN ON LOGOUT
             location.reload();
@@ -2152,7 +2167,7 @@
         async function fetchNetworkStats() {
             if (!currentUser) return;
             try {
-                const res = await fetch(`/api/network?user_id=${currentUser}&token=${currentToken}`);
+                const res = await fetch(`/api/network?user_id=${currentUser}`);
                 const data = await res.json();
                 if (data.status === 'success') {
                     document.getElementById('net-active-count').innerText = `${data.active.length} ONLINE`;
@@ -2212,7 +2227,7 @@
             resultsEl.style.display = 'none';
 
             try {
-                const res = await fetch(`/api/speedtest?user_id=${currentUser}&token=${currentToken}`);
+                const res = await fetch(`/api/speedtest?user_id=${currentUser}`);
                 const data = await res.json();
                 
                 if (data.status === 'success') {
@@ -2241,7 +2256,7 @@
         async function loadSosStats() {
             if (!currentUser) return;
             try {
-                const res = await fetch(`/api/sos?user_id=${currentUser}&token=${currentToken}`);
+                const res = await fetch(`/api/sos?user_id=${currentUser}`);
                 const data = await res.json();
                 
                 if (data.status === 'success') {
@@ -2349,7 +2364,7 @@
             }
 
             try {
-                const res = await fetch(`/api/chats?user_id=${currentUser}&token=${currentToken}`);
+                const res = await fetch(`/api/chats?user_id=${currentUser}`);
                 const data = await res.json();
                 
                 if (data.status === 'success') {
@@ -2452,7 +2467,7 @@
             document.getElementById('cd-title').innerText = "Analyzing Chat...";
 
             try {
-                const res = await fetch(`/api/chat_details?user_id=${currentUser}&token=${currentToken}&chat_id=${chatId}`);
+                const res = await fetch(`/api/chat_details?user_id=${currentUser}&chat_id=${chatId}`);
                 const textRaw = await res.text();
                 
                 let data;
@@ -2552,7 +2567,7 @@
 
         async function loadAdminUsers() {
             try {
-                const res = await fetch(`/api/admin/users?user_id=${currentUser}&token=${currentToken}`);
+                const res = await fetch(`/api/admin/users?user_id=${currentUser}`);
                 const data = await res.json();
                 if (data.status === 'success') {
                     const list = document.getElementById('admin-users-list');
@@ -2589,7 +2604,7 @@
             try {
                 const res = await fetch('/api/admin/users/add', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ user_id: currentUser, token: currentToken, target_id: targetId, role: targetRole })
+                    body: JSON.stringify({ user_id: currentUser, target_id: targetId, role: targetRole })
                 });
                 const data = await res.json();
                 if (data.status === 'success') {
@@ -2605,7 +2620,7 @@
             try {
                 const res = await fetch('/api/admin/users/remove', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({user_id: currentUser, token: currentToken, target_id: targetId})
+                    body: JSON.stringify({user_id: currentUser, target_id: targetId})
                 });
                 const data = await res.json();
                 if (data.status === 'success') {
@@ -2617,7 +2632,7 @@
         async function loadWorkerTokens() {
             if (!currentUser) return;
             try {
-                const res = await fetch(`/api/settings/tokens?user_id=${currentUser}&token=${currentToken}`);
+                const res = await fetch(`/api/settings/tokens?user_id=${currentUser}`);
                 const data = await res.json();
                 if (data.status === 'success') {
                     const sEl = document.getElementById('stream-tokens-input');
@@ -2644,7 +2659,7 @@
                 const res = await fetch('/api/settings/tokens', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({user_id: currentUser, token: currentToken, stream_tokens, task_tokens})
+                    body: JSON.stringify({user_id: currentUser, stream_tokens, task_tokens})
                 });
                 const data = await res.json();
                 alert(data.message || "Tokens updated.");
@@ -2658,15 +2673,11 @@
         async function fetchStats() {
             if (!currentUser) return;
             try {
-                const res = await fetch(`/api/stats?user_id=${currentUser}&token=${currentToken}`);
+                const res = await fetch(`/api/stats?user_id=${currentUser}`);
                 const data = await res.json();
                 
-                // 🟢 CRITICAL FIX: Prevent 'undefined' UI bugs if the token is invalid or overwritten
-                if (data.status === 'error') {
-                    if (data.message.includes('Unauthorized') || data.message.includes('Token')) {
-                        console.warn("Session invalidated by another device.");
-                        logout(); 
-                    }
+                if (!res.ok || data.status === 'error') {
+                    if (res.status === 401 || res.status === 403) logout();
                     return;
                 }
                 
@@ -2812,7 +2823,7 @@
 
         async function tgSendCode() {
             const phone = document.getElementById('tg-phone').value;
-            const res = await fetch('/api/tg/send_code', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({user_id: currentUser, token: currentToken, phone: phone}) });
+            const res = await fetch('/api/tg/send_code', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({user_id: currentUser, phone: phone}) });
             const data = await res.json();
             if (data.status === 'success') {
                 document.getElementById('tg-login-step1').style.display = 'none';
@@ -2822,7 +2833,7 @@
 
         async function tgVerifyCode() {
             const code = document.getElementById('tg-code').value;
-            const res = await fetch('/api/tg/verify', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({user_id: currentUser, token: currentToken, code: code}) });
+            const res = await fetch('/api/tg/verify', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({user_id: currentUser, code: code}) });
             const data = await res.json();
             if (data.status === 'success') {
                 alert("Telegram Logged In Successfully!");
@@ -2835,7 +2846,7 @@
 
         async function tgVerify2FA() {
             const pwd = document.getElementById('tg-2fa').value;
-            const res = await fetch('/api/tg/verify_2fa', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({user_id: currentUser, token: currentToken, password: pwd}) });
+            const res = await fetch('/api/tg/verify_2fa', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({user_id: currentUser, password: pwd}) });
             const data = await res.json();
             if (data.status === 'success') {
                 alert("Telegram Logged In Successfully!");
@@ -2845,7 +2856,7 @@
 
         async function tgLogout() {
             if (!confirm("Are you sure you want to disconnect Telegram? Active watchers will be stopped.")) return;
-            await fetch('/api/tg/logout', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({user_id: currentUser, token: currentToken}) });
+            await fetch('/api/tg/logout', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({user_id: currentUser}) });
             fetchStats();
         }
 
@@ -2860,8 +2871,7 @@
             document.querySelectorAll('input[name="ftype"]:checked').forEach(cb => filtersArr.push(cb.value));
 
             const endpoint = mode === 'watch' ? '/api/watcher/add' : '/api/task/add';
-            // 🟢 FIX: Added token: currentToken to the JSON body
-            const res = await fetch(endpoint, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({user_id: currentUser, token: currentToken, link, dest, delay, filters: filtersArr}) });
+            const res = await fetch(endpoint, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({user_id: currentUser, link, dest, delay, filters: filtersArr}) });
             const data = await res.json();
             if (data.status === 'success') {
                 alert("Task started successfully!");
@@ -2872,25 +2882,25 @@
 
         async function cancelTask(taskId) {
             if (!confirm("Cancel this task?")) return;
-            await fetch('/api/task/cancel', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({task_id: taskId, user_id: currentUser, token: currentToken}) });
+            await fetch('/api/task/cancel', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({task_id: taskId, user_id: currentUser}) });
             fetchStats();
         }
 
         async function cancelWatcher(watcherId) {
             if (!confirm("Remove this watcher?")) return;
-            await fetch('/api/watcher/cancel', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({watcher_id: watcherId, user_id: currentUser, token: currentToken}) });
+            await fetch('/api/watcher/cancel', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({watcher_id: watcherId, user_id: currentUser}) });
             fetchStats();
         }
 
         async function changePassword(e) {
             e.preventDefault();
             const pwd = document.getElementById('new-pwd').value;
-            const res = await fetch('/api/auth/password', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({user_id: currentUser, token: currentToken, password: pwd}) });
+            const res = await fetch('/api/auth/password', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({user_id: currentUser, password: pwd}) });
             const data = await res.json();
             if (data.status === 'success') {
                 alert("Password updated successfully!");
                 document.getElementById('new-pwd').value = '';
-            } else alert("Failed to update password.");
+            } else alert(data.message || "Failed to update password.");
         }
 
         let liveLogInterval = null;
@@ -2900,7 +2910,7 @@
             if (isFetchingLogs) return; // Prevent freeze if you click refresh 10 times fast
             isFetchingLogs = true;
             try {
-                const res = await fetch(`/api/logs?user_id=${currentUser}&token=${currentToken}`);
+                const res = await fetch(`/api/logs?user_id=${currentUser}`);
                 const data = await res.json();
                 const term = document.getElementById('log-terminal');
                 term.innerText = data.logs || "No logs generated yet.";
@@ -3005,7 +3015,7 @@
                 const res = await fetch('/api/mediainfo', {
                     method: 'POST', 
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({user_id: currentUser, token: currentToken, link: link})
+                    body: JSON.stringify({user_id: currentUser, link: link})
                 });
                 const data = await res.json();
                 if(data.status === 'success') {
@@ -3035,7 +3045,7 @@
                 const res = await fetch('/api/spectrogram', {
                     method: 'POST', 
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({user_id: currentUser, token: currentToken, link: link})
+                    body: JSON.stringify({user_id: currentUser, link: link})
                 });
                 const data = await res.json();
                 if(data.status === 'success') {
@@ -4606,7 +4616,7 @@
                 fetch('/api/stream/kill', { 
                     method: 'POST', 
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({user_id: currentUser, token: currentToken})
+                    body: JSON.stringify({user_id: currentUser})
                 });
             } catch(e) {}
 
@@ -6114,7 +6124,6 @@
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
                         user_id: currentUser,
-                        token: currentToken,
                         link: window.editorMediaLink,
                         config: config,
                         new_name: newName,
@@ -6280,7 +6289,6 @@
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
                         user_id: currentUser,
-                        token: currentToken,
                         link: window.editorMediaLink,
                         is_archive: true,
                         dest: dest,

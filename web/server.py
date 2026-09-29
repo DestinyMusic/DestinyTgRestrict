@@ -6,6 +6,88 @@ try:
 except ImportError:
     web = None
 
+import hashlib
+import hmac
+import secrets
+
+WEB_AUTH_COOKIE = "web_auth"
+WEB_SESSION_TTL = 12 * 60 * 60
+PASSWORD_RESET_REQUESTS = {}
+PUBLIC_AUTH_PATHS = {
+    "/api/auth/login",
+    "/api/auth/forgot",
+    "/api/auth/reset",
+}
+
+
+def _hash_web_password(password):
+    salt = secrets.token_bytes(16)
+    digest = hashlib.scrypt(password.encode("utf-8"), salt=salt, n=2**14, r=8, p=1)
+    return f"scrypt${salt.hex()}${digest.hex()}"
+
+
+def _verify_web_password(password, stored_password):
+    if not isinstance(password, str) or not isinstance(stored_password, str):
+        return False
+    if stored_password.startswith("scrypt$"):
+        try:
+            _, salt_hex, digest_hex = stored_password.split("$", 2)
+            salt = bytes.fromhex(salt_hex)
+            expected = bytes.fromhex(digest_hex)
+            actual = hashlib.scrypt(password.encode("utf-8"), salt=salt, n=2**14, r=8, p=1)
+            return hmac.compare_digest(actual, expected)
+        except (ValueError, TypeError):
+            return False
+    return hmac.compare_digest(password, stored_password)
+
+
+@web.middleware
+async def _web_auth_middleware(request, handler):
+    if not request.path.startswith("/api/") or request.path in PUBLIC_AUTH_PATHS:
+        return await handler(request)
+
+    payload = {}
+    if request.content_type == "application/json" and request.can_read_body:
+        try:
+            payload = await request.json()
+        except (ValueError, TypeError):
+            payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+
+    token = request.cookies.get(WEB_AUTH_COOKIE, "")
+    if not token:
+        return web.json_response({"status": "error", "message": "Authentication required."}, status=401)
+
+    user_doc = await db.col.find_one({"$or": [{"web_tokens": token}, {"web_token": token}]})
+    if not user_doc:
+        return web.json_response({"status": "error", "message": "Invalid or expired session."}, status=401)
+    token_expiries = user_doc.get("web_token_expiries", {})
+    token_expiry = token_expiries.get(token) if isinstance(token_expiries, dict) else None
+    if not isinstance(token_expiry, (int, float)) or token_expiry <= time.time():
+        return web.json_response({"status": "error", "message": "Invalid or expired session."}, status=401)
+
+    user_id = int(user_doc["id"])
+    if not await db.is_user_approved(user_id):
+        return web.json_response({"status": "error", "message": "Account access is not approved."}, status=403)
+
+    requested_user_id = payload.get("user_id", request.query.get("user_id"))
+    if requested_user_id is not None:
+        try:
+            if int(requested_user_id) != user_id:
+                return web.json_response({"status": "error", "message": "Cannot access another user's account."}, status=403)
+        except (TypeError, ValueError):
+            return web.json_response({"status": "error", "message": "Invalid user ID."}, status=400)
+
+    if request.path.startswith("/api/admin/") or request.path == "/api/logs/download":
+        if not await db.is_user_admin(user_id):
+            return web.json_response({"status": "error", "message": "Administrator access required."}, status=403)
+
+    request["authenticated_user_id"] = user_id
+    request["web_auth_token"] = token
+    return await handler(request)
+
+
 HTML_DASHBOARD = (BASE_DIR / "web" / "templates" / "dashboard.html").read_text(encoding="utf-8")
 async def _dashboard_ui_handler(request):
     return web.Response(text=HTML_DASHBOARD, content_type='text/html', status=200)
@@ -15,6 +97,8 @@ async def _api_login_handler(request):
         data = await request.json()
         user_id = int(data.get("user_id"))
         password = data.get("password")
+        if not isinstance(password, str) or not password:
+            return web.json_response({"status": "error", "message": "Enter your password."}, status=400)
         
         if not await db.is_user_approved(user_id):
             return web.json_response({"status": "error", "message": "⛔ Unauthorized: You are not allowed to access this dashboard."})
@@ -24,32 +108,57 @@ async def _api_login_handler(request):
             return web.json_response({"status": "error", "message": "Account not found! Please go to Telegram and send /start to the bot first."})
 
         stored_pwd = user.get("web_password")
-        if not stored_pwd or stored_pwd == password:
-            import secrets
-            
+        if not stored_pwd:
+            return web.json_response({
+                "status": "error",
+                "message": "Set your dashboard password using Forgot Password so a setup token can be sent to your Telegram account.",
+            }, status=400)
+        if _verify_web_password(password, stored_pwd):
             web_token = secrets.token_hex(16)
             
-            # 🟢 MULTI-DEVICE FIX: Bulletproof extraction of existing tokens
+            now = time.time()
             existing_tokens = user.get("web_tokens")
             if not isinstance(existing_tokens, list): 
                 existing_tokens = [user.get("web_token")] if user.get("web_token") else []
-            
+            existing_expiries = user.get("web_token_expiries")
+            if not isinstance(existing_expiries, dict):
+                existing_expiries = {}
+            existing_tokens = [
+                token for token in existing_tokens
+                if isinstance(token, str) and existing_expiries.get(token, 0) > now
+            ]
             existing_tokens.append(web_token)
-            
-            # Keep only the 5 most recent logins (FIFO)
             if len(existing_tokens) > 5:
                 existing_tokens = existing_tokens[-5:]
+            token_expiries = {
+                token: existing_expiries[token]
+                for token in existing_tokens
+                if token in existing_expiries
+            }
+            token_expiries[web_token] = now + WEB_SESSION_TTL
                 
             update_data = {
                 "web_tokens": existing_tokens, 
-                "web_token": web_token # Keep fallback for legacy compatibility
+                "web_token": web_token,
+                "web_token_expiries": token_expiries,
             }
             
-            if not stored_pwd:
-                update_data["web_password"] = password
+            if not stored_pwd.startswith("scrypt$"):
+                update_data["web_password"] = _hash_web_password(password)
                 
             await db.col.update_one({"id": user_id}, {"$set": update_data})
-            return web.json_response({"status": "success", "token": web_token})
+            response = web.json_response({"status": "success"})
+            forwarded_proto = request.headers.get("X-Forwarded-Proto", "").split(",", 1)[0].strip().lower()
+            response.set_cookie(
+                WEB_AUTH_COOKIE,
+                web_token,
+                httponly=True,
+                secure=request.secure or forwarded_proto == "https",
+                samesite="Strict",
+                max_age=WEB_SESSION_TTL,
+                path="/api",
+            )
+            return response
         else:
             return web.json_response({"status": "error", "message": "Incorrect password!"})
     except Exception as e:
@@ -59,48 +168,110 @@ async def _api_forgot_password_handler(request):
     try:
         data = await request.json()
         user_id = int(data.get("user_id"))
-        
+        now = time.monotonic()
+        eligible = now - PASSWORD_RESET_REQUESTS.get(user_id, 0) >= 60
+        PASSWORD_RESET_REQUESTS[user_id] = now
+
         user = await db.col.find_one({"id": user_id})
-        if not user:
-            return web.json_response({"status": "error", "message": "Account not found! Please send /start to the bot in Telegram."})
-            
-        stored_pwd = user.get("web_password")
-        if not stored_pwd:
-            return web.json_response({"status": "error", "message": "You haven't set a web password yet. Just enter a new password to register!"})
-            
-        try:
-            await app.send_message(
-                chat_id=user_id,
-                text=f"🔐 **Web Portal Password Recovery**\n\nYour current web dashboard password is: `{stored_pwd}`\n\n_If you did not request this, please change your password in the dashboard settings._"
+        if eligible and user and await db.is_user_approved(user_id):
+            reset_token = secrets.token_urlsafe(32)
+            await db.col.update_one(
+                {"id": user_id},
+                {"$set": {
+                    "web_password_reset_hash": hashlib.sha256(reset_token.encode("utf-8")).hexdigest(),
+                    "web_password_reset_expires": time.time() + 600,
+                }},
             )
-            return web.json_response({"status": "success", "message": "Your password has been sent to your Telegram PM!"})
-        except Exception as e:
-            return web.json_response({"status": "error", "message": "Failed to send PM. Please ensure you have started the bot in Telegram and haven't blocked it!"})
-            
+            try:
+                await app.send_message(
+                    chat_id=user_id,
+                    text=f"Web dashboard password reset token (valid for 10 minutes): {reset_token}",
+                )
+            except Exception:
+                await db.col.update_one(
+                    {"id": user_id},
+                    {"$unset": {"web_password_reset_hash": "", "web_password_reset_expires": ""}},
+                )
+
+        return web.json_response({
+            "status": "success",
+            "message": "If the account is eligible, password reset instructions will arrive in Telegram.",
+        })
     except Exception as e:
         return web.json_response({"status": "error", "message": str(e)}, status=400)
+
+
+async def _api_reset_password_handler(request):
+    try:
+        data = await request.json()
+        user_id = int(data.get("user_id"))
+        reset_token = data.get("reset_token", "")
+        password = data.get("password", "")
+        if not isinstance(password, str) or len(password) < 12:
+            return web.json_response({"status": "error", "message": "Use a password with at least 12 characters."}, status=400)
+        if not isinstance(reset_token, str) or not reset_token:
+            return web.json_response({"status": "error", "message": "Invalid or expired reset token."}, status=400)
+
+        user = await db.col.find_one({"id": user_id})
+        reset_hash = hashlib.sha256(reset_token.encode("utf-8")).hexdigest()
+        if (
+            not user
+            or not await db.is_user_approved(user_id)
+            or user.get("web_password_reset_expires", 0) < time.time()
+            or not hmac.compare_digest(user.get("web_password_reset_hash", ""), reset_hash)
+        ):
+            return web.json_response({"status": "error", "message": "Invalid or expired reset token."}, status=400)
+
+        await db.col.update_one(
+            {"id": user_id, "web_password_reset_hash": reset_hash},
+            {
+                "$set": {"web_password": _hash_web_password(password), "web_tokens": []},
+                "$unset": {
+                    "web_token": "",
+                    "web_token_expiries": "",
+                    "web_password_reset_hash": "",
+                    "web_password_reset_expires": "",
+                },
+            },
+        )
+        return web.json_response({"status": "success", "message": "Password reset. Please log in with your new password."})
+    except Exception:
+        return web.json_response({"status": "error", "message": "Unable to reset password."}, status=400)
+
+
+async def _api_logout_handler(request):
+    user_id = request["authenticated_user_id"]
+    token = request["web_auth_token"]
+    await db.col.update_one({"id": user_id}, {"$pull": {"web_tokens": token}})
+    await db.col.update_one({"id": user_id, "web_token": token}, {"$unset": {"web_token": ""}})
+    await db.col.update_one({"id": user_id}, {"$unset": {f"web_token_expiries.{token}": ""}})
+    response = web.json_response({"status": "success"})
+    response.del_cookie(WEB_AUTH_COOKIE, path="/api")
+    return response
 
 async def _api_password_handler(request):
     try:
         data = await request.json()
-        user_id = int(data.get("user_id"))
         password = data.get("password")
-        await db.col.update_one({"id": user_id}, {"$set": {"web_password": password}})
+        if not isinstance(password, str) or len(password) < 12:
+            return web.json_response({"status": "error", "message": "Use a password with at least 12 characters."}, status=400)
+        user_id = request["authenticated_user_id"]
+        token = request["web_auth_token"]
+        await db.col.update_one(
+            {"id": user_id},
+            {"$set": {
+                "web_password": _hash_web_password(password),
+                "web_tokens": [token],
+                "web_token": token,
+                "web_token_expiries": {token: time.time() + WEB_SESSION_TTL},
+            }},
+        )
         return web.json_response({"status": "success"})
     except Exception:
         return web.json_response({"status": "error"}, status=400)
 
 async def _api_stats_handler(request):
-    try:
-        user_id = int(request.query.get("user_id", 0))
-    except:
-        user_id = 0
-
-    # 🟢 TOKEN CHECK
-    token = request.query.get("token", "")
-    user_doc = await db.col.find_one({"id": user_id})
-    if not user_doc or token not in (user_doc.get("web_tokens") or [user_doc.get("web_token")] or []):
-        return web.json_response({"status": "error", "message": "Unauthorized: Invalid or expired Web Token."})
+    user_id = request["authenticated_user_id"]
 
     uptime_seconds = int(time.time() - BOT_START_TIME)
     days, rem = divmod(uptime_seconds, 86400)
@@ -208,17 +379,7 @@ async def _api_stats_handler(request):
 async def _api_add_task(request):
     try:
         data = await request.json()
-        user_id = int(data.get("user_id"))
-        
-        # 1. 🟢 EXTRACT TOKEN FROM JSON BODY
-        token = data.get("token", "") 
-        
-        # 2. 🟢 VERIFY TOKEN AGAINST DATABASE
-        user_doc = await db.col.find_one({"id": user_id})
-        if not user_doc or token not in (user_doc.get("web_tokens") or [user_doc.get("web_token")] or []):
-            return web.json_response({"status": "error", "message": "Unauthorized: Invalid or expired Web Token. Please logout and login again."})
-
-        # 3. Proceed with the rest of the code normally
+        user_id = request["authenticated_user_id"]
         link = data.get("link")
         dest_str = data.get("dest", "")
         delay = max(3, min(int(data.get("delay", 3)), 3600))
@@ -307,8 +468,8 @@ async def _api_cancel_task(request):
     try:
         data = await request.json()
         task_id = data.get("task_id")
-        user_id = int(data.get("user_id", 0))
-        if task_id:
+        user_id = request["authenticated_user_id"]
+        if task_id and task_id in ACTIVE_PROCESSES.get(user_id, {}):
             CANCEL_FLAGS[task_id] = True
             try: await db.remove_active_task(task_id)
             except: pass
@@ -425,7 +586,7 @@ async def _api_cancel_watcher(request):
     try:
         data = await request.json()
         watcher_id = data.get("watcher_id")
-        user_id = int(data.get("user_id", 0))
+        user_id = request["authenticated_user_id"]
         if watcher_id:
             await db.db.watchers.delete_one({"_id": ObjectId(watcher_id), "user_id": user_id})
             return web.json_response({"status": "success"})
@@ -440,18 +601,9 @@ def _read_logs_sync():
     return "".join(lines[-150:])
 
 async def _api_logs_handler(request):
-    try:
-        uid = int(request.query.get("user_id", 0))
-    except:
-        uid = 0
+    uid = request["authenticated_user_id"]
         
-    # 🟢 TOKEN CHECK
-    token = request.query.get("token", "")
-    user_doc = await db.col.find_one({"id": uid})
-    if not user_doc or token not in (user_doc.get("web_tokens") or [user_doc.get("web_token")] or []):
-        return web.json_response({"logs": "⚠️ Unauthorized: Invalid or expired Web Token. Please log in again."})
-        
-    if uid not in ADMINS and uid not in SUDOS:
+    if not await db.is_user_admin(uid):
         return web.json_response({"logs": "⚠️ ACCESS DENIED: You must be a Bot Admin to view server logs."})
         
     try:
@@ -461,12 +613,8 @@ async def _api_logs_handler(request):
         return web.json_response({"logs": f"Error reading logs: {e}"})
 
 async def _api_download_log_handler(request):
-    try:
-        uid = int(request.query.get("user_id", 0))
-    except:
-        uid = 0
-        
-    if uid not in ADMINS and uid not in SUDOS:
+    uid = request["authenticated_user_id"]
+    if not await db.is_user_admin(uid):
         return web.Response(text="ACCESS DENIED: Admins Only", status=403)
         
     try:
@@ -580,13 +728,7 @@ async def _api_tg_logout(request):
     return web.json_response({"status": "success"})
 
 async def _api_chats_handler(request):
-    uid = int(request.query.get("user_id", 0))
-    
-    # 🟢 TOKEN CHECK
-    token = request.query.get("token", "")
-    user_doc = await db.col.find_one({"id": uid})
-    if not user_doc or token not in (user_doc.get("web_tokens") or [user_doc.get("web_token")] or []):
-        return web.json_response({"status": "error", "message": "Unauthorized: Invalid or expired Web Token."})
+    uid = request["authenticated_user_id"]
         
     session_str = await db.get_session(uid)
     
@@ -740,16 +882,7 @@ async def _api_chats_handler(request):
     return web.json_response({"status": "success", "chats": list(sanitized_collection)})
 
 async def _api_speedtest_handler(request):
-    try:
-        uid = int(request.query.get("user_id", 0))
-    except:
-        uid = 0
-        
-    # 🟢 TOKEN CHECK
-    token = request.query.get("token", "")
-    user_doc = await db.col.find_one({"id": uid})
-    if not user_doc or token not in (user_doc.get("web_tokens") or [user_doc.get("web_token")] or []):
-        return web.json_response({"status": "error", "message": "Unauthorized: Invalid or expired Web Token."})
+    uid = request["authenticated_user_id"]
     
     session_str = await db.get_session(uid)
     if not session_str and uid not in ADMINS:
@@ -797,16 +930,7 @@ def _get_sos_sync():
     return os_name, psutil.virtual_memory(), psutil.disk_usage('/'), psutil.net_io_counters()
 
 async def _api_sos_handler(request):
-    try:
-        uid = int(request.query.get("user_id", 0))
-    except:
-        uid = 0
-        
-    # 🟢 TOKEN CHECK
-    token = request.query.get("token", "")
-    user_doc = await db.col.find_one({"id": uid})
-    if not user_doc or token not in (user_doc.get("web_tokens") or [user_doc.get("web_token")] or []):
-        return web.json_response({"status": "error", "message": "Unauthorized: Invalid or expired Web Token."})
+    uid = request["authenticated_user_id"]
         
     session_str = await db.get_session(uid)    
     if not session_str and uid not in ADMINS:
@@ -921,14 +1045,8 @@ async def _api_topics_handler(request):
 import traceback
 
 async def _api_chat_details_handler(request):
-    uid = int(request.query.get("user_id", 0))
+    uid = request["authenticated_user_id"]
     raw_chat_string = request.query.get("chat_id", "").strip()
-    
-    # 🟢 TOKEN CHECK
-    token = request.query.get("token", "")
-    user_doc = await db.col.find_one({"id": uid})
-    if not user_doc or token not in (user_doc.get("web_tokens") or [user_doc.get("web_token")] or []):
-        return web.json_response({"status": "error", "message": "Unauthorized: Invalid or expired Web Token."})
     
     if not raw_chat_string:
         return web.json_response({"status": "error", "message": "Missing required chat_id parameter."})
@@ -1255,13 +1373,8 @@ async def init_worker_bots(user_id=None):
                 logger.warning(f"Failed to load task token {idx} for {uid}: {e}")
 
 async def _api_get_worker_tokens(request):
-    uid = int(request.query.get("user_id", 0))
-    
-    # 🟢 TOKEN CHECK
-    token = request.query.get("token", "")
+    uid = request["authenticated_user_id"]
     doc = await db.col.find_one({"id": uid})
-    if not doc or token not in (doc.get("web_tokens") or [doc.get("web_token")] or []):
-        return web.json_response({"status": "error", "message": "Unauthorized: Invalid or expired Web Token."})
         
     # 🟢 FIX: Auto-load your old "bot_tokens" into the streaming box if you haven't saved new ones yet!
     stream_tokens = doc.get("stream_tokens", [])
@@ -1276,7 +1389,7 @@ async def _api_get_worker_tokens(request):
 
 async def _api_save_worker_tokens(request):
     data = await request.json()
-    uid = int(data.get("user_id", 0))
+    uid = request["authenticated_user_id"]
     
     stream_tokens = [t.strip() for t in data.get("stream_tokens", []) if ":" in t]
     task_tokens = [t.strip() for t in data.get("task_tokens", []) if ":" in t]
@@ -1295,14 +1408,7 @@ async def _api_save_worker_tokens(request):
     return web.json_response({"status": "success", "message": f"Saved {len(stream_tokens)} Stream Bots and {len(task_tokens)} Task Bots. Pools reloading."})
 
 async def _api_network_stats(request):
-    try: uid = int(request.query.get("user_id", 0))
-    except: uid = 0
-    
-    # 🟢 TOKEN CHECK
-    token = request.query.get("token", "")
-    user_doc = await db.col.find_one({"id": uid})
-    if not user_doc or token not in (user_doc.get("web_tokens") or [user_doc.get("web_token")] or []):
-        return web.json_response({"status": "error", "message": "Unauthorized: Invalid or expired Web Token."})
+    uid = request["authenticated_user_id"]
         
     # 🟢 PRIVACY FIX: Filter streams so normal users only see their own!
     is_admin = await db.is_user_admin(uid)
@@ -1543,7 +1649,7 @@ async def _api_editor_cancel(request):
     try:
         data = await request.json()
         task_uuid = data.get("task_uuid")
-        uid = int(data.get("user_id", 0))
+        uid = request["authenticated_user_id"]
 
         if task_uuid == "all":
             for tid, tinfo in list(EDITOR_ACTIVE_TASKS.items()):
@@ -1566,6 +1672,8 @@ async def _api_editor_progress(request):
         return web.json_response({"status": "error", "message": "Task not found"})
     
     state = EDITOR_UI_STATE[task_uuid]
+    if state.get("user_id") != request["authenticated_user_id"]:
+        return web.json_response({"status": "error", "message": "Task not found"}, status=404)
     resp = {
         "status": "success", "phase": state["phase"], "done": state["done"], 
         "error": state["error"], "fetcher": state.get("fetcher", "🤖 Unknown"), 
@@ -1587,7 +1695,7 @@ async def _api_editor_progress(request):
 
 # 🟢 NEW ENDPOINT: Restores tasks when you refresh your browser
 async def _api_editor_active_tasks(request):
-    uid = int(request.query.get("user_id", 0))
+    uid = request["authenticated_user_id"]
     active = {}
     for t_uuid, t_info in list(EDITOR_ACTIVE_TASKS.items()):
         if t_info.get("user_id") == uid:
@@ -1673,7 +1781,7 @@ async def _api_edit_media_handler(request):
     temp_dir = Path(f"./temp_remux_{uid}_{task_uuid}")
     EDITOR_UI_STATE[task_uuid] = {
         "phase": "Starting...", "status_msg_id": None, "error": None, "done": False,
-        "file_name": new_name, "fetcher": "🌐 Direct Link", "uploader": "🤖 Pending..."
+        "user_id": uid, "file_name": new_name, "fetcher": "🌐 Direct Link", "uploader": "🤖 Pending..."
     }
     
     def _lbl(c):
@@ -2349,7 +2457,7 @@ async def start_koyeb_health_check(host: str = "0.0.0.0"):
     global PORT
     
     # 🟢 FIX: 500MB Payload Limit for High-Res Audio/Thumbnails
-    app_web = web.Application(client_max_size=1024**2 * 500)
+    app_web = web.Application(client_max_size=1024**2 * 500, middlewares=[_web_auth_middleware])
     
     # Core & Dashboard
     app_web.router.add_get("/", _dashboard_ui_handler)
@@ -2368,6 +2476,8 @@ async def start_koyeb_health_check(host: str = "0.0.0.0"):
     # Auth & Settings
     app_web.router.add_post("/api/auth/login", _api_login_handler)
     app_web.router.add_post("/api/auth/forgot", _api_forgot_password_handler)
+    app_web.router.add_post("/api/auth/reset", _api_reset_password_handler)
+    app_web.router.add_post("/api/auth/logout", _api_logout_handler)
     app_web.router.add_post("/api/auth/password", _api_password_handler)
     app_web.router.add_get("/api/settings/tokens", _api_get_worker_tokens)
     app_web.router.add_post("/api/settings/tokens", _api_save_worker_tokens)
@@ -2412,15 +2522,7 @@ async def start_koyeb_health_check(host: str = "0.0.0.0"):
     
     # Admin Controls API
     async def _api_admin_get_users(request):
-        try: uid = int(request.query.get("user_id", 0))
-        except: uid = 0
-        
-        # 🟢 TOKEN CHECK
-        token = request.query.get("token", "")
-        user_doc = await db.col.find_one({"id": uid})
-        if not user_doc or token not in (user_doc.get("web_tokens") or [user_doc.get("web_token")] or []):
-            return web.json_response({"status": "error", "message": "Unauthorized: Invalid or expired Web Token."})
-            
+        uid = request["authenticated_user_id"]
         if not await db.is_user_admin(uid):
             return web.json_response({"status": "error", "message": "Unauthorized"})
         
