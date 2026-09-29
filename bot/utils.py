@@ -208,26 +208,25 @@ def clean_media_text(value: str, custom_tags=None) -> str:
     """Remove explicitly configured source tags from media text."""
     text = str(value or "")
     
-    # Combine global CLEANUP_TAGS (if defined in config) with per-task custom_tags
     global_tags = CLEANUP_TAGS if 'CLEANUP_TAGS' in globals() else []
-    
-    # 🟢 FIX: Convert both to lists before combining to prevent the TypeError
     all_tags = list(global_tags) + list(custom_tags or [])
+    
+    # 🟢 CRITICAL FIX: Sort tags by length (longest first)
+    # This prevents short tags (like "@anime") from partially chopping long tags (like "@Animee_4u")
+    all_tags.sort(key=len, reverse=True)
     
     for tag in all_tags:
         if not str(tag).strip(): continue
-        # Robust regex: erases the tag and any weird spacing hugging it
         pattern = rf"(?i)\s*{re.escape(str(tag))}\s*"
         text = re.sub(pattern, " ", text)
         
-    # 🟢 MAGIC FIX: Erase stray hyphens and spaces left behind
-    text = re.sub(r"^[ \t\-~_]+", "", text) # Removes stray "-" at the very beginning
-    text = re.sub(r"[ \t\-~_]+(\.[a-zA-Z0-9]+)$", r"\1", text) # Removes stray "-" right before .mkv
-    text = re.sub(r"[ \t\-~_]+$", "", text) # Removes stray "-" at the very end of a caption
+    text = re.sub(r"^[ \t\-~_]+", "", text)
+    text = re.sub(r"[ \t\-~_]+(\.[a-zA-Z0-9]+)$", r"\1", text)
+    text = re.sub(r"[ \t\-~_]+$", "", text)
     
-    text = re.sub(r"[ \t]{2,}", " ", text) # Compresses double spaces into one
+    text = re.sub(r"[ \t]{2,}", " ", text)
     text = re.sub(r"[ \t]+([,.;!?])", r"\1", text)
-    text = re.sub(r"[\(\[\{][ \t]*[\)\]\}]", "", text) # Removes empty brackets left over
+    text = re.sub(r"[\(\[\{][ \t]*[\)\]\}]", "", text)
     return text.strip()
 
 def clean_caption(text, entities=None, custom_tags=None):
@@ -254,13 +253,16 @@ def filename_matches_filters(message, include_keywords=None, exclude_keywords=No
 
 
 def media_filename(message, fallback_id=None):
-    for attr in ("document", "video", "audio", "animation", "voice", "sticker"):
+    for attr in ("document", "video", "audio", "animation", "voice", "sticker", "photo"):
         media = getattr(message, attr, None)
-        name = getattr(media, "file_name", None) or getattr(media, "title", None) if media else None
-        if name:
-            return clean_media_text(name)
+        if media:
+            name = getattr(media, "file_name", None) or getattr(media, "title", None)
+            if name:
+                return clean_media_text(name)
+            # 🟢 FIX: Removed the [:60] truncation so the full caption is used as the filename!
+            if message.caption:
+                return clean_media_text(message.caption.split('\n')[0])
     return f"message_{fallback_id}" if fallback_id is not None else "unknown_media"
-
 
 def log_file_result(scope, user_id, task_id, source_id, message_id, filename, result, reason=None):
     status = str(result).upper()
