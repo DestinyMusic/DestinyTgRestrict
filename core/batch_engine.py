@@ -154,12 +154,12 @@ async def start_task_final(client: Client, message_context: Message, task_data: 
             allowed_types=task_snapshot.get("allowed_types"),
             include_keywords=task_snapshot.get("include_keywords"),
             exclude_keywords=task_snapshot.get("exclude_keywords"),
-            cleanup_keywords=task_snapshot.get("cleanup_keywords"), # 🟢 NEW
+            cleanup_keywords=task_snapshot.get("cleanup_keywords"), # 🟢 ADDED THIS
             thumb_file_id=task_snapshot.get("thumb_file_id"),
             thumb_b64=task_snapshot.get("thumb_b64"),
         )
     )   
-
+    
 async def handle_public_unrestricted(client: Client, acc, chatid: str, msgid: int, dest_chat_id, dest_thread_id, user_id, task_uuid, filter_thread_id, allowed_types, delay=3, pre_fetched_msg=None):
     """Fast-Path exclusively for Public Unrestricted links. Supports Albums."""
     
