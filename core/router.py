@@ -536,7 +536,7 @@ async def process_internal_metadata(file_path, cleanup_tags):
         needs_change = False
         
         # --- PREPARE COMMANDS FOR BOTH ENGINES ---
-        ffmpeg_args = ["ffmpeg", "-y", "-i", str(file_path), "-map", "0", "-c", "copy"]
+        ffmpeg_args = ["ffmpeg", "-y", "-i", str(file_path), "-map", "0", "-c", "copy", "-map_metadata", "0"]
         mkvprop_args = ["mkvpropedit", str(file_path)]
 
         # 2. Clean Global File Tags
@@ -551,8 +551,24 @@ async def process_internal_metadata(file_path, cleanup_tags):
                         mkvprop_args.extend(["--edit", "info", "--set", f"title={cleaned_val}"])
 
         # 3. Clean Individual Track Tags (Audio, Video, Subtitles)
+        v_idx, a_idx, s_idx = 1, 1, 1
         for s in info.get("streams", []):
             idx = s.get("index")
+            codec_type = s.get("codec_type")
+
+            # 🟢 FIX: Generate absolute MKV Track IDs (v1, a1, s1) to prevent FFprobe mismatch
+            if codec_type == "video":
+                mkv_tid = f"v{v_idx}"
+                v_idx += 1
+            elif codec_type == "audio":
+                mkv_tid = f"a{a_idx}"
+                a_idx += 1
+            elif codec_type == "subtitle":
+                mkv_tid = f"s{s_idx}"
+                s_idx += 1
+            else:
+                mkv_tid = None
+
             stream_tags = s.get("tags", {})
             for k, v in stream_tags.items():
                 if k.lower() in ["title", "handler_name", "language"]:
@@ -560,11 +576,11 @@ async def process_internal_metadata(file_path, cleanup_tags):
                     if cleaned_val != v:
                         needs_change = True
                         ffmpeg_args.extend([f"-metadata:s:{idx}", f"{k}={cleaned_val}"])
-                        if k.lower() in ["title", "handler_name"]:
-                            # mkvpropedit uses 1-based track indexing (FFprobe index + 1)
-                            mkvprop_args.extend(["--edit", f"track:@{idx + 1}", "--set", f"name={cleaned_val}"])
-                        elif k.lower() == "language":
-                            mkvprop_args.extend(["--edit", f"track:@{idx + 1}", "--set", f"language={cleaned_val}"])
+                        if mkv_tid:
+                            if k.lower() in ["title", "handler_name"]:
+                                mkvprop_args.extend(["--edit", f"track:{mkv_tid}", "--set", f"name={cleaned_val}"])
+                            elif k.lower() == "language":
+                                mkvprop_args.extend(["--edit", f"track:{mkv_tid}", "--set", f"language={cleaned_val}"])
 
         if not needs_change:
             return
@@ -573,7 +589,6 @@ async def process_internal_metadata(file_path, cleanup_tags):
         is_mkv = ext.endswith(('.mkv', '.webm'))
         mkvprop_success = False
 
-        # Phase A: Try MKVPropEdit First (Instant, In-Place Editing)
         if is_mkv:
             try:
                 proc_mkv = await asyncio.create_subprocess_exec(*mkvprop_args, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
@@ -583,7 +598,6 @@ async def process_internal_metadata(file_path, cleanup_tags):
             except Exception:
                 pass
 
-        # Phase B: Fallback to FFmpeg if MKVPropEdit failed, or if it is an MP4/M4A
         if not mkvprop_success:
             temp_out = str(file_path) + ".tmp" + Path(file_path).suffix
             ffmpeg_args.append(str(temp_out))
@@ -598,8 +612,7 @@ async def process_internal_metadata(file_path, cleanup_tags):
                     os.remove(temp_out)
 
     except Exception as e:
-        pass # Silently proceed so the upload doesn't crash if metadata engines fail
-
+        pass 
 
 async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_chat_id, dest_thread_id, msg, msg_type, index, total_count, status_message, delay, user_id, task_uuid, header_text):
     
@@ -1051,4 +1064,3 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
                 shutil.rmtree(task_folder_path)
         except Exception: pass
         gc.collect()
-        
