@@ -3839,8 +3839,8 @@
             if (video) video.playbackRate = parseFloat(speed);
         }
 
-        // 🟢 FIX: Pass the timeOffset so Fast-Seeked subtitles mathematically align with the video perfectly
-        function parseWebVTT(text, timeOffset = 0) {
+        // 🟢 FIX: Removed timeOffset parameter. Subtitles are now parsed using strictly absolute timestamps.
+        function parseWebVTT(text) {
             if (!text) return [];
             const cues = [];
             const lines = String(text).replace(/\r/g, '').split('\n');
@@ -3851,8 +3851,6 @@
                     const timeParts = lines[i].split('-->');
                     const start = vttTimeToSeconds(timeParts[0]);
                     
-                    // 🟢 CRITICAL FIX: Removed double backslashes inside Javascript Regex literals! 
-                    // \S+ correctly matches the end timestamp.
                     const endMatch = timeParts[1].trim().match(/^(\S+)(.*)/);
                     const end = endMatch ? vttTimeToSeconds(endMatch[1]) : 0;
                     const settings = endMatch ? endMatch[2].trim() : '';
@@ -3864,7 +3862,6 @@
                         i++;
                     }
                     
-                    // 🟢 CRITICAL FIX: Use real \n newline, not literal text string '\\n'
                     let rawText = payload.join('\n');
                     
                     let isTop = false;
@@ -3872,14 +3869,12 @@
                         isTop = true;
                     }
                     
-                    // 🟢 CRITICAL FIX: Fixed escaping for Advanced SubStation Alpha bracket stripping
                     let cleanText = rawText.replace(/\{[^}]*\}/g, '').trim();
-                    
                     cleanText = cleanText.replace(/<c\.([^>]+)>([^<]+)<\/c>/gi, '<span style="color:$1;">$2</span>');
                     
                     if (cleanText && Number.isFinite(start) && Number.isFinite(end)) {
-                        // 🟢 FIX: Inject the timeOffset into the final cue rendering
-                        cues.push({ start: start + timeOffset, end: end + timeOffset, text: cleanText, isTop: isTop });
+                        // 🟢 FIX: Use raw VTT absolute timestamps to prevent sync drift
+                        cues.push({ start: start, end: end, text: cleanText, isTop: isTop });
                     }
                 } else {
                     i++;
@@ -3933,11 +3928,12 @@
                 // 2. 🟢 CRITICAL FIX: The Blob Splitter
                 // If a file crammed all lyrics into one line, this forces a clean 
                 // line break directly in front of every [mm:ss.xx] timestamp!
-                normalizedText = normalizedText.replace(/(\[\d{2}:\d{2}\.\d{2,3}\])/g, '\n$1');
+                normalizedText = normalizedText.replace(/(\[\d{2,3}:\d{2}(?:\.\d{2,3})?\])/g, '\n$1');
                 
                 const lines = normalizedText.split('\n');
                 const lrcCues = [];
-                const timeRegex = /\[(\d{2}):(\d{2}\.\d{2,3})\](.*)/; // Fixed double slashes
+                // 🟢 FIX: Support 3-digit minutes and optional milliseconds for broader LRC compatibility
+                const timeRegex = /\[(\d{2,3}):(\d{2}(?:\.\d{2,3})?)\](.*)/; 
                 
                 for (let line of lines) {
                     const match = line.match(timeRegex);
@@ -3945,7 +3941,7 @@
                         const min = parseInt(match[1], 10);
                         const sec = parseFloat(match[2]);
                         // Clean up karaoke tags safely
-                        let textContent = match[3].replace(/<[^>]+>/g, '').replace(/\[\d{2}:\d{2}\.\d{2,3}\]/g, '').trim();
+                        let textContent = match[3].replace(/<[^>]+>/g, '').replace(/\[\d{2,3}:\d{2}(?:\.\d{2,3})?\]/g, '').trim();
                         
                         if (textContent) lrcCues.push({ start: min * 60 + sec, text: textContent, isLrc: true });
                     } else if (line.trim() !== '' && !line.startsWith('[')) {
@@ -4099,21 +4095,17 @@
                     if (track) zipParam = `&zip_idx=${track.original_index}`;
                 }
 
-                // 🟢 SPEED FIX: Fetch subtitles starting 30 seconds before your current playback position. 
-                // This guarantees instant loading (under 2 seconds) by bypassing the beginning of the movie.
-                const video = document.getElementById('hidden-video');
-                const currentAbsTime = playerRequiresTranscode ? (playerTimelineOffset + (video?.currentTime||0)) : (video?.currentTime||0);
-                const fetchStart = Math.max(0, currentAbsTime - 30);
-                
-                const url = `/api/subtitles?user_id=${encodeURIComponent(currentUser)}&link=${encodeURIComponent(activeMediaLink)}&index=${encodeURIComponent(activeSubtitleIndex)}${zipParam}&start=${fetchStart}`;
+                // 🟢 SYNC FIX: Do NOT segment subtitles with &start=. 
+                // Fetch the whole file once. This completely eliminates FFmpeg keyframe drift 
+                // and double-counting math errors when seeking!
+                const url = `/api/subtitles?user_id=${encodeURIComponent(currentUser)}&link=${encodeURIComponent(activeMediaLink)}&index=${encodeURIComponent(activeSubtitleIndex)}${zipParam}`;
                 
                 const response = await fetch(url, { signal: subtitleAbortController.signal, cache: 'no-store' });
                 if (!response.ok) throw new Error(`Subtitle server returned ${response.status}`);
 
                 const reader = response.body?.getReader();
                 if (!reader) {
-                    // 🟢 RESTORED: Pass fetchStart back so JS aligns the text mathematically
-                    subtitleCues = parseWebVTT(await response.text(), fetchStart); 
+                    subtitleCues = parseWebVTT(await response.text()); 
                     renderCurrentSubtitle();
                     return;
                 }
@@ -4129,8 +4121,7 @@
                     const blocks = buffer.split(/\n\s*\n/);
                     buffer = blocks.pop() || '';
                     for (const block of blocks) {
-                        // 🟢 RESTORED: Pass fetchStart here
-                        const cues = parseWebVTT(block + '\n\n', fetchStart); 
+                        const cues = parseWebVTT(block + '\n\n'); 
                         if (cues.length) subtitleCues.push(...cues);
                     }
                     subtitleCues.sort((a, b) => a.start - b.start);
@@ -4139,8 +4130,7 @@
 
                 buffer += decoder.decode();
                 if (buffer.trim()) {
-                    // 🟢 RESTORED: Pass fetchStart here
-                    const cues = parseWebVTT(buffer + '\n\n', fetchStart); 
+                    const cues = parseWebVTT(buffer + '\n\n'); 
                     if (cues.length) subtitleCues.push(...cues);
                 }
                 subtitleCues.sort((a, b) => a.start - b.start);
