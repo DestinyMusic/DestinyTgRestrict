@@ -210,9 +210,6 @@ def clean_media_text(value: str, custom_tags=None) -> str:
     
     global_tags = CLEANUP_TAGS if 'CLEANUP_TAGS' in globals() else []
     all_tags = list(global_tags) + list(custom_tags or [])
-    
-    # 🟢 CRITICAL FIX: Sort tags by length (longest first)
-    # This prevents short tags (like "@anime") from partially chopping long tags (like "@Animee_4u")
     all_tags.sort(key=len, reverse=True)
     
     for tag in all_tags:
@@ -220,9 +217,11 @@ def clean_media_text(value: str, custom_tags=None) -> str:
         pattern = rf"(?i)\s*{re.escape(str(tag))}\s*"
         text = re.sub(pattern, " ", text)
         
-    text = re.sub(r"^[ \t\-~_]+", "", text)
-    text = re.sub(r"[ \t\-~_]+(\.[a-zA-Z0-9]+)$", r"\1", text)
-    text = re.sub(r"[ \t\-~_]+$", "", text)
+    # 🟢 MAGIC FIX: Erase stray hyphens, spaces, and weird unicode symbols (°, ‧, ×) left behind
+    garbage = r" \t\-~_°‧×|"
+    text = re.sub(rf"^[{garbage}]+", "", text) # Removes from the very beginning
+    text = re.sub(rf"[{garbage}]+(\.[a-zA-Z0-9]+)$", r"\1", text) # Removes right before the file extension
+    text = re.sub(rf"[{garbage}]+$", "", text) # Removes from the very end
     
     text = re.sub(r"[ \t]{2,}", " ", text)
     text = re.sub(r"[ \t]+([,.;!?])", r"\1", text)
