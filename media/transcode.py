@@ -75,11 +75,18 @@ async def _api_stream_handler(request):
             
             filename = str(getattr(media, "file_name", "") or "").lower()
             mime_type = getattr(media, "mime_type", "video/mp4") or "video/mp4"
-            actual_url = f"http://127.0.0.1:{PORT}/api/tg_stream?user_id={user_id}&chat_id={chat_id}&msg_id={msg_id}"
+            stream_params = {"chat_id": chat_id, "msg_id": msg_id}
             if msg_range:
-                actual_url += f"&range={msg_range[0]}-{msg_range[1]}"
+                stream_params["range"] = f"{msg_range[0]}-{msg_range[1]}"
             if zip_idx:
-                actual_url += f"&zip_idx={zip_idx}"
+                stream_params["zip_idx"] = zip_idx
+            signed_path = _build_signed_stream_url(
+                "/api/tg_stream",
+                stream_params,
+                user_id,
+                request["web_session_id"],
+            )
+            actual_url = f"http://127.0.0.1:{PORT}{signed_path}"
             
             direct_stream_url = actual_url
         else:
@@ -91,9 +98,16 @@ async def _api_stream_handler(request):
 
             # Loopback URL for FFmpeg to guarantee auth cookies and range compliance
             # 🟢 CRITICAL FIX: Pass 'resolved_cdn' instead of 'link' to skip the HTML page and strip trailing garbage!
-            actual_url = f"http://127.0.0.1:{PORT}/api/direct_stream?user_id={user_id}&url={quote(resolved_cdn, safe='')}"
+            stream_params = {"url": resolved_cdn}
             if zip_idx:
-                actual_url += f"&zip_idx={zip_idx}"
+                stream_params["zip_idx"] = zip_idx
+            signed_path = _build_signed_stream_url(
+                "/api/direct_stream",
+                stream_params,
+                user_id,
+                request["web_session_id"],
+            )
+            actual_url = f"http://127.0.0.1:{PORT}{signed_path}"
             direct_stream_url = actual_url
     except Exception as exc:
         return web.Response(status=502, text=f"Source resolution error: {exc}")

@@ -63,6 +63,7 @@ To boot the engine on Hugging Face Spaces, Render, Koyeb, or a similar Docker-ba
 | `/unwatch <id>` | Stop a specific watcher task. |
 | `/watchers` | Open interactive menu managing all active surveillance watchers. |
 | `/cancel` | Stop a specific active batch download safely. |
+| `/queue` | View active and queued tasks and cancel queued jobs. |
 | `/chats` | Dialog Explorer: Extract Chat, Group, Bot, and Channel IDs. |
 
 ### 🔴 Admin & System Commands

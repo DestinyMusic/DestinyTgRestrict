@@ -9,10 +9,17 @@ except ImportError:
 import hashlib
 import hmac
 import secrets
+from urllib.parse import urlencode
 
 WEB_AUTH_COOKIE = "web_auth"
 WEB_SESSION_TTL = 12 * 60 * 60
+STREAM_LINK_TTL = 12 * 60 * 60
 PASSWORD_RESET_REQUESTS = {}
+STREAM_AUTH_PATHS = {
+    "/api/stream": {"link", "quality", "audio_idx", "audio_codec", "start", "transcode", "force_x264", "hevc", "ac3", "opus", "flac", "vp9", "av1", "zip_idx", "external"},
+    "/api/tg_stream": {"link", "chat_id", "msg_id", "range", "zip_idx"},
+    "/api/direct_stream": {"url", "zip_idx"},
+}
 PUBLIC_AUTH_PATHS = {
     "/api/auth/login",
     "/api/auth/forgot",
@@ -41,6 +48,49 @@ def _verify_web_password(password, stored_password):
     return hmac.compare_digest(password, stored_password)
 
 
+def _stream_signature(path, params, expires):
+    canonical_query = urlencode(sorted(params.items()))
+    message = f"{path}\n{canonical_query}\n{expires}".encode("utf-8")
+    return hmac.new(API_HASH.encode("utf-8"), message, hashlib.sha256).hexdigest()
+
+
+def _build_signed_stream_url(path, params, user_id, session_id):
+    if path not in STREAM_AUTH_PATHS or not isinstance(params, dict):
+        raise ValueError("Unsupported stream route")
+    if not isinstance(session_id, str) or not session_id:
+        raise ValueError("Missing web session")
+    clean_params = {}
+    for key, value in params.items():
+        if key not in STREAM_AUTH_PATHS[path] or not isinstance(value, (str, int, float, bool)):
+            raise ValueError("Invalid stream parameter")
+        clean_params[key] = str(value)
+    clean_params["user_id"] = str(int(user_id))
+    clean_params["session_id"] = session_id
+    expires = str(int(time.time()) + STREAM_LINK_TTL)
+    signature = _stream_signature(path, clean_params, expires)
+    query = urlencode(sorted(clean_params.items()))
+    return f"{path}?{query}&expires={expires}&sig={signature}"
+
+
+def _get_signed_stream_user(request):
+    try:
+        expires = int(request.query.get("expires", "0"))
+        user_id = int(request.query.get("user_id", "0"))
+        session_id = request.query.get("session_id", "")
+    except (TypeError, ValueError):
+        return None
+    now = int(time.time())
+    if expires <= now or expires > now + STREAM_LINK_TTL:
+        return None
+    params = {key: value for key, value in request.query.items() if key not in {"expires", "sig"}}
+    expected = _stream_signature(request.path, params, str(expires))
+    if not hmac.compare_digest(expected, request.query.get("sig", "")):
+        return None
+    if not re.fullmatch(r"[a-f0-9]{64}", session_id):
+        return None
+    return user_id, session_id
+
+
 @web.middleware
 async def _web_auth_middleware(request, handler):
     if not request.path.startswith("/api/") or request.path in PUBLIC_AUTH_PATHS:
@@ -56,18 +106,36 @@ async def _web_auth_middleware(request, handler):
         payload = {}
 
     token = request.cookies.get(WEB_AUTH_COOKIE, "")
-    if not token:
+    if token:
+        user_doc = await db.col.find_one({"$or": [{"web_tokens": token}, {"web_token": token}]})
+        if not user_doc:
+            return web.json_response({"status": "error", "message": "Invalid or expired session."}, status=401)
+        token_expiries = user_doc.get("web_token_expiries", {})
+        token_expiry = token_expiries.get(token) if isinstance(token_expiries, dict) else None
+        if not isinstance(token_expiry, (int, float)) or token_expiry <= time.time():
+            return web.json_response({"status": "error", "message": "Invalid or expired session."}, status=401)
+        user_id = int(user_doc["id"])
+        session_id = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    elif request.path in STREAM_AUTH_PATHS:
+        signed_identity = _get_signed_stream_user(request)
+        if signed_identity is None:
+            return web.json_response({"status": "error", "message": "Invalid or expired stream link."}, status=401)
+        user_id, session_id = signed_identity
+        user_doc = await db.col.find_one({"id": user_id})
+        if not user_doc:
+            return web.json_response({"status": "error", "message": "Invalid or expired stream link."}, status=401)
+        token_expiries = user_doc.get("web_token_expiries", {})
+        active_session = any(
+            hmac.compare_digest(hashlib.sha256(active_token.encode("utf-8")).hexdigest(), session_id)
+            and isinstance(expiry, (int, float))
+            and expiry > time.time()
+            for active_token, expiry in token_expiries.items()
+        ) if isinstance(token_expiries, dict) else False
+        if not active_session:
+            return web.json_response({"status": "error", "message": "Invalid or expired stream link."}, status=401)
+    else:
         return web.json_response({"status": "error", "message": "Authentication required."}, status=401)
 
-    user_doc = await db.col.find_one({"$or": [{"web_tokens": token}, {"web_token": token}]})
-    if not user_doc:
-        return web.json_response({"status": "error", "message": "Invalid or expired session."}, status=401)
-    token_expiries = user_doc.get("web_token_expiries", {})
-    token_expiry = token_expiries.get(token) if isinstance(token_expiries, dict) else None
-    if not isinstance(token_expiry, (int, float)) or token_expiry <= time.time():
-        return web.json_response({"status": "error", "message": "Invalid or expired session."}, status=401)
-
-    user_id = int(user_doc["id"])
     if not await db.is_user_approved(user_id):
         return web.json_response({"status": "error", "message": "Account access is not approved."}, status=403)
 
@@ -85,6 +153,7 @@ async def _web_auth_middleware(request, handler):
 
     request["authenticated_user_id"] = user_id
     request["web_auth_token"] = token
+    request["web_session_id"] = session_id
     return await handler(request)
 
 
@@ -248,6 +317,23 @@ async def _api_logout_handler(request):
     response = web.json_response({"status": "success"})
     response.del_cookie(WEB_AUTH_COOKIE, path="/api")
     return response
+
+
+async def _api_stream_link_handler(request):
+    try:
+        data = await request.json()
+        path = data.get("path")
+        params = data.get("params")
+        user_id = request["authenticated_user_id"]
+        if path not in STREAM_AUTH_PATHS or not isinstance(params, dict):
+            return web.json_response({"status": "error", "message": "Unsupported stream request."}, status=400)
+        signed_url = _build_signed_stream_url(path, params, user_id, request["web_session_id"])
+        return web.json_response({"status": "success", "url": signed_url, "expires_in": STREAM_LINK_TTL})
+    except (TypeError, ValueError):
+        return web.json_response({"status": "error", "message": "Invalid stream request."}, status=400)
+    except Exception:
+        return web.json_response({"status": "error", "message": "Unable to create stream link."}, status=500)
+
 
 async def _api_password_handler(request):
     try:
@@ -2478,6 +2564,7 @@ async def start_koyeb_health_check(host: str = "0.0.0.0"):
     app_web.router.add_post("/api/auth/forgot", _api_forgot_password_handler)
     app_web.router.add_post("/api/auth/reset", _api_reset_password_handler)
     app_web.router.add_post("/api/auth/logout", _api_logout_handler)
+    app_web.router.add_post("/api/auth/stream-link", _api_stream_link_handler)
     app_web.router.add_post("/api/auth/password", _api_password_handler)
     app_web.router.add_get("/api/settings/tokens", _api_get_worker_tokens)
     app_web.router.add_post("/api/settings/tokens", _api_save_worker_tokens)

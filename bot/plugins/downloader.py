@@ -134,7 +134,8 @@ async def send_cancel(client: Client, message: Message):
             return
 
         user_tasks = ACTIVE_PROCESSES.get(user_id, {})
-        if not user_tasks:
+        queued_tasks = TASK_QUEUE.get(user_id, [])
+        if not user_tasks and not queued_tasks:
             await message.reply(
                 "✅ **Nothing to cancel!**\n\n"
                 "You currently have no active downloads, setups, or background tasks running.\n\n"
@@ -146,17 +147,57 @@ async def send_cancel(client: Client, message: Message):
         for tid, info in list(user_tasks.items()):
             label = info.get("item", "Task")
             label_short = (label[:26] + "...") if len(label) > 29 else label
-            buttons.append([InlineKeyboardButton(f"🛑 {label_short}", callback_data=f"cancel_task:{tid}")])
+            if len(buttons) < 25:
+                buttons.append([InlineKeyboardButton(f"🛑 {label_short}", callback_data=f"cancel_task:{tid}")])
+        if len(user_tasks) > 25:
+            buttons.append([InlineKeyboardButton(f"ℹ️ {len(user_tasks) - 25} more active tasks", callback_data="close_menu")])
+        for position, task in enumerate(queued_tasks, 1):
+            task.setdefault("queue_id", uuid.uuid4().hex[:10])
+            label = task.get("data", {}).get("link", "Queued task")
+            label_short = (label[:26] + "...") if len(label) > 29 else label
+            if len(buttons) < 25:
+                buttons.append([InlineKeyboardButton(f"⏳ Queue #{position}: {label_short}", callback_data=f"cancel_queued:{task['queue_id']}")])
         buttons.append([InlineKeyboardButton("🛑 Cancel ALL My Tasks", callback_data="cancel_all")])
         buttons.append([InlineKeyboardButton("❌ Close Menu", callback_data="close_menu")])
 
         await message.reply(
-            "**🚫 Cancel Tasks**\n\nSelect the task you want to cancel:",
+            "**🚫 Cancel Tasks**\n\nSelect an active or queued task to cancel:",
             reply_markup=InlineKeyboardMarkup(buttons),
             quote=True
         )
     except FloodWait as e:
         logger.warning(f"Blocked /cancel menu due to FloodWait: {e.value}s")
+
+
+@app.on_message(filters.command(["queue"]) & (filters.private | filters.group))
+async def queue_handler(client: Client, message: Message):
+    user_id = message.from_user.id
+    user_tasks = ACTIVE_PROCESSES.get(user_id, {})
+    queued_tasks = TASK_QUEUE.get(user_id, [])
+    if not user_tasks and not queued_tasks:
+        return await message.reply("✅ You have no active or queued tasks.")
+
+    lines = ["<b>📋 Your Tasks</b>"]
+    buttons = []
+    for task_id, info in user_tasks.items():
+        label = html.escape(str(info.get("item", "Active task"))[:90])
+        lines.append(f"\n<b>▶ Active</b> <code>{task_id[:8]}</code> · {label}")
+        if len(buttons) < 25:
+            buttons.append([InlineKeyboardButton(f"🛑 Cancel active: {str(info.get('item', 'Task'))[:35]}", callback_data=f"cancel_task:{task_id}")])
+
+    for position, task in enumerate(queued_tasks, 1):
+        task.setdefault("queue_id", uuid.uuid4().hex[:10])
+        label = html.escape(str(task.get("data", {}).get("link", "Queued task"))[:90])
+        if position <= 25:
+            lines.append(f"\n<b>⏳ Queue #{position}</b> · {label}")
+        if len(buttons) < 25:
+            buttons.append([InlineKeyboardButton(f"✖ Remove queue #{position}", callback_data=f"cancel_queued:{task['queue_id']}")])
+    if len(queued_tasks) > 25:
+        lines.append(f"\n…and {len(queued_tasks) - 25} more queued tasks.")
+
+    if user_tasks or queued_tasks:
+        buttons.append([InlineKeyboardButton("🛑 Cancel all active and queued", callback_data="cancel_all")])
+    await message.reply("\n".join(lines), parse_mode=enums.ParseMode.HTML, reply_markup=InlineKeyboardMarkup(buttons))
     
 @app.on_callback_query(filters.regex(r"^cancel_") | filters.regex(r"^cancel_task:"))
 async def cancel_callback(client: Client, query):
@@ -179,9 +220,25 @@ async def cancel_callback(client: Client, query):
         except Exception: pass
         return
 
+    if data.startswith("cancel_queued:"):
+        queue_id = data.split(":", 1)[1]
+        queued_tasks = TASK_QUEUE.get(user_id, [])
+        queued_task = next((task for task in queued_tasks if task.get("queue_id") == queue_id), None)
+        if not queued_task:
+            await query.answer("Queued task not found or already started.", show_alert=True)
+            return
+        queued_tasks.remove(queued_task)
+        if not queued_tasks:
+            TASK_QUEUE.pop(user_id, None)
+        await query.answer("Queued task removed.")
+        try: await query.message.edit("✅ Queued task removed. Use /queue to refresh the task list.")
+        except Exception: pass
+        return
+
     if data == "cancel_all":
         user_tasks = list(ACTIVE_PROCESSES.get(user_id, {}).keys())
-        if not user_tasks:
+        queued_count = len(TASK_QUEUE.pop(user_id, []))
+        if not user_tasks and not queued_count:
             await query.answer("No active tasks to cancel.", show_alert=True)
             try: await query.message.delete()
             except: pass
@@ -195,13 +252,14 @@ async def cancel_callback(client: Client, query):
         try: await db.db.active_tasks.delete_many({"user_id": user_id})
         except: pass
         
-        cancel_all_text = (
-            "🛑 **Cancelling ALL Active Tasks...**\n\n"
-            "**What is happening?**\n"
-            "I am intercepting all your active downloads and uploads. It may take a few seconds to safely sever the TCP connections to Telegram's servers.\n\n"
-            "🛡 **Why is this useful?**\n"
-            "Cancelling heavy, stuck, or accidental batches frees up the server's bandwidth and clears your queue so you can start fresh."
-        )
+        if user_tasks:
+            cancel_all_text = (
+                "🛑 **Cancelling ALL Active Tasks...**\n\n"
+                f"Removed `{queued_count}` queued task(s).\n\n"
+                "Active downloads will stop after their current operation."
+            )
+        else:
+            cancel_all_text = f"✅ Removed `{queued_count}` queued task(s). No active tasks were running."
         try: await query.message.edit(cancel_all_text)
         except Exception: pass
         return

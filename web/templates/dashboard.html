@@ -4425,30 +4425,42 @@
             return base;
         }
 
-        function openExternalPlayer(appType) {
+        async function openExternalPlayer(appType) {
             if (!activeMediaLink) return alert("Please load a stream first!");
             
-            // 🟢 CRITICAL FIX: Build a clean proxy URL to bypass Terabox CDN blocks in external players
-            let proxyUrl = "";
+            let path;
+            const params = {};
             if (playerSourceKind === 'tg') {
-                proxyUrl = `/api/tg_stream?user_id=${encodeURIComponent(currentUser)}&link=${encodeURIComponent(activeMediaLink)}`;
+                path = '/api/tg_stream';
+                params.link = activeMediaLink;
             } else {
-                proxyUrl = `/api/direct_stream?user_id=${encodeURIComponent(currentUser)}&url=${encodeURIComponent(activeMediaLink)}`;
+                path = '/api/direct_stream';
+                params.url = activeMediaLink;
             }
             
             if (window.globalPlaylist && window.globalPlaylist.length > 0) {
                 const track = window.globalPlaylist[window.currentPlayIndex];
-                if (track) proxyUrl += `&zip_idx=${track.original_index}`;
+                if (track) params.zip_idx = String(track.original_index);
             }
 
-            let streamUrl = window.location.origin + proxyUrl;
+            let linkResponse;
+            try {
+                linkResponse = await fetch('/api/auth/stream-link', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({path, params})
+                });
+            } catch (error) {
+                return alert("Could not create the external-player link.");
+            }
+            const linkData = await linkResponse.json();
+            if (!linkResponse.ok || linkData.status !== 'success') {
+                return alert(linkData.message || "Could not create the external-player link.");
+            }
+
+            const streamUrl = new URL(linkData.url, window.location.origin).href;
             
             let title = document.getElementById('cinema-title')?.innerText || "Media Stream";
-            let safeTitle = encodeURIComponent(title.replace(/[^a-zA-Z0-9.\-_ ()]/g, '_'));
-            
-            if (!streamUrl.includes('&/')) {
-                streamUrl += `&/${safeTitle}`;
-            }
 
             const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
             const isAndroid = /Android/.test(navigator.userAgent);

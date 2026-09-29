@@ -17,6 +17,21 @@ def _is_tg_link(link):
     if not link: return False
     return bool(re.search(r"^(?:https?://)?(?:www\.)?(?:t\.me|telegram\.me)\/", str(link).strip().lower()))
 
+
+def _google_drive_file_id(url):
+    from urllib.parse import parse_qs, unquote, urlsplit
+
+    parsed = urlsplit(str(url or "").strip())
+    if (parsed.hostname or "").lower() not in {"drive.google.com", "drive.usercontent.google.com"}:
+        return None
+
+    path_match = re.search(r"/file/d/([^/]+)", parsed.path)
+    file_id = unquote(path_match.group(1)) if path_match else parse_qs(parsed.query).get("id", [None])[0]
+    if not file_id or not re.fullmatch(r"[A-Za-z0-9_-]+", file_id):
+        return None
+    return file_id
+
+
 DIRECT_URL_CACHE = {}
 DIRECT_URL_CACHE_TTL = 900
 DIRECT_RESOLVE_LOCKS = defaultdict(asyncio.Lock)
@@ -124,9 +139,8 @@ async def resolve_direct_link(url):
             except Exception: pass
 
         if result == original:
-            gdrive_match = re.search(r"drive\.google\.com/(?:file/d/|open\?id=|uc\?id=)([a-zA-Z0-9_-]+)", original)
-            if gdrive_match:
-                file_id = gdrive_match.group(1)
+            file_id = _google_drive_file_id(original)
+            if file_id:
                 scan_url = f"https://drive.google.com/uc?id={file_id}&export=download"
                 try:
                     async with session.get(scan_url, allow_redirects=True) as r:

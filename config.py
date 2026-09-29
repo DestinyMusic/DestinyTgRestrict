@@ -85,6 +85,7 @@ Welcome! This bot helps you download restricted files and auto-forward messages.
 • <code>/start</code> - <b>Wake Up & Welcome:</b> Greets you and registers your account.
 • <code>/help</code> - <b>The Master Guide:</b> Opens this exact menu.
 • <code>/cancel</code> - <b>Stop Everything:</b> Cleanly cancels any active setup process or massive downloading task.
+• <code>/queue</code> - <b>Task Queue:</b> View active and queued tasks, then cancel individual queued jobs.
 
 <b>📥 DOWNLOADING & FORWARDING</b>
 • <code>/dl</code> - <b>The Smart Downloader:</b> Manually downloads/copies media from a link. 

@@ -89,7 +89,10 @@ async def start_task_final(client: Client, message_context: Message, task_data: 
         return
 
     if user_id not in ADMINS and batch_temp.ACTIVE_TASKS[user_id] >= MAX_CONCURRENT_TASKS_PER_USER:
+        queue_id = uuid.uuid4().hex[:10]
         TASK_QUEUE[user_id].append({
+            "queue_id": queue_id,
+            "queued_at": time.time(),
             "client": client,
             "message": message_context,
             "data": dict(task_data), 
@@ -98,7 +101,7 @@ async def start_task_final(client: Client, message_context: Message, task_data: 
         position = len(TASK_QUEUE[user_id])
         await message_context.reply(
             f"⏳ **Added to Queue:** Position #{position}\n"
-            f"Task will start automatically when your current tasks finish.",
+            f"Task will start automatically when your current tasks finish. Use `/queue` to view or cancel queued tasks.",
             quote=True
         )
         return
