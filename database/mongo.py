@@ -127,11 +127,12 @@ class Database:
         allowed_types=None,
         include_keywords=None,
         exclude_keywords=None,
+        cleanup_keywords=None, # 🟢 NEW
         thumb_file_id=None,
         thumb_b64=None,
         dashboard_chat=None,
         dashboard_msg=None,
-        last_msg_id=0     # 🟢 ADD THIS PARAMETER
+        last_msg_id=0
     ):
         if allowed_types is None:
             allowed_types = ["Video", "Document"]
@@ -139,6 +140,8 @@ class Database:
             include_keywords = []
         if exclude_keywords is None:
             exclude_keywords = []
+        if cleanup_keywords is None:
+            cleanup_keywords = [] # 🟢 NEW
 
         query = {
             "user_id": int(user_id),
@@ -161,6 +164,7 @@ class Database:
             "allowed_types": allowed_types,
             "include_keywords": include_keywords,
             "exclude_keywords": exclude_keywords,
+            "cleanup_keywords": cleanup_keywords, # 🟢 NEW
             "thumb_file_id": thumb_file_id,
             "thumb_b64": thumb_b64,
             "dashboard_chat": dashboard_chat,
@@ -217,7 +221,7 @@ class Database:
     # ==========================================
     # --- BATCH TASKS (AUTO-RESUME) METHODS ---
     # ==========================================
-    async def add_active_task(self, task_uuid, user_id, link, dest_chat_id, dest_thread_id, dest_title, delay, is_restricted, allowed_types, source_title, current_msg_id, to_id, include_keywords=None, exclude_keywords=None, thumb_file_id=None, thumb_b64=None):
+    async def add_active_task(self, task_uuid, user_id, link, dest_chat_id, dest_thread_id, dest_title, delay, is_restricted, allowed_types, source_title, current_msg_id, to_id, include_keywords=None, exclude_keywords=None, cleanup_keywords=None, thumb_file_id=None, thumb_b64=None):
         task_data = {
             "task_uuid": task_uuid, "user_id": user_id, "link": link,
             "dest_chat_id": dest_chat_id, "dest_thread_id": dest_thread_id,
@@ -226,6 +230,7 @@ class Database:
             "current_msg_id": current_msg_id, "to_id": to_id,
             "include_keywords": include_keywords or [],
             "exclude_keywords": exclude_keywords or [],
+            "cleanup_keywords": cleanup_keywords or [], # 🟢 NEW
             "thumb_file_id": thumb_file_id,
             "thumb_b64": thumb_b64,
         }
