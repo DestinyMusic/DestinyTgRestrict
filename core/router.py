@@ -539,6 +539,9 @@ async def process_internal_metadata(file_path, cleanup_tags):
         ffmpeg_args = ["ffmpeg", "-y", "-i", str(file_path), "-map", "0", "-c", "copy", "-map_metadata", "0"]
         mkvprop_args = ["mkvpropedit", str(file_path)]
 
+        mkv_global_edits = []
+        mkv_track_edits = {} 
+
         # 2. Clean Global File Tags
         format_tags = info.get("format", {}).get("tags", {})
         for k, v in format_tags.items():
@@ -548,7 +551,10 @@ async def process_internal_metadata(file_path, cleanup_tags):
                     needs_change = True
                     ffmpeg_args.extend(["-metadata", f"{k}={cleaned_val}"])
                     if k.lower() == "title":
-                        mkvprop_args.extend(["--edit", "info", "--set", f"title={cleaned_val}"])
+                        if cleaned_val:
+                            mkv_global_edits.extend(["--set", f"title={cleaned_val}"])
+                        else:
+                            mkv_global_edits.extend(["--delete", "title"])
 
         # 3. Clean Individual Track Tags (Audio, Video, Subtitles)
         v_idx, a_idx, s_idx = 1, 1, 1
@@ -556,7 +562,7 @@ async def process_internal_metadata(file_path, cleanup_tags):
             idx = s.get("index")
             codec_type = s.get("codec_type")
 
-            # 🟢 FIX: Generate absolute MKV Track IDs (v1, a1, s1) to prevent FFprobe mismatch
+            # Create absolute MKV Track IDs (v1, a1, s1)
             if codec_type == "video":
                 mkv_tid = f"v{v_idx}"
                 v_idx += 1
@@ -570,20 +576,53 @@ async def process_internal_metadata(file_path, cleanup_tags):
                 mkv_tid = None
 
             stream_tags = s.get("tags", {})
+            name_processed = False
+            lang_processed = False
+            
             for k, v in stream_tags.items():
-                if k.lower() in ["title", "handler_name", "language"]:
+                k_lower = k.lower()
+                if k_lower in ["title", "handler_name", "language"]:
+                    
+                    # Prevent duplicate track name edits for MKVPropEdit
+                    if k_lower in ["title", "handler_name"]:
+                        if name_processed: continue
+                        name_processed = True
+                        
+                    if k_lower == "language":
+                        if lang_processed: continue
+                        lang_processed = True
+
                     cleaned_val = clean_media_text(v, custom_tags=cleanup_tags)
                     if cleaned_val != v:
                         needs_change = True
                         ffmpeg_args.extend([f"-metadata:s:{idx}", f"{k}={cleaned_val}"])
+                        
                         if mkv_tid:
-                            if k.lower() in ["title", "handler_name"]:
-                                mkvprop_args.extend(["--edit", f"track:{mkv_tid}", "--set", f"name={cleaned_val}"])
-                            elif k.lower() == "language":
-                                mkvprop_args.extend(["--edit", f"track:{mkv_tid}", "--set", f"language={cleaned_val}"])
+                            if mkv_tid not in mkv_track_edits:
+                                mkv_track_edits[mkv_tid] = []
+                                
+                            if k_lower in ["title", "handler_name"]:
+                                if cleaned_val:
+                                    mkv_track_edits[mkv_tid].extend(["--set", f"name={cleaned_val}"])
+                                else:
+                                    mkv_track_edits[mkv_tid].extend(["--delete", "name"])
+                            elif k_lower == "language":
+                                if cleaned_val:
+                                    mkv_track_edits[mkv_tid].extend(["--set", f"language={cleaned_val}"])
+                                else:
+                                    mkv_track_edits[mkv_tid].extend(["--delete", "language"])
 
         if not needs_change:
             return
+
+        # Assemble final MKVPropEdit Command cleanly
+        if mkv_global_edits:
+            mkvprop_args.extend(["--edit", "info"])
+            mkvprop_args.extend(mkv_global_edits)
+            
+        for tid, edits in mkv_track_edits.items():
+            mkvprop_args.extend(["--edit", f"track:{tid}"])
+            mkvprop_args.extend(edits)
 
         # 4. EXECUTION WITH FALLBACK ENGINE
         is_mkv = ext.endswith(('.mkv', '.webm'))
@@ -612,7 +651,7 @@ async def process_internal_metadata(file_path, cleanup_tags):
                     os.remove(temp_out)
 
     except Exception as e:
-        pass 
+        pass # Silently proceed so the upload doesn't crash if metadata engines fail
 
 async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_chat_id, dest_thread_id, msg, msg_type, index, total_count, status_message, delay, user_id, task_uuid, header_text):
     
