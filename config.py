@@ -42,7 +42,7 @@ ERROR_MESSAGE = str(os.environ.get("ERROR_MESSAGE", "True")).strip().lower() == 
 WAITING_TIME = int(os.environ.get("WAITING_TIME") or 3)
 CLEANUP_TAGS = tuple(
   tag.strip()
-  for tag in os.environ.get("CLEANUP_TAGS", "@animefile,@anime,encodes - telugu").split(",")
+  for tag in os.environ.get("CLEANUP_TAGS", "").split(",")
   if tag.strip()
 )
 FILENAME_TEMPLATE = os.environ.get("FILENAME_TEMPLATE", "{original}{ext}").strip() or "{original}{ext}"
@@ -140,4 +140,3 @@ These commands are strictly reserved for Bot Admins and Sudo users.
 • <code>/broadcast</code> - <b>Mass Announcements:</b> Reply to a message with this to forward it to EVERY registered user.
 </blockquote>
 ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬✘▬"""
-
