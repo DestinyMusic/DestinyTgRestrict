@@ -682,7 +682,7 @@ async def _api_add_task(request):
                 allowed_types=allowed_types,
                 include_keywords=include_keywords,
                 exclude_keywords=exclude_keywords,
-                cleanup_keywords=cleanup_keywords, # 🟢 NEW
+                cleanup_keywords=cleanup_keywords, # 🟢 ADDED THIS
                 thumb_b64=thumb_b64,
             )
         )
@@ -810,6 +810,7 @@ async def _api_add_watcher(request):
             allowed_types=allowed_types,
             include_keywords=include_keywords,
             exclude_keywords=exclude_keywords,
+            cleanup_keywords=cleanup_keywords, # 🟢 ADDED THIS
             thumb_b64=thumb_b64,
             last_msg_id=last_msg_id
         )
