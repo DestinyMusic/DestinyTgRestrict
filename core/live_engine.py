@@ -34,6 +34,7 @@ async def watcher_worker_loop(wid_str):
             allowed_types = watcher.get("allowed_types", ["Video", "Document"])
             include_keywords = watcher.get("include_keywords", [])
             exclude_keywords = watcher.get("exclude_keywords", [])
+            cleanup_keywords = watcher.get("cleanup_keywords", []) # 🟢 NEW
 
             # Prefer the owner's connected user session for sources it can access;
             # otherwise use the bot. This is only an access-selection fallback.
@@ -291,6 +292,7 @@ async def watcher_worker_loop(wid_str):
                     "source_id": source_id,
                     "include_keywords": include_keywords,
                     "exclude_keywords": exclude_keywords,
+                    "cleanup_keywords": cleanup_keywords, # 🟢 NEW
                     "thumb_file_id": watcher.get("thumb_file_id"),
                     "thumb_b64": watcher.get("thumb_b64"),
                 }
