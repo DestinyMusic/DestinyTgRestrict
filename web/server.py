@@ -171,7 +171,7 @@ def _normalize_keyword_list(value):
 def _normalize_task_thumb_data(value):
     if not value:
         return None
-    if not isinstance(value, str) or len(value) > 2_000_000:
+    if not isinstance(value, str) or len(value) > 30_000_000: # 🟢 INCREASED LIMIT
         raise ValueError("Thumbnail image is too large.")
     import base64
     import io
@@ -180,8 +180,8 @@ def _normalize_task_thumb_data(value):
     encoded = value.split(",", 1)[-1]
     try:
         raw = base64.b64decode(encoded, validate=True)
-        if not raw or len(raw) > 1_000_000:
-            raise ValueError("Thumbnail image is too large.")
+        if not raw:
+            raise ValueError("Invalid thumbnail image.")
         with Image.open(io.BytesIO(raw)) as source:
             image = source.convert("RGB")
             for dimensions in ((320, 320), (256, 256), (160, 160)):
@@ -599,6 +599,7 @@ async def _api_add_task(request):
         allowed_types = [t for t in allowed_types if t in ALL_MSG_TYPES]
         include_keywords = _normalize_keyword_list(data.get("include_keywords"))
         exclude_keywords = _normalize_keyword_list(data.get("exclude_keywords"))
+        cleanup_keywords = _normalize_keyword_list(data.get("cleanup_keywords")) # 🟢 NEW
         try:
             thumb_b64 = _normalize_task_thumb_data(data.get("thumb_b64"))
         except ValueError as exc:
@@ -679,6 +680,7 @@ async def _api_add_task(request):
                 allowed_types=allowed_types,
                 include_keywords=include_keywords,
                 exclude_keywords=exclude_keywords,
+                cleanup_keywords=cleanup_keywords, # 🟢 NEW
                 thumb_b64=thumb_b64,
             )
         )
@@ -712,6 +714,7 @@ async def _api_add_watcher(request):
         allowed_types = [t for t in allowed_types if t in ALL_MSG_TYPES]
         include_keywords = _normalize_keyword_list(data.get("include_keywords"))
         exclude_keywords = _normalize_keyword_list(data.get("exclude_keywords"))
+        cleanup_keywords = _normalize_keyword_list(data.get("cleanup_keywords")) # 🟢 NEW
         try:
             thumb_b64 = _normalize_task_thumb_data(data.get("thumb_b64"))
         except ValueError as exc:
