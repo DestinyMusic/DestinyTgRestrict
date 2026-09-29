@@ -125,12 +125,18 @@ class Database:
         source_title=None,
         dest_title=None,
         allowed_types=None,
+        include_keywords=None,
+        exclude_keywords=None,
         dashboard_chat=None,
         dashboard_msg=None,
         last_msg_id=0     # 🟢 ADD THIS PARAMETER
     ):
         if allowed_types is None:
             allowed_types = ["Video", "Document"]
+        if include_keywords is None:
+            include_keywords = []
+        if exclude_keywords is None:
+            exclude_keywords = []
 
         query = {
             "user_id": int(user_id),
@@ -151,6 +157,8 @@ class Database:
             "source_title": source_title,
             "dest_title": dest_title,
             "allowed_types": allowed_types,
+            "include_keywords": include_keywords,
+            "exclude_keywords": exclude_keywords,
             "dashboard_chat": dashboard_chat,
             "dashboard_msg": dashboard_msg,
             "created_at": datetime.datetime.now()
@@ -205,13 +213,15 @@ class Database:
     # ==========================================
     # --- BATCH TASKS (AUTO-RESUME) METHODS ---
     # ==========================================
-    async def add_active_task(self, task_uuid, user_id, link, dest_chat_id, dest_thread_id, dest_title, delay, is_restricted, allowed_types, source_title, current_msg_id, to_id):
+    async def add_active_task(self, task_uuid, user_id, link, dest_chat_id, dest_thread_id, dest_title, delay, is_restricted, allowed_types, source_title, current_msg_id, to_id, include_keywords=None, exclude_keywords=None):
         task_data = {
             "task_uuid": task_uuid, "user_id": user_id, "link": link,
             "dest_chat_id": dest_chat_id, "dest_thread_id": dest_thread_id,
             "dest_title": dest_title, "delay": delay, "is_restricted": is_restricted,
             "allowed_types": allowed_types, "source_title": source_title,
-            "current_msg_id": current_msg_id, "to_id": to_id
+            "current_msg_id": current_msg_id, "to_id": to_id,
+            "include_keywords": include_keywords or [],
+            "exclude_keywords": exclude_keywords or [],
         }
         await self.db.active_tasks.update_one({"task_uuid": task_uuid}, {"$set": task_data}, upsert=True)
 

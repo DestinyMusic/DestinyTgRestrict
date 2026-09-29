@@ -43,6 +43,14 @@ async def _fetch_and_validate_msg(client, acc, chatid, msgid, user_id, filter_th
     msg_type = get_message_type(msg)
     if not msg_type: return None, None
     if allowed_types is not None and msg_type not in allowed_types: return None, None
+
+    task_info = ACTIVE_PROCESSES.get(user_id, {}).get(task_uuid, {})
+    if not filename_matches_filters(
+        msg,
+        task_info.get("include_keywords"),
+        task_info.get("exclude_keywords"),
+    ):
+        return None, None
     
     # 🟢 FIX: Shield Watchers from Global Cancels
     is_w_task = False
@@ -340,6 +348,7 @@ async def build_rich_caption(file_path, msg_type, msg, override_name=None, overr
             if msg_type == "Audio" and getattr(msg, "audio", None): file_name = getattr(msg.audio, "file_name", "Audio.m4a")
             elif msg_type == "Video" and getattr(msg, "video", None): file_name = getattr(msg.video, "file_name", "Video.mp4")
             elif getattr(msg, "document", None): file_name = getattr(msg.document, "file_name", "File.dat")
+        file_name = clean_media_text(file_name)
         
         if not file_path or not os.path.exists(file_path):
             return None
@@ -447,7 +456,7 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
     elif msg_type == "Photo": original_filename = f"{msgid}.jpg"
     elif msg_type == "Voice": original_filename = f"{msgid}.ogg"
 
-    safe_filename = sanitize_filename(original_filename)
+    safe_filename = build_media_filename(original_filename, msg, index)
     if not safe_filename.strip(): safe_filename = f"{msgid}.dat"
     file_path_to_save = task_folder_path / safe_filename
 
@@ -515,14 +524,16 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
                         log_chat_id, log_topic_id = await get_fallback_log_chat(acc, user_id, bot_id=bot_id)
                         
                         # --- 🟢 RICH CAPTION EXTRACTION ---
-                        custom_cap = await build_rich_caption(file_path, msg_type, msg_fresh)
+                        custom_cap = await build_rich_caption(file_path, msg_type, msg_fresh, override_name=safe_filename)
                         if custom_cap:
                             caption = custom_cap
                             caption_entities = None
                             p_mode = enums.ParseMode.HTML
                         else:
-                            caption = msg_fresh.caption if getattr(msg_fresh, "caption", None) else ""
-                            caption_entities = msg_fresh.caption_entities if getattr(msg_fresh, "caption_entities", None) else None
+                            caption, caption_entities = clean_caption(
+                                msg_fresh.caption,
+                                msg_fresh.caption_entities,
+                            )
                             p_mode = None
 
                         a_dur = getattr(msg_fresh.audio, "duration", 0) if getattr(msg_fresh, "audio", None) else 0
@@ -587,14 +598,16 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
                         except FloodWait: pass
 
                         # --- 🟢 RICH CAPTION EXTRACTION FOR SPLIT PARTS ---
-                        custom_cap = await build_rich_caption(file_path, msg_type, msg_fresh)
+                        custom_cap = await build_rich_caption(file_path, msg_type, msg_fresh, override_name=safe_filename)
                         if custom_cap:
                             caption = custom_cap
                             caption_entities = None
                             p_mode = enums.ParseMode.HTML
                         else:
-                            caption = msg_fresh.caption if getattr(msg_fresh, "caption", None) else ""
-                            caption_entities = msg_fresh.caption_entities if getattr(msg_fresh, "caption_entities", None) else None
+                            caption, caption_entities = clean_caption(
+                                msg_fresh.caption,
+                                msg_fresh.caption_entities,
+                            )
                             p_mode = None
 
                         # 🟢 USE DYNAMIC CHUNK SIZE (Based on Premium)
@@ -679,14 +692,16 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
             PROGRESS.pop(f"{task_uuid}:down", None)
         
         # --- 🟢 RICH CAPTION EXTRACTION FOR NORMAL FILES ---
-        custom_cap = await build_rich_caption(file_path, msg_type, msg_fresh)
+        custom_cap = await build_rich_caption(file_path, msg_type, msg_fresh, override_name=safe_filename)
         if custom_cap:
             caption = custom_cap
             caption_entities = None
             p_mode = enums.ParseMode.HTML
         else:
-            caption = msg_fresh.caption if getattr(msg_fresh, "caption", None) else None
-            caption_entities = msg_fresh.caption_entities if getattr(msg_fresh, "caption_entities", None) else None
+            caption, caption_entities = clean_caption(
+                msg_fresh.caption,
+                msg_fresh.caption_entities,
+            )
             p_mode = None
         
         upload_success = False

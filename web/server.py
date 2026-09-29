@@ -72,6 +72,11 @@ def _build_signed_stream_url(path, params, user_id, session_id):
     return f"{path}?{query}&expires={expires}&sig={signature}"
 
 
+def _normalize_keyword_list(value):
+    values = value.split(",") if isinstance(value, str) else value if isinstance(value, list) else []
+    return list(dict.fromkeys(str(item).strip() for item in values if str(item).strip()))[:20]
+
+
 def _get_signed_stream_user(request):
     try:
         expires = int(request.query.get("expires", "0"))
@@ -473,6 +478,8 @@ async def _api_add_task(request):
         if not isinstance(allowed_types, list):
             allowed_types = ["Video", "Document"]
         allowed_types = [t for t in allowed_types if t in ALL_MSG_TYPES]
+        include_keywords = _normalize_keyword_list(data.get("include_keywords"))
+        exclude_keywords = _normalize_keyword_list(data.get("exclude_keywords"))
 
         if not link: return web.json_response({"status": "error", "message": "No link provided"})
 
@@ -528,7 +535,9 @@ async def _api_add_task(request):
             "item": link,
             "started": time.time(),
             "total": 0,
-            "current": 0
+            "current": 0,
+            "include_keywords": include_keywords,
+            "exclude_keywords": exclude_keywords,
         }
 
         asyncio.create_task(
@@ -543,7 +552,9 @@ async def _api_add_task(request):
                 acc_user_id=user_id,
                 task_uuid=task_uuid,
                 is_restricted=is_restricted,
-                allowed_types=allowed_types
+                allowed_types=allowed_types,
+                include_keywords=include_keywords,
+                exclude_keywords=exclude_keywords,
             )
         )
         return web.json_response({"status": "success"})
@@ -566,7 +577,7 @@ async def _api_cancel_task(request):
 async def _api_add_watcher(request):
     try:
         data = await request.json()
-        user_id = int(data.get("user_id"))
+        user_id = request["authenticated_user_id"]
         link = data.get("link")
         dest_str = data.get("dest", "")
         delay = max(3, min(int(data.get("delay", 3)), 3600))
@@ -574,6 +585,8 @@ async def _api_add_watcher(request):
         if not isinstance(allowed_types, list):
             allowed_types = ["Video", "Document"]
         allowed_types = [t for t in allowed_types if t in ALL_MSG_TYPES]
+        include_keywords = _normalize_keyword_list(data.get("include_keywords"))
+        exclude_keywords = _normalize_keyword_list(data.get("exclude_keywords"))
 
         dest_chat_id = user_id
         dest_thread_id = None
@@ -661,6 +674,8 @@ async def _api_add_watcher(request):
             source_title=source_title,
             dest_title=dest_title,
             allowed_types=allowed_types,
+            include_keywords=include_keywords,
+            exclude_keywords=exclude_keywords,
             last_msg_id=last_msg_id
         )
         GLOBAL_WATCHER_SOURCES.add(source_id) # 🟢 UPDATE CACHE
@@ -1810,11 +1825,18 @@ async def _api_edit_media_handler(request):
     link = data.get("link", "")
     is_archive = data.get("is_archive", False)
     config = data.get("config", [])
-    new_name = data.get("new_name", "output.mkv")
+    new_name = build_media_filename(str(data.get("new_name", "output.mkv")))
     dest = data.get("dest", "tg")
     upload_mode = data.get("upload_mode", "document").lower()
     thumb_b64 = data.get("thumb", "")
     global_tags = data.get("global_tags", {})
+    if not isinstance(global_tags, dict):
+        global_tags = {}
+    global_tags = {str(key): clean_media_text(value) for key, value in global_tags.items()}
+    if isinstance(config, list):
+        for track in config:
+            if isinstance(track, dict) and "title" in track:
+                track["title"] = clean_media_text(track["title"])
     
     if not link or (not is_archive and not config):
         return web.json_response({"status": "error", "message": "Missing link or config"})

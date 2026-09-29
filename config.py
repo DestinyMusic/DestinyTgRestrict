@@ -40,6 +40,12 @@ PORT = int(os.environ.get("PORT") or 8080)
 LOGIN_SYSTEM = str(os.environ.get("LOGIN_SYSTEM", "True")).strip().lower() == "true"
 ERROR_MESSAGE = str(os.environ.get("ERROR_MESSAGE", "True")).strip().lower() == "true"
 WAITING_TIME = int(os.environ.get("WAITING_TIME") or 3)
+CLEANUP_TAGS = tuple(
+  tag.strip()
+  for tag in os.environ.get("CLEANUP_TAGS", "@animefile").split(",")
+  if tag.strip()
+)
+FILENAME_TEMPLATE = os.environ.get("FILENAME_TEMPLATE", "{original}{ext}").strip() or "{original}{ext}"
 
 # --------------------------------------------------------------------------
 # 👥 ACCESS CONTROL (Comma-Separated User IDs)

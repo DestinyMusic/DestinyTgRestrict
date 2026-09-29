@@ -687,7 +687,9 @@ async def main():
                 is_restricted=task["is_restricted"],
                 allowed_types=task["allowed_types"],
                 resume_from_id=task["current_msg_id"],
-                saved_source_title=task.get("source_title")
+                saved_source_title=task.get("source_title"),
+                include_keywords=task.get("include_keywords", []),
+                exclude_keywords=task.get("exclude_keywords", [])
             )
         )
         logger.info(f"▶️ Auto-Resumed task {t_uuid} for User {t_user_id}")

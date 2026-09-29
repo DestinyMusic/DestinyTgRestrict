@@ -32,6 +32,8 @@ async def watcher_worker_loop(wid_str):
             delay = max(3, min(int(watcher.get("delay", 3)), 3600))
             is_restricted = watcher.get("is_restricted", False)
             allowed_types = watcher.get("allowed_types", ["Video", "Document"])
+            include_keywords = watcher.get("include_keywords", [])
+            exclude_keywords = watcher.get("exclude_keywords", [])
 
             # Prefer the owner's connected user session for sources it can access;
             # otherwise use the bot. This is only an access-selection fallback.
@@ -71,6 +73,13 @@ async def watcher_worker_loop(wid_str):
             )
 
             if msg_type not in allowed_types:
+                await db.db.watchers.update_one(
+                    {"_id": watcher_db_id},
+                    {"$max": {"last_msg_id": int(msg.id)}, "$inc": {"stats.skipped": 1}}
+                )
+                continue
+
+            if not filename_matches_filters(msg, include_keywords, exclude_keywords):
                 await db.db.watchers.update_one(
                     {"_id": watcher_db_id},
                     {"$max": {"last_msg_id": int(msg.id)}, "$inc": {"stats.skipped": 1}}
@@ -256,7 +265,9 @@ async def watcher_worker_loop(wid_str):
                     "item": f"Live Watcher ID: {msg.id}",
                     "started": time.time(),
                     "is_watcher": True,
-                    "source_id": source_id
+                    "source_id": source_id,
+                    "include_keywords": include_keywords,
+                    "exclude_keywords": exclude_keywords,
                 }
 
                 try:

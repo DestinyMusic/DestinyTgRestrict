@@ -30,7 +30,7 @@ async def process_remux(input_file, output_file, stream_config, global_tags=None
     
     # 🟢 Global Metadata (Movie Title)
     if global_tags and global_tags.get("title"):
-        cmd.extend(["--title", global_tags["title"].strip()])
+        cmd.extend(["--title", clean_media_text(global_tags["title"])])
 
     main_args = []
     ext_args = []
@@ -48,8 +48,9 @@ async def process_remux(input_file, output_file, stream_config, global_tags=None
             if delay_ms != 0:
                 ext_args.extend(["--sync", f"0:{delay_ms}"])
                 
-            if track.get("title") and track.get("title").lower() != "skip":
-                ext_args.extend(["--track-name", f"0:{track['title']}"])
+            track_title = clean_media_text(track.get("title", ""))
+            if track_title and track_title.lower() != "skip":
+                ext_args.extend(["--track-name", f"0:{track_title}"])
                 
             if track.get("lang"):
                 ext_args.extend(["--language", f"0:{track['lang']}"])
@@ -63,8 +64,9 @@ async def process_remux(input_file, output_file, stream_config, global_tags=None
             if delay_ms != 0:
                 main_args.extend(["--sync", f"{idx}:{delay_ms}"])
                 
-            if track.get("title") and track.get("title").lower() != "skip":
-                main_args.extend(["--track-name", f"{idx}:{track['title']}"])
+            track_title = clean_media_text(track.get("title", ""))
+            if track_title and track_title.lower() != "skip":
+                main_args.extend(["--track-name", f"{idx}:{track_title}"])
                 
             if track.get("lang"):
                 main_args.extend(["--language", f"{idx}:{track['lang']}"])

@@ -1896,6 +1896,14 @@
                         <label class="filter-checkbox"><input type="checkbox" name="ftype" value="Sticker" checked> Sticker</label>
                     </div>
                 </div>
+                <div class="input-group">
+                    <label for="task-include-keywords">Include filename keywords</label>
+                    <input type="text" id="task-include-keywords" placeholder="1080p, season 1">
+                </div>
+                <div class="input-group">
+                    <label for="task-exclude-keywords">Exclude filename keywords</label>
+                    <input type="text" id="task-exclude-keywords" placeholder="sample, trailer">
+                </div>
                 <div class="modal-actions">
                     <button type="button" class="btn-cancel" onclick="closeTaskModal()">Cancel</button>
                     <button type="submit" class="primary-btn" style="flex:1; margin:0;">Launch Task</button>
@@ -2345,7 +2353,11 @@
             navigator.serviceWorker.register('/sw.js').catch(() => {});
         }
 
-        function openTaskModal() { document.getElementById('taskModal').classList.add('show'); }
+        function openTaskModal() {
+            document.getElementById('task-include-keywords').value = '';
+            document.getElementById('task-exclude-keywords').value = '';
+            document.getElementById('taskModal').classList.add('show');
+        }
         function closeTaskModal() { document.getElementById('taskModal').classList.remove('show'); }
         function toggleMode(val) { document.getElementById('delay-group').style.display = 'block'; }
 
@@ -2869,9 +2881,13 @@
             
             const filtersArr = [];
             document.querySelectorAll('input[name="ftype"]:checked').forEach(cb => filtersArr.push(cb.value));
+            const readKeywords = (id) => document.getElementById(id).value
+                .split(',').map(value => value.trim()).filter(Boolean).slice(0, 20);
+            const includeKeywords = readKeywords('task-include-keywords');
+            const excludeKeywords = readKeywords('task-exclude-keywords');
 
             const endpoint = mode === 'watch' ? '/api/watcher/add' : '/api/task/add';
-            const res = await fetch(endpoint, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({user_id: currentUser, link, dest, delay, filters: filtersArr}) });
+            const res = await fetch(endpoint, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({user_id: currentUser, link, dest, delay, filters: filtersArr, include_keywords: includeKeywords, exclude_keywords: excludeKeywords}) });
             const data = await res.json();
             if (data.status === 'success') {
                 alert("Task started successfully!");

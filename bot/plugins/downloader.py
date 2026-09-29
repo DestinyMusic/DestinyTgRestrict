@@ -666,6 +666,22 @@ async def save(client: Client, message: Message):
         if PENDING_TASKS[user_id].get("status") == "waiting_speed_input": # <<< FIX
             await process_speed_input(client, message)
             return
+        if PENDING_TASKS[user_id].get("status") == "waiting_filename_filters":
+            include_keywords = []
+            exclude_keywords = []
+            for line in text_content.splitlines():
+                key, separator, values = line.partition(":")
+                if not separator:
+                    continue
+                key = key.strip().lower()
+                target = include_keywords if key == "include" else exclude_keywords if key == "exclude" else None
+                if target is not None:
+                    target.extend(value.strip() for value in values.split(",") if value.strip())
+            PENDING_TASKS[user_id]["include_keywords"] = include_keywords
+            PENDING_TASKS[user_id]["exclude_keywords"] = exclude_keywords
+            PENDING_TASKS[user_id]["status"] = "waiting_filter"
+            await show_filter_menu(message, user_id)
+            return
 
     link_text = message.text or message.caption
     if not link_text or "https://t.me/" not in link_text:
@@ -1238,6 +1254,7 @@ def get_filter_keyboard(current_types):
         InlineKeyboardButton("✅ Select All", callback_data="filter_all"), 
         InlineKeyboardButton("❌ Clear All", callback_data="filter_none")
     ])
+    buttons.append([InlineKeyboardButton("🔎 Filename Keywords", callback_data="filter_keywords")])
     buttons.append([InlineKeyboardButton("🚀 Proceed / Save Setup", callback_data="filter_start")])
     buttons.append([InlineKeyboardButton("🛑 Cancel Setup", callback_data="cancel_setup")])
     return InlineKeyboardMarkup(buttons)
@@ -1258,6 +1275,25 @@ async def show_filter_menu(message_or_query, user_id):
         await message_or_query.message.edit_text(text, reply_markup=kb)
     else:
         await message_or_query.reply(text, reply_markup=kb, quote=True)
+
+
+@app.on_callback_query(filters.regex("^filter_keywords$"))
+async def filter_keywords_cb(client, query):
+    user_id = query.from_user.id
+    if user_id not in PENDING_TASKS:
+        return await query.answer("Expired.", show_alert=True)
+    PENDING_TASKS[user_id]["status"] = "waiting_filename_filters"
+    text = (
+        "🔎 **Filename filters**\n\n"
+        "Send optional rules on separate lines:\n"
+        "`include: 1080p, season 1`\n"
+        "`exclude: sample, trailer`\n\n"
+        "Include matches any listed word. Exclude skips any listed word. Send `skip` for no rules."
+    )
+    await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup([
+        [InlineKeyboardButton("❌ Cancel Setup", callback_data="cancel_setup")]
+    ]))
+    await query.answer()
 
 @app.on_callback_query(filters.regex("^filter_toggle:(.+)"))
 async def filter_toggle_cb(client, query):
@@ -1573,6 +1609,8 @@ async def finalize_watcher_setup(client, message, data, delay, user_id=None):
         source_title=source_title,
         dest_title=data.get("dest_title", str(data.get("dest_chat_id"))),
         allowed_types=data.get("allowed_types"),
+        include_keywords=data.get("include_keywords", []),
+        exclude_keywords=data.get("exclude_keywords", []),
         dashboard_chat=message.chat.id,
         dashboard_msg=message.id,
         last_msg_id=last_msg_id   # 🟢 PASS THE ID HERE

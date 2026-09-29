@@ -128,7 +128,9 @@ async def start_task_final(client: Client, message_context: Message, task_data: 
         "user": task_data.get("dest_title", f"User({user_id})"),
         "dest_title_name": task_data.get("dest_title", "Direct Message"), 
         "item": task_data.get("link", "Unknown"),
-        "started": time.time()
+        "started": time.time(),
+        "include_keywords": list(task_data.get("include_keywords", [])),
+        "exclude_keywords": list(task_data.get("exclude_keywords", [])),
     }
     
     is_restricted = task_data.get("is_restricted", False)
@@ -146,7 +148,9 @@ async def start_task_final(client: Client, message_context: Message, task_data: 
             acc_user_id=user_id,
             task_uuid=task_uuid,
             is_restricted=is_restricted,
-            allowed_types=task_snapshot.get("allowed_types")
+            allowed_types=task_snapshot.get("allowed_types"),
+            include_keywords=task_snapshot.get("include_keywords"),
+            exclude_keywords=task_snapshot.get("exclude_keywords"),
         )
     )   
 
@@ -187,6 +191,14 @@ async def handle_public_unrestricted(client: Client, acc, chatid: str, msgid: in
             return "FAILED"
 
     if not msg or msg.empty: 
+        return "SKIPPED"
+
+    task_info = ACTIVE_PROCESSES.get(user_id, {}).get(task_uuid, {})
+    if not filename_matches_filters(
+        msg,
+        task_info.get("include_keywords"),
+        task_info.get("exclude_keywords"),
+    ):
         return "SKIPPED"
 
     # Strict Topic Filtering
@@ -288,7 +300,7 @@ async def handle_public_unrestricted(client: Client, acc, chatid: str, msgid: in
         logger.error(f"Total copy failure for {msgid}: {e}")
         return "FAILED"
 
-async def process_links_logic(client: Client, message: Message, text: str, dest_chat_id=None, dest_thread_id=None, dest_title="Direct Message", delay=3, acc_user_id=None, task_uuid=None, is_restricted=False, allowed_types=None, resume_from_id=None, saved_source_title=None):
+async def process_links_logic(client: Client, message: Message, text: str, dest_chat_id=None, dest_thread_id=None, dest_title="Direct Message", delay=3, acc_user_id=None, task_uuid=None, is_restricted=False, allowed_types=None, resume_from_id=None, saved_source_title=None, include_keywords=None, exclude_keywords=None):
     user_id = acc_user_id or (message.from_user.id if message and message.from_user else 0)
     
     # 🟢 Resolve Real User Name (Not Bot Name)
@@ -328,7 +340,9 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
         "user": user_mention, 
         "dest_title_name": dest_title,
         "item": text[:50]+"...", 
-        "started": time.time()
+        "started": time.time(),
+        "include_keywords": list(include_keywords or []),
+        "exclude_keywords": list(exclude_keywords or []),
     }
 
     if dest_chat_id is None: dest_chat_id = msg_chat_id
@@ -490,7 +504,8 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
                 task_uuid=task_uuid, user_id=user_id, link=text, dest_chat_id=dest_chat_id,
                 dest_thread_id=dest_thread_id, dest_title=dest_title, delay=delay,
                 is_restricted=is_restricted, allowed_types=allowed_types,
-                source_title=source_title, current_msg_id=fromID, to_id=toID
+                source_title=source_title, current_msg_id=fromID, to_id=toID,
+                include_keywords=include_keywords, exclude_keywords=exclude_keywords
             )
 
             # 🟢 [DETAILED LOGGING] Cleaned up to prevent double Topic IDs!

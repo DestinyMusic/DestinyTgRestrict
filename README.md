@@ -47,6 +47,8 @@ To boot the engine on Hugging Face Spaces, Render, Koyeb, or a similar Docker-ba
 | `SUDOS` | Comma-separated secondary Admin IDs. | [@userinfobot](https://t.me/userinfobot) |
 | `LOG_CHANNEL` | Telegram chat/channel ID used for backend error logs. | *(Your private channel ID)* |
 | `PORT` | Port for the Web Dashboard (Default: `8080`). | *(Platform Specific)* |
+| `CLEANUP_TAGS` | Comma-separated exact tags to remove from downloaded filenames, generated captions, and editor metadata. Defaults to `@animefile`. | *(Optional)* |
+| `FILENAME_TEMPLATE` | Output pattern for downloaded/re-uploaded media and editor files. Supports `{original}`, `{title}`, `{id}`, `{date}`, `{index}`, and `{ext}`. Defaults to `{original}{ext}`. | *(Optional)* |
 
 *Note: Auxiliary Worker Bot Tokens are added dynamically via the Web Dashboard settings tab, not environment variables.*
 ---
@@ -58,12 +60,14 @@ To boot the engine on Hugging Face Spaces, Render, Koyeb, or a similar Docker-ba
 | `/start` | Check if bot is alive and get Web Dashboard Link. |
 | `/login` | Securely bind your Telegram Session (handles 2FA & OTP). |
 | `/logout` | Safely disconnect your Telegram Session and clear active tasks. |
-| `/dl <link>` | Smart Downloader. Process a single file or batch (e.g., `link/101-500`). |
-| `/watch <link>` | Setup a live auto-forwarder for a specific channel or PM. |
+| `/dl <link>` | Smart Downloader. Process a single file or batch, with media-type and filename keyword filters. |
+| `/watch <link>` | Setup a live auto-forwarder for a channel or PM, with media-type and filename keyword filters. |
 | `/unwatch <id>` | Stop a specific watcher task. |
 | `/watchers` | Open interactive menu managing all active surveillance watchers. |
 | `/cancel` | Stop a specific active batch download safely. |
 | `/queue` | View active and queued tasks and cancel queued jobs. |
+
+In the Telegram filter wizard, optional filename rules use one line each: `include: 1080p, season 1` and `exclude: sample, trailer`. Include matches any listed word; exclude skips any listed word. The dashboard task form has equivalent fields.
 | `/chats` | Dialog Explorer: Extract Chat, Group, Bot, and Channel IDs. |
 
 ### 🔴 Admin & System Commands

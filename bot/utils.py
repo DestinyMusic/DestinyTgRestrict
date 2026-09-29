@@ -202,10 +202,46 @@ def generate_bar(percent: float, length: int = 12) -> str:
         bar += '○' * (length - filled_length)
         
     return f"〘{bar}〙 {percent:.1f}%"
+
+
+def clean_media_text(value: str) -> str:
+    """Remove only explicitly configured source tags from media text."""
+    text = str(value or "")
+    for tag in CLEANUP_TAGS:
+        pattern = rf"(?<![\w]){re.escape(tag)}(?![\w])"
+        text = re.sub(pattern, "", text, flags=re.IGNORECASE)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    text = re.sub(r"[ \t]+([,.;!?])", r"\1", text)
+    text = re.sub(r"[\(\[\{][ \t]*[\)\]\}]", "", text)
+    return text.strip()
+
+
+def clean_caption(text, entities=None):
+    original = text or ""
+    cleaned = clean_media_text(original)
+    return cleaned, entities if cleaned == original else None
+
+
+def filename_matches_filters(message, include_keywords=None, exclude_keywords=None):
+    media = next((
+        getattr(message, attr, None)
+        for attr in ("document", "video", "audio", "animation", "voice", "sticker")
+        if getattr(message, attr, None)
+    ), None)
+    filename = clean_media_text(
+        getattr(media, "file_name", None) or getattr(media, "title", None) or ""
+    ).casefold()
+    includes = [str(word).strip().casefold() for word in (include_keywords or []) if str(word).strip()]
+    excludes = [str(word).strip().casefold() for word in (exclude_keywords or []) if str(word).strip()]
+    return (not includes or any(word in filename for word in includes)) and not any(
+        word in filename for word in excludes
+    )
     
 def sanitize_filename(filename: str) -> str:
     if not filename: return "unnamed_file"
     filename = unicodedata.normalize("NFC", filename)
+    filename = clean_media_text(filename)
+    filename = re.sub(r"\s+(\.[^.]+)$", r"\1", filename)
     filename = re.sub(r'[:]', "-", filename)
     filename = re.sub(r'[\\/*?"<>|\[\]]', "", filename)
     name, ext = os.path.splitext(filename)
@@ -220,6 +256,35 @@ def sanitize_filename(filename: str) -> str:
     if not ext:
         ext = ".dat"
     return f"{name}{ext}"
+
+
+def build_media_filename(filename: str, message=None, index=1) -> str:
+    safe_original = sanitize_filename(filename or "unnamed_file")
+    original, ext = os.path.splitext(safe_original)
+    media = None
+    if message is not None:
+        media = getattr(message, "audio", None) or getattr(message, "video", None) or getattr(message, "document", None)
+    title = getattr(media, "title", None) or original
+    message_id = getattr(message, "id", "") if message is not None else ""
+    message_date = getattr(message, "date", None) if message is not None else None
+    date = message_date.strftime("%Y-%m-%d") if hasattr(message_date, "strftime") else ""
+    values = {
+        "original": original,
+        "title": clean_media_text(title),
+        "id": str(message_id),
+        "date": date,
+        "index": str(index),
+        "ext": ext,
+    }
+    try:
+        rendered = FILENAME_TEMPLATE.format_map(values).strip()
+    except (KeyError, ValueError):
+        rendered = safe_original
+    if not rendered:
+        rendered = safe_original
+    if not os.path.splitext(rendered)[1]:
+        rendered += ext
+    return sanitize_filename(rendered)
 
 async def get_topic_title(client, chat_id, topic_id):
     """Dynamically fetches the real name of a Telegram Forum Topic."""
