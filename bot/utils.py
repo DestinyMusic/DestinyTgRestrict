@@ -210,7 +210,9 @@ def clean_media_text(value: str, custom_tags=None) -> str:
     
     # Combine global CLEANUP_TAGS (if defined in config) with per-task custom_tags
     global_tags = CLEANUP_TAGS if 'CLEANUP_TAGS' in globals() else []
-    all_tags = global_tags + (custom_tags or [])
+    
+    # 🟢 FIX: Convert both to lists before combining to prevent the TypeError
+    all_tags = list(global_tags) + list(custom_tags or [])
     
     for tag in all_tags:
         if not str(tag).strip(): continue
@@ -227,7 +229,6 @@ def clean_media_text(value: str, custom_tags=None) -> str:
     text = re.sub(r"[ \t]+([,.;!?])", r"\1", text)
     text = re.sub(r"[\(\[\{][ \t]*[\)\]\}]", "", text) # Removes empty brackets left over
     return text.strip()
-
 
 def clean_caption(text, entities=None, custom_tags=None):
     original = text or ""
