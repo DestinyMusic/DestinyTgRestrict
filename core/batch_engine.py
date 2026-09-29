@@ -192,9 +192,11 @@ async def handle_public_unrestricted(client: Client, acc, chatid: str, msgid: in
             msg = await fetcher.get_messages(chatid, msgid)
         except Exception as e:
             logger.error(f"Failed to fetch msg {msgid}: {e}")
+            _set_task_result_reason(user_id, task_uuid, f"source message fetch failed: {type(e).__name__}: {e}")
             return "FAILED"
 
     if not msg or msg.empty: 
+        _set_task_result_reason(user_id, task_uuid, "source message missing or inaccessible")
         return "SKIPPED"
 
     task_info = ACTIVE_PROCESSES.get(user_id, {}).get(task_uuid, {})
@@ -203,6 +205,7 @@ async def handle_public_unrestricted(client: Client, acc, chatid: str, msgid: in
         task_info.get("include_keywords"),
         task_info.get("exclude_keywords"),
     ):
+        _set_task_result_reason(user_id, task_uuid, "filename rejected by include/exclude keyword filters")
         return "SKIPPED"
 
     # Strict Topic Filtering
@@ -210,13 +213,16 @@ async def handle_public_unrestricted(client: Client, acc, chatid: str, msgid: in
         actual_thread = getattr(msg, "message_thread_id", None)
         if actual_thread is None:
             if filter_thread_id != 1 and getattr(msg, "reply_to_top_message_id", None) != filter_thread_id and getattr(msg, "reply_to_message_id", None) != filter_thread_id and msg.id != filter_thread_id:
+                _set_task_result_reason(user_id, task_uuid, f"topic filter mismatch: expected {filter_thread_id}, no topic ID found")
                 return "SKIPPED"
         elif actual_thread != filter_thread_id:
+            _set_task_result_reason(user_id, task_uuid, f"topic filter mismatch: expected {filter_thread_id}, got {actual_thread}")
             return "SKIPPED"
 
     # Strict Type Filtering
     msg_type = get_message_type(msg)
     if not msg_type or (allowed_types and msg_type not in allowed_types):
+        _set_task_result_reason(user_id, task_uuid, f"media type excluded by task filter: {msg_type or 'unsupported'}")
         return "SKIPPED"
 
     # 🟢 Shield live watchers from global batch cancellations
@@ -225,6 +231,7 @@ async def handle_public_unrestricted(client: Client, acc, chatid: str, msgid: in
         is_w_task = ACTIVE_PROCESSES[user_id][task_uuid].get("is_watcher", False)
 
     if (batch_temp.IS_BATCH.get(user_id) and not is_w_task) or (task_uuid and CANCEL_FLAGS.get(task_uuid)):
+        _set_task_result_reason(user_id, task_uuid, "task cancelled")
         return "FAILED"
 
     # 🟢 Mid-Batch Restriction Fallback Ejector
@@ -246,7 +253,9 @@ async def handle_public_unrestricted(client: Client, acc, chatid: str, msgid: in
                     return "SUCCESS"
                 except Exception as e2: 
                     if "CHAT_FORWARDS_RESTRICTED" in str(e2) or "RESTRICTED" in str(e2): return "FALLBACK_RESTRICTED"
+                    _set_task_result_reason(user_id, task_uuid, f"text upload failed: {type(e2).__name__}: {e2}")
                     return "FAILED"
+            _set_task_result_reason(user_id, task_uuid, f"text upload failed: {type(e).__name__}: {e}")
             return "FAILED"
 
     try:
@@ -276,6 +285,7 @@ async def handle_public_unrestricted(client: Client, acc, chatid: str, msgid: in
             if copy_res:
                 if delay > 0 and group_size > 1: await asyncio.sleep(delay * (group_size - 1))
                 return "SUCCESS"
+            _set_task_result_reason(user_id, task_uuid, "media-group copy returned no result")
             return "FAILED"
 
         # 🟢 Single Media Copy
@@ -293,7 +303,9 @@ async def handle_public_unrestricted(client: Client, acc, chatid: str, msgid: in
                 except Exception as e2: 
                     if "CHAT_FORWARDS_RESTRICTED" in str(e2) or "RESTRICTED" in str(e2):
                         return "FALLBACK_RESTRICTED"
+                    _set_task_result_reason(user_id, task_uuid, f"copy failed: {type(e2).__name__}: {e2}")
                     return "FAILED"
+            _set_task_result_reason(user_id, task_uuid, f"copy failed: {type(e).__name__}: {e}")
             return "FAILED"
 
     except FloodWait as e:
@@ -302,6 +314,7 @@ async def handle_public_unrestricted(client: Client, acc, chatid: str, msgid: in
         return "FAILED" 
     except Exception as e:
         logger.error(f"Total copy failure for {msgid}: {e}")
+        _set_task_result_reason(user_id, task_uuid, f"copy failure: {type(e).__name__}: {e}")
         return "FAILED"
 
 async def process_links_logic(client: Client, message: Message, text: str, dest_chat_id=None, dest_thread_id=None, dest_title="Direct Message", delay=3, acc_user_id=None, task_uuid=None, is_restricted=False, allowed_types=None, resume_from_id=None, saved_source_title=None, include_keywords=None, exclude_keywords=None, thumb_file_id=None, thumb_b64=None):
@@ -608,13 +621,22 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
 
                     # --- ALBUM SKIP LOGIC ---
                     if msgid in batch_temp.SKIP_IDS.get(task_uuid, set()):
-                        success_count += 1
+                        skipped_count += 1
+                        log_file_result(
+                            "batch", user_id, task_uuid, ACTUAL_CHAT_ID, msgid,
+                            media_filename(msg_dict.get(msgid), msgid), "SKIPPED",
+                            "duplicate member of an already processed media group",
+                        )
                         continue 
                     # ------------------------
 
                     # ⚡ LIGHTNING-FAST SKIP: If chunk loaded but ID isn't in it, it's deleted.
                     if chunk_success and msgid not in msg_dict:
                         skipped_count += 1
+                        log_file_result(
+                            "batch", user_id, task_uuid, ACTUAL_CHAT_ID, msgid,
+                            media_filename(None, msgid), "SKIPPED", "source message missing or deleted",
+                        )
                         if task_uuid in ACTIVE_PROCESSES.get(user_id, {}):
                             ACTIVE_PROCESSES[user_id][task_uuid].update({
                                 "current": index, "success": success_count,
@@ -627,6 +649,9 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
                     
                     is_success = False
                     task_result = "FAILED"
+                    item_error = None
+                    task_info = ACTIVE_PROCESSES.get(user_id, {}).get(task_uuid, {})
+                    task_info.pop("last_result_reason", None)
                     try:
                         chatid = ACTUAL_CHAT_ID
                         
@@ -666,7 +691,8 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
                     
                     except FloodWait as e:
                         if e.value > 300:
-                            print(f"FloodWait too long ({e.value}s). Stopping task.")
+                            item_error = f"FloodWait {e.value}s exceeds the 300s retry limit"
+                            logger.error(f"FILE_RESULT scope=batch user_id={user_id} task_id={task_uuid} source_id={ACTUAL_CHAT_ID} message_id={msgid} file={media_filename(pre_fetched_msg, msgid)!r} result=FAILED reason={item_error!r}")
                             try: await status_message.edit_text(f"❌ **Task Cancelled automatically**\nReason: FloodWait too long ({e.value}s).")
                             except Exception: pass 
                             was_cancelled = True
@@ -680,6 +706,7 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
                         await asyncio.sleep(e.value + 5)
                         
                     except Exception as e: 
+                        item_error = f"{type(e).__name__}: {e}"
                         logger.error(f"Error processing {msgid} for user {user_id}", exc_info=True)
                         await send_log(f"❌ **Task Error:** Message `{msgid}` failed.\nUser: `{user_id}`\nError: `{e}`")
 
@@ -693,6 +720,22 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
                     else: 
                         failed_count += 1
                         is_success = False
+
+                    result_label = "SUCCESS" if is_success else "SKIPPED" if task_result == "SKIPPED" else "FAILED"
+                    result_reason = item_error or task_info.get("last_result_reason")
+                    if result_label == "FAILED" and not result_reason:
+                        result_reason = f"processor returned {task_result!r}; see preceding task logs"
+                    source_filename = media_filename(pre_fetched_msg, msgid)
+                    output_filename = task_info.get("current_file")
+                    logged_filename = (
+                        f"{source_filename} -> {output_filename}"
+                        if output_filename and output_filename != source_filename
+                        else output_filename or source_filename
+                    )
+                    log_file_result(
+                        "batch", user_id, task_uuid, ACTUAL_CHAT_ID, msgid,
+                        logged_filename, result_label, result_reason,
+                    )
 
                     # 🟢 [NEW] Feed live stats to Web UI!
                     if task_uuid in ACTIVE_PROCESSES.get(user_id, {}):

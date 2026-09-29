@@ -3,6 +3,12 @@
 # ==============================================================================
 from pyrogram.errors import FloodWait
 
+def _set_task_result_reason(user_id, task_uuid, reason):
+    task_info = ACTIVE_PROCESSES.get(user_id, {}).get(task_uuid)
+    if task_info is not None:
+        task_info["last_result_reason"] = reason
+
+
 async def _fetch_and_validate_msg(client, acc, chatid, msgid, user_id, filter_thread_id, allowed_types, task_uuid, pre_fetched_msg=None):
     fetcher = acc if acc else client
     
@@ -20,10 +26,13 @@ async def _fetch_and_validate_msg(client, acc, chatid, msgid, user_id, filter_th
             msg = await fetcher.get_messages(chatid, msgid)
         except FloodWait as e:
             raise e # Pass rate limits back up to the batch engine
-        except Exception:
+        except Exception as exc:
+            _set_task_result_reason(user_id, task_uuid, f"source message fetch failed: {type(exc).__name__}: {exc}")
             return None, None
 
-    if not msg or msg.empty: return None, None
+    if not msg or msg.empty:
+        _set_task_result_reason(user_id, task_uuid, "source message missing or inaccessible")
+        return None, None
 
     if filter_thread_id is not None:
         # 🟢 FIX: Bot DMs and Chat DMs do not have topics. 
@@ -36,13 +45,19 @@ async def _fetch_and_validate_msg(client, acc, chatid, msgid, user_id, filter_th
             if actual_thread is None:
                 # 🟢 FIX: If targeting General Topic (1), a missing thread ID is a valid match!
                 if filter_thread_id != 1 and getattr(msg, "reply_to_top_message_id", None) != filter_thread_id and getattr(msg, "reply_to_message_id", None) != filter_thread_id and msg.id != filter_thread_id:
+                    _set_task_result_reason(user_id, task_uuid, f"topic filter mismatch: expected {filter_thread_id}, no topic ID found")
                     return None, None
             elif actual_thread != filter_thread_id:
+                _set_task_result_reason(user_id, task_uuid, f"topic filter mismatch: expected {filter_thread_id}, got {actual_thread}")
                 return None, None
 
     msg_type = get_message_type(msg)
-    if not msg_type: return None, None
-    if allowed_types is not None and msg_type not in allowed_types: return None, None
+    if not msg_type:
+        _set_task_result_reason(user_id, task_uuid, "unsupported or non-media message type")
+        return None, None
+    if allowed_types is not None and msg_type not in allowed_types:
+        _set_task_result_reason(user_id, task_uuid, f"media type excluded by task filter: {msg_type}")
+        return None, None
 
     task_info = ACTIVE_PROCESSES.get(user_id, {}).get(task_uuid, {})
     if not filename_matches_filters(
@@ -50,6 +65,7 @@ async def _fetch_and_validate_msg(client, acc, chatid, msgid, user_id, filter_th
         task_info.get("include_keywords"),
         task_info.get("exclude_keywords"),
     ):
+        _set_task_result_reason(user_id, task_uuid, "filename rejected by include/exclude keyword filters")
         return None, None
     
     # 🟢 FIX: Shield Watchers from Global Cancels
@@ -57,7 +73,8 @@ async def _fetch_and_validate_msg(client, acc, chatid, msgid, user_id, filter_th
     if user_id in ACTIVE_PROCESSES and task_uuid in ACTIVE_PROCESSES[user_id]:
         is_w_task = ACTIVE_PROCESSES[user_id][task_uuid].get("is_watcher", False)
         
-    if (batch_temp.IS_BATCH.get(user_id) and not is_w_task) or (task_uuid and CANCEL_FLAGS.get(task_uuid)): 
+    if (batch_temp.IS_BATCH.get(user_id) and not is_w_task) or (task_uuid and CANCEL_FLAGS.get(task_uuid)):
+        _set_task_result_reason(user_id, task_uuid, "task cancelled")
         return None, None
 
     return msg, msg_type
@@ -541,9 +558,12 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
     if user_id in ACTIVE_PROCESSES and task_uuid in ACTIVE_PROCESSES[user_id]:
         is_w_task = ACTIVE_PROCESSES[user_id][task_uuid].get("is_watcher", False)
 
+    last_error_reason = None
     try: 
         for attempt in range(3):
-            if (batch_temp.IS_BATCH.get(user_id) and not is_w_task) or (task_uuid and CANCEL_FLAGS.get(task_uuid)): return False
+            if (batch_temp.IS_BATCH.get(user_id) and not is_w_task) or (task_uuid and CANCEL_FLAGS.get(task_uuid)):
+                _set_task_result_reason(user_id, task_uuid, "task cancelled before file processing")
+                return False
             try:
                 msg_fresh = await fetcher.get_messages(chatid, msgid)
                 if msg_fresh.empty: return False
@@ -732,10 +752,20 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
                 await asyncio.sleep(e.value + 5)
             except Exception as e:
                 if "CANCELLED" in str(e): return False
+                last_error_reason = f"{type(e).__name__}: {e}"
+                _set_task_result_reason(user_id, task_uuid, f"download attempt {attempt + 1}/3 failed: {last_error_reason}")
+                logger.warning(
+                    "FILE_ATTEMPT scope=restricted user_id=%s task_id=%s source_id=%s message_id=%s file=%r attempt=%s/3 reason=%r",
+                    user_id, task_uuid or "-", chatid, msgid, safe_filename, attempt + 1, last_error_reason,
+                )
                 await asyncio.sleep(5)
 
-        if not download_success: return False
-        if (batch_temp.IS_BATCH.get(user_id) and not is_w_task) or (task_uuid and CANCEL_FLAGS.get(task_uuid)): return False
+        if not download_success:
+            _set_task_result_reason(user_id, task_uuid, last_error_reason or "download failed without an exception")
+            return False
+        if (batch_temp.IS_BATCH.get(user_id) and not is_w_task) or (task_uuid and CANCEL_FLAGS.get(task_uuid)):
+            _set_task_result_reason(user_id, task_uuid, "task cancelled after download")
+            return False
 
         if task_uuid:
             PROGRESS.pop(f"{task_uuid}:up", None)
@@ -842,8 +872,17 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
                         await asyncio.sleep(e.value + 5)
                     except Exception as e:
                         if "CANCELLED" in str(e): break
+                        last_error_reason = f"{type(e).__name__}: {e}"
+                        _set_task_result_reason(user_id, task_uuid, f"upload failed: {last_error_reason}")
+                        logger.error(
+                            "FILE_UPLOAD_FAILED user_id=%s task_id=%s source_id=%s message_id=%s file=%r reason=%r",
+                            user_id, task_uuid or "-", chatid, msgid, safe_filename, last_error_reason,
+                            exc_info=True,
+                        )
                         break
         
+        if not upload_success and not last_error_reason:
+            _set_task_result_reason(user_id, task_uuid, "upload did not complete; task was cancelled or sender returned no result")
         return upload_success
 
     finally:

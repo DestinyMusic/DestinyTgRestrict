@@ -86,6 +86,9 @@ In `/dl` and `/watch` setup, select **Custom Thumbnail** and send a photo; the d
 | `/mi <link>` | MediaInfo Technical Inspector (Outputs to Telegraph). |
 | `/spec <link>` | Audio DSP, LUFS, DR, and Spectrogram image generation. |
 
+### Diagnostics
+The backend writes `FILE_RESULT` entries per processed item with scope, user/task IDs, source/message IDs, filename, status (`✅ SUCCESS`, `❌ FAILED`, `⏭ SKIPPED`, or `🛑 CANCELLED`), and a reason when available. `FILE_ATTEMPT` records retry failures. `API_RESULT` records meaningful API actions and failures across Media Theater, probe/playlist/subtitles, editor, task, watcher, and settings routes; high-volume progress polls and successful stream ranges are omitted. Query strings and request bodies are not logged, and URLs in failure text are redacted. Admins can use `/log`; on the server, filter with `rg 'FILE_RESULT|FILE_ATTEMPT|API_RESULT' bot.log`.
+
 ---
 ## 🏗️ Deployment
 The engine uses a robust Docker-based deployment model mapping `aiohttp`, `uvloop`, `ffmpeg`, and `sox`. Make sure the configured application port matches the platform configuration (Default: `8080`).

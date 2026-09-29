@@ -8,7 +8,9 @@ except ImportError:
 
 import hashlib
 import hmac
+import json
 import secrets
+import re
 from urllib.parse import urlencode
 
 WEB_AUTH_COOKIE = "web_auth"
@@ -25,6 +27,95 @@ PUBLIC_AUTH_PATHS = {
     "/api/auth/forgot",
     "/api/auth/reset",
 }
+API_SUCCESS_LOG_PATHS = {
+    "/api/auth/login", "/api/auth/reset", "/api/auth/logout", "/api/auth/password",
+    "/api/auth/stream-link", "/api/task/add", "/api/task/cancel",
+    "/api/watcher/add", "/api/watcher/cancel", "/api/edit_media",
+    "/api/mediainfo", "/api/spectrogram", "/api/media_probe",
+    "/api/playlist", "/api/subtitles", "/api/tg/send_code",
+    "/api/tg/verify", "/api/tg/verify_2fa", "/api/tg/logout",
+    "/api/settings/tokens", "/api/stream/kill", "/api/editor_cancel",
+    "/api/admin/users/add", "/api/admin/users/remove",
+    "/api/cookies/upload", "/api/cookies/delete", "/api/topics", "/api/chats",
+}
+
+
+def _diagnostic_safe_reason(value):
+    text = str(value or "")
+    text = re.sub(r"https?://[^\s\]\[<>'\"]+", "[url-redacted]", text)
+    text = re.sub(
+        r"(?i)\b(token|password|api[_-]?hash|authorization|cookie)(\s*[:=]\s*)[^\s,;]+",
+        r"\1\2[redacted]",
+        text,
+    )
+    return text[:400]
+
+
+def _log_api_result(request, result, http_status, elapsed_ms, reason=None):
+    user_id = request.get("authenticated_user_id", "-")
+    message = (
+        "API_RESULT request_id=%s method=%s path=%s user_id=%s http_status=%s "
+        "result=%s duration_ms=%.1f reason=%r"
+    )
+    args = (
+        request.get("diagnostic_request_id", "-"),
+        request.method,
+        request.path,
+        user_id,
+        http_status,
+        result,
+        elapsed_ms,
+        _diagnostic_safe_reason(reason),
+    )
+    if result == "FAILED":
+        logger.warning(message, *args)
+    else:
+        logger.info(message, *args)
+
+
+@web.middleware
+async def _api_diagnostics_middleware(request, handler):
+    if not request.path.startswith("/api/"):
+        return await handler(request)
+
+    request["diagnostic_request_id"] = uuid.uuid4().hex[:12]
+    started = time.monotonic()
+    try:
+        response = await handler(request)
+    except web.HTTPException as exc:
+        status = exc.status
+        if status >= 400 and status not in {416, 499}:
+            _log_api_result(request, "FAILED", status, (time.monotonic() - started) * 1000, exc.reason)
+        raise
+    except Exception as exc:
+        _log_api_result(
+            request,
+            "FAILED",
+            500,
+            (time.monotonic() - started) * 1000,
+            f"{type(exc).__name__}: {exc}",
+        )
+        raise
+
+    result = "SUCCESS"
+    reason = None
+    if response.status >= 400 and response.status not in {416, 499}:
+        result = "FAILED"
+        reason = f"HTTP {response.status}"
+        if response.content_type.startswith("text/") and response.body:
+            reason = response.body[:2048].decode("utf-8", errors="replace")
+    elif response.content_type == "application/json" and response.body:
+        try:
+            payload = json.loads(response.body)
+            if isinstance(payload, dict) and payload.get("status") == "error":
+                result = "FAILED"
+                reason = payload.get("message") or "API returned status=error"
+        except (TypeError, ValueError):
+            pass
+
+    if result == "FAILED" or request.path in API_SUCCESS_LOG_PATHS:
+        _log_api_result(request, result, response.status, (time.monotonic() - started) * 1000, reason)
+    return response
 
 
 def _hash_web_password(password):
@@ -1816,6 +1907,7 @@ async def _api_editor_progress(request):
         return web.json_response({"status": "error", "message": "Task not found"}, status=404)
     resp = {
         "status": "success", "phase": state["phase"], "done": state["done"], 
+        "result": "FAILED" if state.get("error") else "SUCCESS" if state.get("done") else "RUNNING",
         "error": state["error"], "fetcher": state.get("fetcher", "🤖 Unknown"), 
         "uploader": state.get("uploader", "🤖 Unknown")
     }
@@ -2532,15 +2624,22 @@ async def _api_edit_media_handler(request):
                     await app.send_message(uid, f"✅ **Media Editor Completed!**\nFile `{new_name}` uploaded successfully.")
                     
             EDITOR_UI_STATE[task_uuid]["done"] = True
+            log_file_result("editor", uid, task_uuid, "editor-input", None, new_name, "SUCCESS")
         except asyncio.CancelledError:
             # 🟢 Cleanly handle the kill signal
+            EDITOR_UI_STATE[task_uuid]["phase"] = "Cancelled"
             EDITOR_UI_STATE[task_uuid]["error"] = "Cancelled by User"
             EDITOR_UI_STATE[task_uuid]["done"] = True
+            log_file_result("editor", uid, task_uuid, "editor-input", None, new_name, "CANCELLED", "cancelled by user")
             try: await app.send_message(uid, f"🚫 **Task Cancelled:** `{new_name}`")
             except: pass
         except Exception as e:
+            phase = EDITOR_UI_STATE.get(task_uuid, {}).get("phase", "unknown")
+            EDITOR_UI_STATE[task_uuid]["phase"] = "Failed"
             EDITOR_UI_STATE[task_uuid]["error"] = str(e)
             EDITOR_UI_STATE[task_uuid]["done"] = True
+            log_file_result("editor", uid, task_uuid, "editor-input", None, new_name, "FAILED", f"phase={phase}; {type(e).__name__}: {e}")
+            logger.error(f"Media editor task {task_uuid} failed during {phase} for user {uid}: {e}", exc_info=True)
             try: await app.send_message(uid, f"❌ **Media Editor Failed:**\n`{str(e)}`")
             except: pass
         finally:
@@ -2607,7 +2706,10 @@ async def start_koyeb_health_check(host: str = "0.0.0.0"):
     global PORT
     
     # 🟢 FIX: 500MB Payload Limit for High-Res Audio/Thumbnails
-    app_web = web.Application(client_max_size=1024**2 * 500, middlewares=[_web_auth_middleware])
+    app_web = web.Application(
+        client_max_size=1024**2 * 500,
+        middlewares=[_api_diagnostics_middleware, _web_auth_middleware],
+    )
     
     # Core & Dashboard
     app_web.router.add_get("/", _dashboard_ui_handler)

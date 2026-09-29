@@ -49,6 +49,7 @@ async def watcher_worker_loop(wid_str):
             # Never advance the checkpoint merely because an ID was dequeued.
             # Missing/deleted/inaccessible IDs can safely be considered skipped.
             if not msg or msg.empty:
+                log_file_result("watcher", owner_id, wid_str, source_id, msg_id, media_filename(None, msg_id), "SKIPPED", "source message missing or inaccessible")
                 await db.db.watchers.update_one(
                     {"_id": watcher_db_id},
                     {"$max": {"last_msg_id": int(msg_id)}, "$inc": {"stats.skipped": 1}}
@@ -57,6 +58,7 @@ async def watcher_worker_loop(wid_str):
 
             msg_type = get_message_type(msg)
             if not msg_type:
+                log_file_result("watcher", owner_id, wid_str, source_id, msg.id, media_filename(msg, msg.id), "SKIPPED", "unsupported or non-media message type")
                 await db.db.watchers.update_one(
                     {"_id": watcher_db_id},
                     {"$max": {"last_msg_id": int(msg.id)}, "$inc": {"stats.skipped": 1}}
@@ -73,6 +75,7 @@ async def watcher_worker_loop(wid_str):
             )
 
             if msg_type not in allowed_types:
+                log_file_result("watcher", owner_id, wid_str, source_id, msg.id, media_filename(msg, msg.id), "SKIPPED", f"media type excluded by task filter: {msg_type}")
                 await db.db.watchers.update_one(
                     {"_id": watcher_db_id},
                     {"$max": {"last_msg_id": int(msg.id)}, "$inc": {"stats.skipped": 1}}
@@ -80,6 +83,7 @@ async def watcher_worker_loop(wid_str):
                 continue
 
             if not filename_matches_filters(msg, include_keywords, exclude_keywords):
+                log_file_result("watcher", owner_id, wid_str, source_id, msg.id, media_filename(msg, msg.id), "SKIPPED", "filename rejected by include/exclude keyword filters")
                 await db.db.watchers.update_one(
                     {"_id": watcher_db_id},
                     {"$max": {"last_msg_id": int(msg.id)}, "$inc": {"stats.skipped": 1}}
@@ -101,6 +105,7 @@ async def watcher_worker_loop(wid_str):
                     actual_thread = int(source_thread)
 
                 if actual_thread != int(source_thread):
+                    log_file_result("watcher", owner_id, wid_str, source_id, msg.id, media_filename(msg, msg.id), "SKIPPED", f"topic filter mismatch: expected {source_thread}, got {actual_thread}")
                     await db.db.watchers.update_one(
                         {"_id": watcher_db_id},
                         {"$max": {"last_msg_id": int(msg.id)}, "$inc": {"stats.skipped": 1}}
@@ -130,6 +135,7 @@ async def watcher_worker_loop(wid_str):
                 if getattr(msg, "media_group_id", None):
                     group_cache_key = f"{owner_id}_{source_id}_{msg.media_group_id}_{dest_id}_{dest_thread}"
                     if WATCHER_MEDIA_GROUPS.get(group_cache_key):
+                        log_file_result("watcher", owner_id, wid_str, source_id, msg.id, media_filename(msg, msg.id), "SKIPPED", "duplicate member of an already processed media group")
                         await db.db.watchers.update_one(
                             {"_id": watcher_db_id},
                             {"$max": {"last_msg_id": int(msg.id)}}
@@ -190,9 +196,17 @@ async def watcher_worker_loop(wid_str):
                                 )
                                 processed_successfully = bool(copy_res)
                         except Exception as retry_err:
-                            logger.warning(f"Watcher {wid_str}: copy retry failed: {retry_err}")
+                            logger.warning(
+                                "FILE_ATTEMPT scope=watcher user_id=%s task_id=%s source_id=%s message_id=%s file=%r stage=fast-copy-retry reason=%r",
+                                owner_id, wid_str, source_id, msg.id, media_filename(msg, msg.id),
+                                f"{type(retry_err).__name__}: {retry_err}",
+                            )
                     except Exception as e:
-                        logger.warning(f"Watcher {wid_str}: fast copy failed: {e}. Falling back to existing processing path.")
+                        logger.warning(
+                            "FILE_ATTEMPT scope=watcher user_id=%s task_id=%s source_id=%s message_id=%s file=%r stage=fast-copy reason=%r; trying download/upload path",
+                            owner_id, wid_str, source_id, msg.id, media_filename(msg, msg.id),
+                            f"{type(e).__name__}: {e}",
+                        )
 
                 else:
                     try:
@@ -240,11 +254,20 @@ async def watcher_worker_loop(wid_str):
                                 )
                                 processed_successfully = bool(copy_res)
                         except Exception as retry_err:
-                            logger.warning(f"Watcher {wid_str}: copy retry failed: {retry_err}")
+                            logger.warning(
+                                "FILE_ATTEMPT scope=watcher user_id=%s task_id=%s source_id=%s message_id=%s file=%r stage=fast-copy-retry reason=%r",
+                                owner_id, wid_str, source_id, msg.id, media_filename(msg, msg.id),
+                                f"{type(retry_err).__name__}: {retry_err}",
+                            )
                     except Exception as e:
-                        logger.warning(f"Watcher {wid_str}: fast copy failed: {e}. Falling back to existing processing path.")
+                        logger.warning(
+                            "FILE_ATTEMPT scope=watcher user_id=%s task_id=%s source_id=%s message_id=%s file=%r stage=fast-copy reason=%r; trying download/upload path",
+                            owner_id, wid_str, source_id, msg.id, media_filename(msg, msg.id),
+                            f"{type(e).__name__}: {e}",
+                        )
 
             if processed_successfully:
+                log_file_result("watcher", owner_id, wid_str, source_id, msg.id, media_filename(msg, msg.id), "SUCCESS")
                 await db.db.watchers.update_one(
                     {"_id": watcher_db_id},
                     {"$max": {"last_msg_id": int(msg.id)}, "$inc": {"stats.success": 1}}
@@ -272,6 +295,7 @@ async def watcher_worker_loop(wid_str):
                     "thumb_b64": watcher.get("thumb_b64"),
                 }
 
+                result_reason = None
                 try:
                     result = await handle_private(
                         client=app,
@@ -291,24 +315,29 @@ async def watcher_worker_loop(wid_str):
                         allowed_types=allowed_types
                     )
                 finally:
+                    result_reason = ACTIVE_PROCESSES.get(owner_id, {}).get(task_uuid, {}).get("last_result_reason")
                     cleanup_task_memory(owner_id, task_uuid)
 
                 if result == "SUCCESS" or result is True:
+                    log_file_result("watcher", owner_id, wid_str, source_id, msg.id, media_filename(msg, msg.id), "SUCCESS")
                     await db.db.watchers.update_one(
                         {"_id": watcher_db_id},
                         {"$max": {"last_msg_id": int(msg.id)}, "$inc": {"stats.success": 1}}
                     )
                 elif result == "SKIPPED":
+                    log_file_result("watcher", owner_id, wid_str, source_id, msg.id, media_filename(msg, msg.id), "SKIPPED", result_reason or "message was filtered or unavailable")
                     await db.db.watchers.update_one(
                         {"_id": watcher_db_id},
                         {"$max": {"last_msg_id": int(msg.id)}, "$inc": {"stats.skipped": 1}}
                     )
                 else:
+                    log_file_result("watcher", owner_id, wid_str, source_id, msg.id, media_filename(msg, msg.id), "FAILED", result_reason or f"processor returned {result!r}; see preceding task logs")
                     await db.db.watchers.update_one(
                         {"_id": watcher_db_id},
                         {"$max": {"last_msg_id": int(msg.id)}, "$inc": {"stats.failed": 1}}
                     )
             except Exception as e:
+                log_file_result("watcher", owner_id, wid_str, source_id, msg.id, media_filename(msg, msg.id), "FAILED", f"{type(e).__name__}: {e}")
                 logger.error(f"Watcher {wid_str} failed for user {owner_id}, message {msg.id}: {e}", exc_info=True)
                 await db.db.watchers.update_one(
                     {"_id": watcher_db_id},

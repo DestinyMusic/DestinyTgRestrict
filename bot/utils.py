@@ -236,6 +236,36 @@ def filename_matches_filters(message, include_keywords=None, exclude_keywords=No
     return (not includes or any(word in filename for word in includes)) and not any(
         word in filename for word in excludes
     )
+
+
+def media_filename(message, fallback_id=None):
+    for attr in ("document", "video", "audio", "animation", "voice", "sticker"):
+        media = getattr(message, attr, None)
+        name = getattr(media, "file_name", None) or getattr(media, "title", None) if media else None
+        if name:
+            return clean_media_text(name)
+    return f"message_{fallback_id}" if fallback_id is not None else "unknown_media"
+
+
+def log_file_result(scope, user_id, task_id, source_id, message_id, filename, result, reason=None):
+    status = str(result).upper()
+    failed = status in {"FAIL", "FAILED", "ERROR"}
+    level = logging.ERROR if failed else logging.INFO
+    icon = "❌" if failed else "✅" if status in {"SUCCESS", "OK", "TRUE"} else "🛑" if status == "CANCELLED" else "⏭"
+    reason_text = str(reason or "")[:400]
+    logger.log(
+        level,
+        "FILE_RESULT scope=%s user_id=%s task_id=%s source_id=%s message_id=%s file=%r result=%s %s reason=%r",
+        scope,
+        user_id,
+        task_id or "-",
+        source_id if source_id is not None else "-",
+        message_id if message_id is not None else "-",
+        clean_media_text(filename or "unknown_media"),
+        status,
+        icon,
+        reason_text,
+    )
     
 def sanitize_filename(filename: str) -> str:
     if not filename: return "unnamed_file"
