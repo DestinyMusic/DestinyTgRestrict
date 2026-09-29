@@ -690,6 +690,7 @@ async def main():
                 saved_source_title=task.get("source_title"),
                 include_keywords=task.get("include_keywords", []),
                 exclude_keywords=task.get("exclude_keywords", []),
+                cleanup_keywords=task.get("cleanup_keywords", []), # 🟢 ADDED THIS
                 thumb_file_id=task.get("thumb_file_id"),
                 thumb_b64=task.get("thumb_b64"),
             )
