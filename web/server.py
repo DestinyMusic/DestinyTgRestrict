@@ -84,7 +84,8 @@ async def _api_diagnostics_middleware(request, handler):
         response = await handler(request)
     except web.HTTPException as exc:
         status = exc.status
-        if status >= 400 and status not in {416, 499}:
+        # 🟢 FIX: Add 401 to the ignore list
+        if status >= 400 and status not in {401, 416, 499}:
             _log_api_result(request, "FAILED", status, (time.monotonic() - started) * 1000, exc.reason)
         raise
     except Exception as exc:
@@ -99,7 +100,8 @@ async def _api_diagnostics_middleware(request, handler):
 
     result = "SUCCESS"
     reason = None
-    if response.status >= 400 and response.status not in {416, 499}:
+    # 🟢 FIX: Add 401 to the ignore list here as well
+    if response.status >= 400 and response.status not in {401, 416, 499}:
         result = "FAILED"
         reason = f"HTTP {response.status}"
         if response.content_type.startswith("text/") and response.body:
