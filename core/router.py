@@ -231,7 +231,21 @@ async def _execute_unrestricted_copy(client, acc, chat_id, msgid, dest_chat_id, 
             return False
 
         try:
-            await safe_send(upload_client, user_id, dest_chat_id, task_uuid, True, upload_client.copy_message, chat_id=dest_chat_id, from_chat_id=chat_id, message_id=msgid, message_thread_id=dest_thread_id)
+            task_info = ACTIVE_PROCESSES.get(user_id, {}).get(task_uuid, {})
+            cleanup_tags = task_info.get("cleanup_keywords", [])
+            copy_kwargs = {
+                "chat_id": dest_chat_id,
+                "from_chat_id": chat_id,
+                "message_id": msgid,
+                "message_thread_id": dest_thread_id
+            }
+            if msg.caption:
+                clean_cap, clean_ent = clean_caption(msg.caption, msg.caption_entities, custom_tags=cleanup_tags)
+                copy_kwargs["caption"] = clean_cap
+                if clean_ent:
+                    copy_kwargs["caption_entities"] = clean_ent
+
+            await safe_send(upload_client, user_id, dest_chat_id, task_uuid, True, upload_client.copy_message, **copy_kwargs)
             return True
         except Exception:
             if acc:
@@ -512,6 +526,9 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
     task_folder_path = Path(f"./downloads_{INSTANCE_ID}/{user_id}/{folder_name}/")
     task_folder_path.mkdir(parents=True, exist_ok=True)
 
+    task_info = ACTIVE_PROCESSES.get(user_id, {}).get(task_uuid, {})
+    cleanup_tags = task_info.get("cleanup_keywords", [])
+
     original_filename = "unknown_file"
     if msg.document and msg.document.file_name: original_filename = msg.document.file_name
     elif msg.video and msg.video.file_name: original_filename = msg.video.file_name
@@ -519,7 +536,11 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
     elif msg_type == "Photo": original_filename = f"{msgid}.jpg"
     elif msg_type == "Voice": original_filename = f"{msgid}.ogg"
 
-    safe_filename = build_media_filename(original_filename, msg, index)
+    # Clean the filename using global CLEANUP_TAGS + per-task cleanup_keywords
+    clean_orig_name = clean_media_text(original_filename, custom_tags=cleanup_tags)
+    safe_filename = build_media_filename(clean_orig_name, msg, index)
+    safe_filename = clean_media_text(safe_filename, custom_tags=cleanup_tags)
+
     if not safe_filename.strip(): safe_filename = f"{msgid}.dat"
     file_path_to_save = task_folder_path / safe_filename
     ph_path = await _prepare_task_thumbnail(client, task_folder_path, user_id, task_uuid)
@@ -589,18 +610,23 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
                         bot_id = client.me.id if getattr(client, "me", None) else int(BOT_TOKEN.split(":")[0])
                         log_chat_id, log_topic_id = await get_fallback_log_chat(acc, user_id, bot_id=bot_id)
                         
-                        # --- 🟢 RICH CAPTION EXTRACTION ---
-                        custom_cap = await build_rich_caption(file_path, msg_type, msg_fresh, override_name=safe_filename)
-                        if custom_cap:
-                            caption = custom_cap
-                            caption_entities = None
-                            p_mode = enums.ParseMode.HTML
-                        else:
+                        # --- 🟢 PRESERVE SOURCE CAPTION & CLEAN TAGS ---
+                        if msg_fresh.caption:
                             caption, caption_entities = clean_caption(
                                 msg_fresh.caption,
                                 msg_fresh.caption_entities,
+                                custom_tags=cleanup_tags
                             )
                             p_mode = None
+                        else:
+                            custom_cap = await build_rich_caption(file_path, msg_type, msg_fresh, override_name=safe_filename)
+                            if custom_cap:
+                                caption = custom_cap
+                                caption_entities = None
+                                p_mode = enums.ParseMode.HTML
+                            else:
+                                caption, caption_entities = None, None
+                                p_mode = None
 
                         a_dur = getattr(msg_fresh.audio, "duration", 0) if getattr(msg_fresh, "audio", None) else 0
                         a_perf = getattr(msg_fresh.audio, "performer", None) if getattr(msg_fresh, "audio", None) else None
@@ -666,18 +692,23 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
                             if status_message: await status_message.edit_text(f"✂️ **Splitting large file ({_pretty_bytes(file_size)})...**")
                         except FloodWait: pass
 
-                        # --- 🟢 RICH CAPTION EXTRACTION FOR SPLIT PARTS ---
-                        custom_cap = await build_rich_caption(file_path, msg_type, msg_fresh, override_name=safe_filename)
-                        if custom_cap:
-                            caption = custom_cap
-                            caption_entities = None
-                            p_mode = enums.ParseMode.HTML
-                        else:
+                        # --- 🟢 PRESERVE SOURCE CAPTION & CLEAN TAGS FOR SPLIT PARTS ---
+                        if msg_fresh.caption:
                             caption, caption_entities = clean_caption(
                                 msg_fresh.caption,
                                 msg_fresh.caption_entities,
+                                custom_tags=cleanup_tags
                             )
                             p_mode = None
+                        else:
+                            custom_cap = await build_rich_caption(file_path, msg_type, msg_fresh, override_name=safe_filename)
+                            if custom_cap:
+                                caption = custom_cap
+                                caption_entities = None
+                                p_mode = enums.ParseMode.HTML
+                            else:
+                                caption, caption_entities = None, None
+                                p_mode = None
 
                         # 🟢 USE DYNAMIC CHUNK SIZE (Based on Premium)
                         parts = await split_file_python(file_path, chunk_size=split_limit)
@@ -689,11 +720,14 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
                             for part in parts:
                                 if (batch_temp.IS_BATCH.get(user_id) and not is_w_task) or (task_uuid and CANCEL_FLAGS.get(task_uuid)): raise Exception("CANCELLED")
                                 
-                                # 🟢 DYNAMIC CAPTION: Reads intact MediaInfo metadata, but displays chunk size!
-                                part_size = os.path.getsize(part)
-                                part_name = Path(part).name
-                                part_cap = await build_rich_caption(file_path, msg_type, msg_fresh, override_name=part_name, override_size=part_size)
-                                final_cap = part_cap if part_cap else caption
+                                # 🟢 DYNAMIC CAPTION
+                                if msg_fresh.caption:
+                                    final_cap = caption
+                                else:
+                                    part_size = os.path.getsize(part)
+                                    part_name = Path(part).name
+                                    part_cap = await build_rich_caption(file_path, msg_type, msg_fresh, override_name=part_name, override_size=part_size)
+                                    final_cap = part_cap if part_cap else caption
 
                                 while True:
                                     await USER_FLOOD_LOCKS[user_id].wait_if_locked() 
@@ -771,18 +805,24 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
             PROGRESS.pop(f"{task_uuid}:up", None)
             PROGRESS.pop(f"{task_uuid}:down", None)
         
-        # --- 🟢 RICH CAPTION EXTRACTION FOR NORMAL FILES ---
-        custom_cap = await build_rich_caption(file_path, msg_type, msg_fresh, override_name=safe_filename)
-        if custom_cap:
-            caption = custom_cap
-            caption_entities = None
-            p_mode = enums.ParseMode.HTML
-        else:
+        # --- 🟢 PRESERVE SOURCE CAPTION & CLEAN TAGS ---
+        if msg_fresh.caption:
             caption, caption_entities = clean_caption(
                 msg_fresh.caption,
                 msg_fresh.caption_entities,
+                custom_tags=cleanup_tags
             )
             p_mode = None
+        else:
+            # Fallback to MediaInfo metadata box only if the source post had no caption
+            custom_cap = await build_rich_caption(file_path, msg_type, msg_fresh, override_name=safe_filename)
+            if custom_cap:
+                caption = custom_cap
+                caption_entities = None
+                p_mode = enums.ParseMode.HTML
+            else:
+                caption, caption_entities = None, None
+                p_mode = None
         
         upload_success = False
 
@@ -835,29 +875,37 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
                         v_h = getattr(msg_fresh.video, "height", 0) if getattr(msg_fresh, "video", None) else 0
 
                         sent = False
+                        # Safe copy of kwargs that strips unsupported parameters for Photos/Voices/Stickers
+                        upload_kwargs = dict(kwargs)
+                        if msg_type in ("Photo", "Voice", "Sticker"):
+                            upload_kwargs.pop("thumb", None)
+                        if msg_type == "Sticker":
+                            upload_kwargs.pop("caption", None)
+                            upload_kwargs.pop("caption_entities", None)
+                            upload_kwargs.pop("parse_mode", None)
+
                         try:
-                            if msg_type == "Document": await safe_send(upload_client, user_id, dest_chat_id, task_uuid, True, upload_client.send_document, document=file_path, progress=p_func, progress_args=p_args, **kwargs)
-                            elif msg_type == "Video": await safe_send(upload_client, user_id, dest_chat_id, task_uuid, True, upload_client.send_video, video=file_path, duration=v_dur, width=v_w, height=v_h, progress=p_func, progress_args=p_args, **kwargs)
-                            elif msg_type == "Audio": await safe_send(upload_client, user_id, dest_chat_id, task_uuid, True, upload_client.send_audio, audio=file_path, duration=a_dur, performer=a_perf, title=a_tit, progress=p_func, progress_args=p_args, **kwargs)
-                            elif msg_type == "Photo": await safe_send(upload_client, user_id, dest_chat_id, task_uuid, True, upload_client.send_photo, photo=file_path, **kwargs)
-                            elif msg_type == "Voice": await safe_send(upload_client, user_id, dest_chat_id, task_uuid, True, upload_client.send_voice, voice=file_path, progress=p_func, progress_args=p_args, **kwargs)
-                            elif msg_type == "Animation": await safe_send(upload_client, user_id, dest_chat_id, task_uuid, True, upload_client.send_animation, animation=file_path, **kwargs)
+                            if msg_type == "Document": await safe_send(upload_client, user_id, dest_chat_id, task_uuid, True, upload_client.send_document, document=file_path, progress=p_func, progress_args=p_args, **upload_kwargs)
+                            elif msg_type == "Video": await safe_send(upload_client, user_id, dest_chat_id, task_uuid, True, upload_client.send_video, video=file_path, duration=v_dur, width=v_w, height=v_h, progress=p_func, progress_args=p_args, **upload_kwargs)
+                            elif msg_type == "Audio": await safe_send(upload_client, user_id, dest_chat_id, task_uuid, True, upload_client.send_audio, audio=file_path, duration=a_dur, performer=a_perf, title=a_tit, progress=p_func, progress_args=p_args, **upload_kwargs)
+                            elif msg_type == "Photo": await safe_send(upload_client, user_id, dest_chat_id, task_uuid, True, upload_client.send_photo, photo=file_path, **upload_kwargs)
+                            elif msg_type == "Voice": await safe_send(upload_client, user_id, dest_chat_id, task_uuid, True, upload_client.send_voice, voice=file_path, progress=p_func, progress_args=p_args, **upload_kwargs)
+                            elif msg_type == "Animation": await safe_send(upload_client, user_id, dest_chat_id, task_uuid, True, upload_client.send_animation, animation=file_path, **upload_kwargs)
                             elif msg_type == "Sticker": await safe_send(upload_client, user_id, dest_chat_id, task_uuid, True, upload_client.send_sticker, chat_id=dest_chat_id, sticker=file_path, message_thread_id=dest_thread_id)
                             else:
                                 raise ValueError(f"Unsupported upload type: {msg_type}")
                             sent = True
                         except Exception:
                             if acc:
-                                # 🟢 UPDATE UI: Show User Session taking over heavy upload!
                                 if task_uuid and user_id in ACTIVE_PROCESSES and task_uuid in ACTIVE_PROCESSES[user_id]:
                                     ACTIVE_PROCESSES[user_id][task_uuid]["uploader"] = _get_client_label(acc)
                                     
-                                if msg_type == "Document": await safe_send(acc, user_id, dest_chat_id, task_uuid, False, acc.send_document, document=file_path, progress=p_func, progress_args=p_args, **kwargs)
-                                elif msg_type == "Video": await safe_send(acc, user_id, dest_chat_id, task_uuid, False, acc.send_video, video=file_path, duration=v_dur, width=v_w, height=v_h, progress=p_func, progress_args=p_args, **kwargs)
-                                elif msg_type == "Audio": await safe_send(acc, user_id, dest_chat_id, task_uuid, False, acc.send_audio, audio=file_path, duration=a_dur, performer=a_perf, title=a_tit, progress=p_func, progress_args=p_args, **kwargs)
-                                elif msg_type == "Photo": await safe_send(acc, user_id, dest_chat_id, task_uuid, False, acc.send_photo, photo=file_path, **kwargs)
-                                elif msg_type == "Voice": await safe_send(acc, user_id, dest_chat_id, task_uuid, False, acc.send_voice, voice=file_path, progress=p_func, progress_args=p_args, **kwargs)
-                                elif msg_type == "Animation": await safe_send(acc, user_id, dest_chat_id, task_uuid, False, acc.send_animation, animation=file_path, **kwargs)
+                                if msg_type == "Document": await safe_send(acc, user_id, dest_chat_id, task_uuid, False, acc.send_document, document=file_path, progress=p_func, progress_args=p_args, **upload_kwargs)
+                                elif msg_type == "Video": await safe_send(acc, user_id, dest_chat_id, task_uuid, False, acc.send_video, video=file_path, duration=v_dur, width=v_w, height=v_h, progress=p_func, progress_args=p_args, **upload_kwargs)
+                                elif msg_type == "Audio": await safe_send(acc, user_id, dest_chat_id, task_uuid, False, acc.send_audio, audio=file_path, duration=a_dur, performer=a_perf, title=a_tit, progress=p_func, progress_args=p_args, **upload_kwargs)
+                                elif msg_type == "Photo": await safe_send(acc, user_id, dest_chat_id, task_uuid, False, acc.send_photo, photo=file_path, **upload_kwargs)
+                                elif msg_type == "Voice": await safe_send(acc, user_id, dest_chat_id, task_uuid, False, acc.send_voice, voice=file_path, progress=p_func, progress_args=p_args, **upload_kwargs)
+                                elif msg_type == "Animation": await safe_send(acc, user_id, dest_chat_id, task_uuid, False, acc.send_animation, animation=file_path, **upload_kwargs)
                                 elif msg_type == "Sticker": await safe_send(acc, user_id, dest_chat_id, task_uuid, False, acc.send_sticker, chat_id=dest_chat_id, sticker=file_path, message_thread_id=dest_thread_id)
                                 else:
                                     raise ValueError(f"Unsupported upload type: {msg_type}")
