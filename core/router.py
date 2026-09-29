@@ -508,6 +508,99 @@ async def _prepare_task_thumbnail(client, task_folder_path, user_id, task_uuid):
 # --- CORE RESTRICTED DOWNLOAD / UPLOAD ENGINE ---
 # ==============================================================================
 
+async def process_internal_metadata(file_path, cleanup_tags):
+    """
+    Scans MKV/MP4 files and strips specified tags from internal streams (audio, subs, etc).
+    Uses ultra-fast MKVPropEdit for MKVs with a reliable FFmpeg fallback.
+    """
+    import os, json
+    from pathlib import Path
+    
+    if not cleanup_tags or not file_path or not os.path.exists(file_path):
+        return
+        
+    ext = str(file_path).lower()
+    if not ext.endswith(('.mkv', '.mp4', '.m4a', '.mp3', '.flac', '.webm')):
+        return
+
+    try:
+        # 1. Probe the file for existing tags
+        cmd = ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", str(file_path)]
+        proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        stdout, _ = await proc.communicate()
+        if not stdout: return
+        
+        info = json.loads(stdout)
+        from bot.utils import clean_media_text
+
+        needs_change = False
+        
+        # --- PREPARE COMMANDS FOR BOTH ENGINES ---
+        ffmpeg_args = ["ffmpeg", "-y", "-i", str(file_path), "-map", "0", "-c", "copy"]
+        mkvprop_args = ["mkvpropedit", str(file_path)]
+
+        # 2. Clean Global File Tags
+        format_tags = info.get("format", {}).get("tags", {})
+        for k, v in format_tags.items():
+            if k.lower() in ["title", "album", "artist"]:
+                cleaned_val = clean_media_text(v, custom_tags=cleanup_tags)
+                if cleaned_val != v:
+                    needs_change = True
+                    ffmpeg_args.extend(["-metadata", f"{k}={cleaned_val}"])
+                    if k.lower() == "title":
+                        mkvprop_args.extend(["--edit", "info", "--set", f"title={cleaned_val}"])
+
+        # 3. Clean Individual Track Tags (Audio, Video, Subtitles)
+        for s in info.get("streams", []):
+            idx = s.get("index")
+            stream_tags = s.get("tags", {})
+            for k, v in stream_tags.items():
+                if k.lower() in ["title", "handler_name", "language"]:
+                    cleaned_val = clean_media_text(v, custom_tags=cleanup_tags)
+                    if cleaned_val != v:
+                        needs_change = True
+                        ffmpeg_args.extend([f"-metadata:s:{idx}", f"{k}={cleaned_val}"])
+                        if k.lower() in ["title", "handler_name"]:
+                            # mkvpropedit uses 1-based track indexing (FFprobe index + 1)
+                            mkvprop_args.extend(["--edit", f"track:@{idx + 1}", "--set", f"name={cleaned_val}"])
+                        elif k.lower() == "language":
+                            mkvprop_args.extend(["--edit", f"track:@{idx + 1}", "--set", f"language={cleaned_val}"])
+
+        if not needs_change:
+            return
+
+        # 4. EXECUTION WITH FALLBACK ENGINE
+        is_mkv = ext.endswith(('.mkv', '.webm'))
+        mkvprop_success = False
+
+        # Phase A: Try MKVPropEdit First (Instant, In-Place Editing)
+        if is_mkv:
+            try:
+                proc_mkv = await asyncio.create_subprocess_exec(*mkvprop_args, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+                await proc_mkv.communicate()
+                if proc_mkv.returncode == 0:
+                    mkvprop_success = True
+            except Exception:
+                pass
+
+        # Phase B: Fallback to FFmpeg if MKVPropEdit failed, or if it is an MP4/M4A
+        if not mkvprop_success:
+            temp_out = str(file_path) + ".tmp" + Path(file_path).suffix
+            ffmpeg_args.append(str(temp_out))
+            
+            proc_ff = await asyncio.create_subprocess_exec(*ffmpeg_args, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+            await proc_ff.communicate()
+            
+            if proc_ff.returncode == 0 and os.path.exists(temp_out):
+                os.replace(temp_out, str(file_path))
+            else:
+                if os.path.exists(temp_out):
+                    os.remove(temp_out)
+
+    except Exception as e:
+        pass # Silently proceed so the upload doesn't crash if metadata engines fail
+
+
 async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_chat_id, dest_thread_id, msg, msg_type, index, total_count, status_message, delay, user_id, task_uuid, header_text):
     
     if msg_type == "Text":
@@ -530,11 +623,24 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
     cleanup_tags = task_info.get("cleanup_keywords", [])
 
     original_filename = "unknown_file"
-    if msg.document and msg.document.file_name: original_filename = msg.document.file_name
-    elif msg.video and msg.video.file_name: original_filename = msg.video.file_name
-    elif msg.audio and msg.audio.file_name: original_filename = msg.audio.file_name
-    elif msg_type == "Photo": original_filename = f"{msgid}.jpg"
-    elif msg_type == "Voice": original_filename = f"{msgid}.ogg"
+    if msg.caption:
+        # 🟢 FIX: Use the first line of the beautiful caption to name the file, avoiding Telegram truncation
+        import os
+        base_name = msg.caption.split('\n')[0].strip()
+        ext = ""
+        if msg.document and msg.document.file_name: ext = os.path.splitext(msg.document.file_name)[1]
+        elif msg.video and msg.video.file_name: ext = os.path.splitext(msg.video.file_name)[1]
+        elif msg.audio and msg.audio.file_name: ext = os.path.splitext(msg.audio.file_name)[1]
+        elif msg_type == "Photo": ext = ".jpg"
+        elif msg_type == "Voice": ext = ".ogg"
+        
+        original_filename = base_name + ext if not base_name.lower().endswith(ext.lower()) else base_name
+    else:
+        if msg.document and msg.document.file_name: original_filename = msg.document.file_name
+        elif msg.video and msg.video.file_name: original_filename = msg.video.file_name
+        elif msg.audio and msg.audio.file_name: original_filename = msg.audio.file_name
+        elif msg_type == "Photo": original_filename = f"{msgid}.jpg"
+        elif msg_type == "Voice": original_filename = f"{msgid}.ogg"
 
     # Clean the filename using global CLEANUP_TAGS + per-task cleanup_keywords
     clean_orig_name = clean_media_text(original_filename, custom_tags=cleanup_tags)
@@ -602,6 +708,8 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
                             except FloodWait: pass
                         async with USER_DOWNLOAD_SEMAPHORES[user_id]:
                             file_path = await fetcher.download_media(msg_fresh, file_name=str(file_path_to_save), progress=progress, progress_args=["down", task_uuid])
+                        
+                        await process_internal_metadata(file_path, cleanup_tags) # 🟢 NEW
                         
                         try:
                             if status_message: await status_message.edit_text(f"☁️ **Uploading via Premium Session...**")
@@ -688,6 +796,8 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
                         async with USER_DOWNLOAD_SEMAPHORES[user_id]:
                             file_path = await fetcher.download_media(msg_fresh, file_name=str(file_path_to_save), progress=progress, progress_args=["down", task_uuid])
                         
+                        await process_internal_metadata(file_path, cleanup_tags) # 🟢 NEW
+                        
                         try:
                             if status_message: await status_message.edit_text(f"✂️ **Splitting large file ({_pretty_bytes(file_size)})...**")
                         except FloodWait: pass
@@ -767,6 +877,8 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
                                 fetcher.download_media(msg_fresh, file_name=str(file_path_to_save), progress=progress, progress_args=["down", task_uuid]),
                                 timeout=1200
                             )
+                        
+                        await process_internal_metadata(file_path, cleanup_tags) # 🟢 NEW
                     except asyncio.TimeoutError:
                         return False
                 
@@ -939,4 +1051,4 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
                 shutil.rmtree(task_folder_path)
         except Exception: pass
         gc.collect()
-
+        
