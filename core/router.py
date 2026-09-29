@@ -1,6 +1,7 @@
 # ==============================================================================
 # --- 2. MESSAGE FETCHER & VALIDATOR ---
 # ==============================================================================
+import os 
 from pyrogram.errors import FloodWait
 
 def _set_task_result_reason(user_id, task_uuid, reason):
@@ -673,8 +674,6 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
 
     task_info = ACTIVE_PROCESSES.get(user_id, {}).get(task_uuid, {})
     cleanup_tags = task_info.get("cleanup_keywords", [])
-
-    import os # 🟢 FIX: Moved outside the if-statement to prevent UnboundLocalError
     original_filename = "unknown_file"
     if msg.caption:
         # 🟢 FIX: Use the first line of the beautiful caption to name the file, avoiding Telegram truncation
