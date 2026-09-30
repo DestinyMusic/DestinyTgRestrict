@@ -671,7 +671,9 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
 
                         task_info = ACTIVE_PROCESSES.get(user_id, {}).get(task_uuid, {})
                         has_custom_thumb = bool(task_info.get("thumb_file_id") or task_info.get("thumb_b64"))
-                        if is_pub and not is_restricted and not is_bot_or_user_pm and not has_custom_thumb:
+                        has_cleanup_tags = bool(task_info.get("cleanup_keywords"))
+
+                        if is_pub and not is_restricted and not is_bot_or_user_pm and not has_custom_thumb and not has_cleanup_tags:
                             task_result = await handle_public_unrestricted(
                                 client, acc, chatid, msgid, dest_chat_id, dest_thread_id, 
                                 user_id, task_uuid, filter_thread_id, allowed_types, delay, pre_fetched_msg=pre_fetched_msg
