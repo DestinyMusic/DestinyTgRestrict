@@ -173,6 +173,8 @@ def _normalize_keyword_list(value):
 def _normalize_task_thumb_data(value):
     if not value:
         return None
+    if value == "REMOVE":
+        return "REMOVE"
     if not isinstance(value, str) or len(value) > 30_000_000: # 🟢 INCREASED LIMIT
         raise ValueError("Thumbnail image is too large.")
     import base64
