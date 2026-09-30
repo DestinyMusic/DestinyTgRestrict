@@ -132,7 +132,10 @@ async def watcher_worker_loop(wid_str):
                 {"$set": {"fetcher": _get_client_label(fetcher), "uploader": _get_client_label(upload_client)}}
             )
 
-            if not is_restricted and not is_content_protected and not (watcher.get("thumb_file_id") or watcher.get("thumb_b64")):
+            has_custom_thumb = bool(watcher.get("thumb_file_id") or watcher.get("thumb_b64"))
+            has_cleanup_tags = bool(watcher.get("cleanup_keywords"))
+
+            if not is_restricted and not is_content_protected and not has_custom_thumb and not has_cleanup_tags:
                 if getattr(msg, "media_group_id", None):
                     group_cache_key = f"{owner_id}_{source_id}_{msg.media_group_id}_{dest_id}_{dest_thread}"
                     if WATCHER_MEDIA_GROUPS.get(group_cache_key):
