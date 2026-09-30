@@ -5916,32 +5916,50 @@
                     container.innerHTML += htmlStr;
                 });
                 
-                // 🟢 FIX: Dynamically populate existing Global Metadata!
+                // 🟢 FIX: Interactive, Scrollable Global Metadata Editor!
                 const metaContainer = document.getElementById('editor-global-meta-container');
-                metaContainer.innerHTML = '<h4 style="margin: 0 0 10px 0; color: var(--accent); font-size: 13px;">🌍 GLOBAL METADATA</h4><p style="font-size:10px; color:var(--subtext); margin-top:0;">Edit tags below. Erase the text completely to wipe a tag from the final file.</p>';
+                metaContainer.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <div>
+                            <h4 style="margin: 0; color: var(--accent); font-size: 13px;">🌍 GLOBAL METADATA</h4>
+                            <p style="font-size:10px; color:var(--subtext); margin-top:2px; margin-bottom:0;">Rename, add, or delete global tags. Leave value blank to erase.</p>
+                        </div>
+                        <button class="primary-btn" style="width: auto; padding: 4px 10px; font-size: 10px; margin: 0; background: #8b5cf6;" onclick="window.addGlobalMetaUI()">+ ADD NEW</button>
+                    </div>
+                    <div id="global-meta-list" style="max-height: 220px; overflow-y: auto; padding-right: 5px; display: flex; flex-direction: column; gap: 8px;">
+                    </div>
+                `;
                 
-                if (data.format_tags && Object.keys(data.format_tags).length > 0) {
-                    for (const [key, value] of Object.entries(data.format_tags)) {
-                        metaContainer.innerHTML += `
-                            <div style="display: flex; flex-direction: column; margin-bottom: 8px;">
-                                <label style="font-size: 9px; color: var(--subtext); text-transform: uppercase; font-weight: bold;">${key}</label>
-                                <input type="text" class="global-meta-input" data-key="${key}" value="${value.replace(/"/g, '&quot;')}" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid var(--card-border); background: var(--bg); color: #fff; font-size: 12px; box-sizing: border-box;">
+                window.globalMetaCounter = 0;
+                window.addGlobalMetaUI = function(key = '', value = '') {
+                    const list = document.getElementById('global-meta-list');
+                    if (!list) return;
+                    const tid = window.globalMetaCounter++;
+                    const htmlStr = `
+                        <div id="global-meta-${tid}" style="display: flex; gap: 8px; align-items: flex-end; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 8px; border: 1px solid var(--card-border);">
+                            <div style="flex: 1.2; display: flex; flex-direction: column;">
+                                <label style="font-size: 9px; color: var(--subtext); text-transform: uppercase; font-weight: bold; margin-bottom: 4px;">Tag Name</label>
+                                <input type="text" id="meta-key-${tid}" value="${key.replace(/"/g, '&quot;')}" placeholder="e.g. WEBSITE" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid var(--card-border); background: var(--bg); color: var(--accent); font-size: 11px; font-weight: bold; box-sizing: border-box; text-transform: uppercase;">
                             </div>
-                        `;
-                    }
-                } else {
-                    metaContainer.innerHTML += '<div style="font-size: 11px; color: var(--subtext); margin-bottom: 8px;">No existing metadata found. You can add a Title below.</div>';
-                }
-                
-                // Ensure a "title" box is always present even if the file didn't have one
-                if (!data.format_tags || !data.format_tags.title && !data.format_tags.TITLE) {
-                     metaContainer.innerHTML += `
-                        <div style="display: flex; flex-direction: column; margin-bottom: 8px;">
-                            <label style="font-size: 9px; color: var(--subtext); text-transform: uppercase; font-weight: bold;">title</label>
-                            <input type="text" class="global-meta-input" data-key="title" value="" placeholder="New Movie Title..." style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid var(--card-border); background: var(--bg); color: #fff; font-size: 12px; box-sizing: border-box;">
+                            <div style="flex: 2; display: flex; flex-direction: column;">
+                                <label style="font-size: 9px; color: var(--subtext); text-transform: uppercase; font-weight: bold; margin-bottom: 4px;">Value</label>
+                                <input type="text" id="meta-val-${tid}" value="${value.replace(/"/g, '&quot;')}" placeholder="Value..." style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid var(--card-border); background: var(--bg); color: #fff; font-size: 12px; box-sizing: border-box;">
+                            </div>
+                            <button onclick="document.getElementById('global-meta-${tid}').remove()" style="background: rgba(239,68,68,0.2); color: #ef4444; border: 1px solid rgba(239,68,68,0.3); border-radius: 8px; padding: 8px 12px; font-size: 11px; font-weight: bold; cursor: pointer; height: 33px;">✕</button>
                         </div>
                     `;
+                    list.insertAdjacentHTML('beforeend', htmlStr);
+                };
+
+                // Populate existing tags from the file
+                let hasTitle = false;
+                if (data.format_tags && Object.keys(data.format_tags).length > 0) {
+                    for (const [key, value] of Object.entries(data.format_tags)) {
+                        if (key.toLowerCase() === 'title') hasTitle = true;
+                        window.addGlobalMetaUI(key, value);
+                    }
                 }
+                if (!hasTitle) window.addGlobalMetaUI('TITLE', '');
 
                 document.getElementById('editor-filename').value = data.file_name || 'output.mkv';
                 document.getElementById('ext-tracks-wrapper').style.display = 'block';
@@ -6204,11 +6222,23 @@
             const thumbFile = document.getElementById('editor-thumb-file').files[0];
             
             let globalTags = {};
-            document.querySelectorAll('.global-meta-input').forEach(input => {
-                const key = input.getAttribute('data-key');
-                const val = input.value;
-                globalTags[key] = val; 
-            });
+            const metaList = document.getElementById('global-meta-list');
+            if (metaList) {
+                metaList.querySelectorAll('[id^="global-meta-"]').forEach(item => {
+                    const tid = item.id.split('-').pop();
+                    const keyInput = document.getElementById('meta-key-' + tid);
+                    const valInput = document.getElementById('meta-val-' + tid);
+                    
+                    if (keyInput && valInput) {
+                        const key = keyInput.value.trim().toUpperCase();
+                        const val = valInput.value; 
+                        
+                        if (key) {
+                            globalTags[key] = val;
+                        }
+                    }
+                });
+            }
             
             let config = [];
             window.editorProbeData.streams.forEach(function(s) {
