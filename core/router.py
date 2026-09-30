@@ -105,7 +105,10 @@ async def handle_private(client: Client, acc, message: Message, chatid, msgid: i
     # 3. Route the task
     is_content_protected = is_restricted or getattr(msg, "has_protected_content", False) or getattr(msg.chat, "has_protected_content", False)
     task_info = ACTIVE_PROCESSES.get(user_id, {}).get(task_uuid, {})
-    if (task_info.get("thumb_file_id") or task_info.get("thumb_b64")) and msg_type != "Text":
+    has_custom_thumb = bool(task_info.get("thumb_file_id") or task_info.get("thumb_b64"))
+    has_cleanup_tags = bool(task_info.get("cleanup_keywords"))
+
+    if (has_custom_thumb or has_cleanup_tags) and msg_type != "Text":
         return await _execute_restricted_download_upload(client, acc, chatid, msgid, **kwargs)
     
     if not is_content_protected:
@@ -1102,3 +1105,4 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
                 shutil.rmtree(task_folder_path)
         except Exception: pass
         gc.collect()
+
