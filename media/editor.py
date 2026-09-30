@@ -29,6 +29,8 @@ def _build_global_tags_xml(global_tags):
     root = ET.Element("Tags")
     tag = ET.SubElement(root, "Tag")
     ET.SubElement(tag, "Targets")
+    
+    has_valid_tags = False
     for key, value in global_tags.items():
         tag_name = str(key).strip().upper()
         if not re.fullmatch(r"[A-Z0-9_.-]{1,128}", tag_name):
@@ -36,9 +38,16 @@ def _build_global_tags_xml(global_tags):
         tag_value = clean_media_text(value)
         if not tag_value:
             continue
+            
         simple = ET.SubElement(tag, "Simple")
         ET.SubElement(simple, "Name").text = tag_name
         ET.SubElement(simple, "String").text = tag_value
+        has_valid_tags = True
+        
+    # 🟢 FIX: If all tags were erased/empty, return None so MKVToolNix ignores it
+    if not has_valid_tags:
+        return None
+        
     return ET.tostring(root, encoding="unicode")
 
 
@@ -108,14 +117,17 @@ async def process_remux(input_file, output_file, stream_config, global_tags=None
         raise Exception(f"MKVMerge Error:\n{full_error}")
 
     if global_tags is not None:
-        tags_path = f"{output_file}.tags.xml"
-        try:
-            root = ET.fromstring(_build_global_tags_xml(global_tags))
-            ET.ElementTree(root).write(tags_path, encoding="utf-8", xml_declaration=True)
-            proc = await asyncio.create_subprocess_exec(
-                "mkvpropedit", output_file, "--tags", f"global:{tags_path}",
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-            )
+        xml_data = _build_global_tags_xml(global_tags)
+        # 🟢 FIX: Only run the XML tagger if valid XML data was actually generated
+        if xml_data:
+            tags_path = f"{output_file}.tags.xml"
+            try:
+                root = ET.fromstring(xml_data)
+                ET.ElementTree(root).write(tags_path, encoding="utf-8", xml_declaration=True)
+                proc = await asyncio.create_subprocess_exec(
+                    "mkvpropedit", output_file, "--tags", f"global:{tags_path}",
+                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                )
             out, err = await proc.communicate()
             if proc.returncode != 0:
                 error = err.decode("utf-8", errors="ignore").strip() or out.decode("utf-8", errors="ignore").strip()
