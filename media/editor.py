@@ -116,8 +116,10 @@ async def process_remux(input_file, output_file, stream_config, global_tags=None
         full_error = f"{err_str}\n{out_str}".strip()
         raise Exception(f"MKVMerge Error:\n{full_error}")
 
+    # --- GLOBAL TAGS (XML METHOD) ---
     if global_tags is not None:
         xml_data = _build_global_tags_xml(global_tags)
+        
         # 🟢 FIX: Only run the XML tagger if valid XML data was actually generated
         if xml_data:
             tags_path = f"{output_file}.tags.xml"
@@ -128,10 +130,12 @@ async def process_remux(input_file, output_file, stream_config, global_tags=None
                     "mkvpropedit", output_file, "--tags", f"global:{tags_path}",
                     stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
                 )
-            out, err = await proc.communicate()
-            if proc.returncode != 0:
-                error = err.decode("utf-8", errors="ignore").strip() or out.decode("utf-8", errors="ignore").strip()
-                raise Exception(f"MKV metadata update failed: {error}")
+                out, err = await proc.communicate()
+                if proc.returncode != 0:
+                    error = err.decode('utf-8', 'ignore').strip()
+                    raise Exception(error)
+            except Exception as e:
+                raise Exception(f"MKV metadata update failed: {e}")
         finally:
             if os.path.exists(tags_path):
                 os.remove(tags_path)
