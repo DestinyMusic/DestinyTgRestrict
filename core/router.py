@@ -470,6 +470,10 @@ async def _prepare_task_thumbnail(client, task_folder_path, user_id, task_uuid):
     task_info = ACTIVE_PROCESSES.get(user_id, {}).get(task_uuid, {})
     file_id = task_info.get("thumb_file_id")
     thumb_b64 = task_info.get("thumb_b64")
+    
+    if thumb_b64 == "REMOVE":
+        return "REMOVE"
+        
     if not file_id and not thumb_b64:
         return None
 
@@ -923,11 +927,14 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
                         return False
                 
                 try:
-                    thumb = None
-                    if msg_fresh.document and msg_fresh.document.thumbs: thumb = msg_fresh.document.thumbs[0]
-                    elif msg_fresh.video and msg_fresh.video.thumbs: thumb = msg_fresh.video.thumbs[0]
-                    elif msg_fresh.audio and msg_fresh.audio.thumbs: thumb = msg_fresh.audio.thumbs[0]
-                    if thumb and not ph_path: ph_path = await fetcher.download_media(thumb.file_id, file_name=str(task_folder_path / "thumb.jpg"))
+                    if ph_path == "REMOVE":
+                        ph_path = None
+                    else:
+                        thumb = None
+                        if msg_fresh.document and msg_fresh.document.thumbs: thumb = msg_fresh.document.thumbs[0]
+                        elif msg_fresh.video and msg_fresh.video.thumbs: thumb = msg_fresh.video.thumbs[0]
+                        elif msg_fresh.audio and msg_fresh.audio.thumbs: thumb = msg_fresh.audio.thumbs[0]
+                        if thumb and not ph_path: ph_path = await fetcher.download_media(thumb.file_id, file_name=str(task_folder_path / "thumb.jpg"))
                 except Exception: pass
 
                 download_success = True
@@ -1091,4 +1098,3 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
                 shutil.rmtree(task_folder_path)
         except Exception: pass
         gc.collect()
-
