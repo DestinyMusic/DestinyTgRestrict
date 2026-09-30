@@ -222,6 +222,14 @@ async def _web_auth_middleware(request, handler):
     if not request.path.startswith("/api/") or request.path in PUBLIC_AUTH_PATHS:
         return await handler(request)
 
+    # 🟢 FIX: Allow internal server loopback requests (FFprobe / FFmpeg) to bypass authentication
+    if request.remote in {"127.0.0.1", "::1"} or request.headers.get("X-Internal-Loopback") == "true":
+        # We must still inject a dummy user_id so the downstream handlers don't crash
+        request["authenticated_user_id"] = int(request.query.get("user_id", 0))
+        request["web_auth_token"] = "loopback"
+        request["web_session_id"] = "loopback"
+        return await handler(request)
+
     payload = {}
     if request.content_type == "application/json" and request.can_read_body:
         try:
