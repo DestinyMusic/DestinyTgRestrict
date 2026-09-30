@@ -546,27 +546,25 @@ async def process_internal_metadata(file_path, cleanup_tags):
         mkv_global_edits = []
         mkv_track_edits = {} 
 
-        # 2. Clean Global File Tags
+        # 2. Clean Global File Tags (Unrestricted)
         format_tags = info.get("format", {}).get("tags", {})
         for k, v in format_tags.items():
-            if k.lower() in ["title", "album", "artist"]:
-                cleaned_val = clean_media_text(v, custom_tags=cleanup_tags)
-                if cleaned_val != v:
-                    needs_change = True
-                    ffmpeg_args.extend(["-metadata", f"{k}={cleaned_val}"])
-                    if k.lower() == "title":
-                        if cleaned_val:
-                            mkv_global_edits.extend(["--set", f"title={cleaned_val}"])
-                        else:
-                            mkv_global_edits.extend(["--delete", "title"])
+            cleaned_val = clean_media_text(v, custom_tags=cleanup_tags)
+            if cleaned_val != v:
+                needs_change = True
+                ffmpeg_args.extend(["-metadata", f"{k}={cleaned_val}"])
+                if k.lower() == "title":
+                    if cleaned_val:
+                        mkv_global_edits.extend(["--set", f"title={cleaned_val}"])
+                    else:
+                        mkv_global_edits.extend(["--delete", "title"])
 
-        # 3. Clean Individual Track Tags (Audio, Video, Subtitles)
+        # 3. Clean Individual Track Tags (Unrestricted)
         v_idx, a_idx, s_idx = 1, 1, 1
         for s in info.get("streams", []):
             idx = s.get("index")
             codec_type = s.get("codec_type")
 
-            # Create absolute MKV Track IDs (v1, a1, s1)
             if codec_type == "video":
                 mkv_tid = f"v{v_idx}"
                 v_idx += 1
@@ -580,41 +578,29 @@ async def process_internal_metadata(file_path, cleanup_tags):
                 mkv_tid = None
 
             stream_tags = s.get("tags", {})
-            name_processed = False
-            lang_processed = False
             
             for k, v in stream_tags.items():
                 k_lower = k.lower()
-                if k_lower in ["title", "handler_name", "language"]:
+                cleaned_val = clean_media_text(v, custom_tags=cleanup_tags)
+                
+                if cleaned_val != v:
+                    needs_change = True
+                    ffmpeg_args.extend([f"-metadata:s:{idx}", f"{k}={cleaned_val}"])
                     
-                    # Prevent duplicate track name edits for MKVPropEdit
-                    if k_lower in ["title", "handler_name"]:
-                        if name_processed: continue
-                        name_processed = True
-                        
-                    if k_lower == "language":
-                        if lang_processed: continue
-                        lang_processed = True
-
-                    cleaned_val = clean_media_text(v, custom_tags=cleanup_tags)
-                    if cleaned_val != v:
-                        needs_change = True
-                        ffmpeg_args.extend([f"-metadata:s:{idx}", f"{k}={cleaned_val}"])
-                        
-                        if mkv_tid:
-                            if mkv_tid not in mkv_track_edits:
-                                mkv_track_edits[mkv_tid] = []
-                                
-                            if k_lower in ["title", "handler_name"]:
-                                if cleaned_val:
-                                    mkv_track_edits[mkv_tid].extend(["--set", f"name={cleaned_val}"])
-                                else:
-                                    mkv_track_edits[mkv_tid].extend(["--delete", "name"])
-                            elif k_lower == "language":
-                                if cleaned_val:
-                                    mkv_track_edits[mkv_tid].extend(["--set", f"language={cleaned_val}"])
-                                else:
-                                    mkv_track_edits[mkv_tid].extend(["--delete", "language"])
+                    if mkv_tid:
+                        if mkv_tid not in mkv_track_edits:
+                            mkv_track_edits[mkv_tid] = []
+                            
+                        if k_lower in ["title", "handler_name"]:
+                            if cleaned_val:
+                                mkv_track_edits[mkv_tid].extend(["--set", f"name={cleaned_val}"])
+                            else:
+                                mkv_track_edits[mkv_tid].extend(["--delete", "name"])
+                        elif k_lower == "language":
+                            if cleaned_val:
+                                mkv_track_edits[mkv_tid].extend(["--set", f"language={cleaned_val}"])
+                            else:
+                                mkv_track_edits[mkv_tid].extend(["--delete", "language"])
 
         if not needs_change:
             return
