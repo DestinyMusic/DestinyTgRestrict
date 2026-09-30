@@ -136,9 +136,9 @@ async def process_remux(input_file, output_file, stream_config, global_tags=None
                     raise Exception(error)
             except Exception as e:
                 raise Exception(f"MKV metadata update failed: {e}")
-        finally:
-            if os.path.exists(tags_path):
-                os.remove(tags_path)
+            finally: # 🟢 FIX: Shifted 4 spaces right so it correctly attaches to the 'try' block
+                if os.path.exists(tags_path):
+                    os.remove(tags_path)
         
     return output_file
 
