@@ -52,9 +52,10 @@ async def _get_direct_http_session():
                 ttl_dns_cache=60, 
                 keepalive_timeout=30, 
                 enable_cleanup_closed=True,
+                ssl=False # 🟢 FIX: Bypasses strict SSL handshakes on sketchy CDNs and Cloudflare Workers
             )
-            # 🟢 FIX: Increased sock_read from 15s to 60s to prevent Terabox drops
-            timeout = aiohttp.ClientTimeout(total=None, connect=15, sock_connect=15, sock_read=60)
+            # 🟢 FIX: Increased connect timeouts from 15s to 45s. Cloudflare Workers take ~20-25s to wake up!
+            timeout = aiohttp.ClientTimeout(total=None, connect=45, sock_connect=45, sock_read=120)
             DIRECT_HTTP_SESSION = aiohttp.ClientSession(
                 connector=connector,
                 timeout=timeout,
