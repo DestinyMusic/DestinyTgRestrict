@@ -47,66 +47,33 @@ jobs:
         with:
           gradle-version: "8.10.2"
 
-      - name: Build universal installable APK
+      - name: Build universal and ABI-specific installable APKs
         working-directory: android
         run: ./gradlew --no-daemon assembleDebug
 
-      - name: Verify APK exists
-        run: test -f android/app/build/outputs/apk/debug/app-debug.apk
+      - name: Verify APK variants exist
+        run: test "$(find android/app/build/outputs/apk/debug -maxdepth 1 -name '*.apk' | wc -l)" -ge 5
 
       - uses: actions/upload-artifact@v4
         with:
-          name: destiny-android-universal
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-          retention-days: 30
-
-  ios:
-    runs-on: macos-14
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Generate Xcode project
-        run: |
-          brew install xcodegen
-          xcodegen generate --spec ios/project.yml --project ios/DestinyDevice.xcodeproj
-
-      - name: Build unsigned iOS app
-        run: >-
-          xcodebuild -project ios/DestinyDevice.xcodeproj
-          -scheme DestinyDevice
-          -sdk iphoneos
-          -configuration Release
-          -derivedDataPath build/ios
-          CODE_SIGNING_ALLOWED=NO
-          build
-
-      - name: Package unsigned iOS IPA
-        run: |
-          mkdir -p release-assets
-          mkdir -p build/ios/Payload
-          ditto build/ios/Build/Products/Release-iphoneos/DestinyDevice.app \
-            build/ios/Payload/DestinyDevice.app
-          (cd build/ios && zip -qry ../../release-assets/Destiny-iOS-unsigned.ipa Payload)
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: destiny-ios-unsigned
-          path: release-assets/Destiny-iOS-unsigned.ipa
+          name: destiny-android-apks
+          path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 30
 
   github-release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [android, ios]
+    needs: [android]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: release-assets
           merge-multiple: true
 
-      - name: Publish device builds
+      - name: Publish Android builds
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" release-assets/* --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" release-assets/*.apk --generate-notes

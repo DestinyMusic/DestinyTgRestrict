@@ -65,6 +65,8 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         preferences = getSharedPreferences("destiny-device", MODE_PRIVATE);
+        serverAddress = preferences.getString("serverAddress", "");
+        appMode = preferences.getString(PREF_APP_MODE, MODE_LOCAL);
         localLibrary = new LocalLibraryStore(this);
         localLibrary.markInterruptedTasks();
         secretsStore = new LocalSecretsStore(this);
@@ -86,7 +88,13 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
         setContentView(root);
 
-        showLocalLibrary();
+        webView = new WebView(this);
+        configureWebView();
+        if (serverAddress.isEmpty()) {
+            showSetup();
+        } else {
+            showDashboard();
+        }
     }
 
     private void showLocalLibrary() {
@@ -98,6 +106,16 @@ public class MainActivity extends Activity {
         title.setTextColor(foregroundColor);
         title.setTextSize(24);
         content.addView(title, matchWrap());
+
+        Button dashboardButton = new Button(this);
+        dashboardButton.setText("Open server dashboard");
+        dashboardButton.setOnClickListener(view -> {
+            if (serverAddress.isEmpty()) showSetup();
+            else showDashboard();
+        });
+        LinearLayout.LayoutParams dashboardParams = matchWrap();
+        dashboardParams.topMargin = 12;
+        content.addView(dashboardButton, dashboardParams);
 
         TextView description = new TextView(this);
         description.setText(embeddedRuntimeReady
@@ -1002,6 +1020,13 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams buttonParams = matchWrap();
         buttonParams.topMargin = 16;
         content.addView(connect, buttonParams);
+
+        Button localLibrary = new Button(this);
+        localLibrary.setText("Continue to device library");
+        localLibrary.setOnClickListener(view -> showLocalLibrary());
+        LinearLayout.LayoutParams localLibraryParams = matchWrap();
+        localLibraryParams.topMargin = 8;
+        content.addView(localLibrary, localLibraryParams);
     }
 
     private void autoDetectServer(EditText addressInput) {
@@ -1128,7 +1153,12 @@ public class MainActivity extends Activity {
         Button reload = new Button(this);
         reload.setText("Reload");
         reload.setOnClickListener(view -> webView.reload());
+        Button library = new Button(this);
+        library.setText("Device library");
+        library.setOnClickListener(view -> showLocalLibrary());
         toolbar.addView(server, new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        toolbar.addView(library, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         toolbar.addView(reload, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1));

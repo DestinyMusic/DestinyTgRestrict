@@ -99,19 +99,12 @@ The engine uses a robust Docker-based deployment model mapping `aiohttp`, `uvloo
 * 🐳 Any Docker-compatible VPS/Dedicated Server
 
 ## 🧩 Standalone deployment model
-The web service and device apps are separate products and builds. The Android APK and iOS IPA launch into local-device experiences and do not need the web server to manage their local library or media. The web deployment remains the full Python backend and browser dashboard; separate native app implementations are required for feature parity.
+The Android app provides the same server dashboard as the web deployment, alongside its on-device library and local tools. A running Destiny server is required for the dashboard; the device library remains available without one.
 ---
-## 📱 Android, Android TV, iPhone & iPad Apps
-Android Local mode bundles CPython 3.11 and Kurigram for `arm64-v8a`, `armeabi-v7a`, `x86`, and `x86_64`. It supports Telegram phone-code/2FA login, Keystore-protected credentials/session, a SQLite media library, file import, direct HTTP(S) downloads, Telegram download ranges up to 500 message IDs from a message or channel link, media-type and include/exclude keyword filters, per-message delay, retries, live progress, cancellation between transfers, and persisted task history. Filtered Watch tasks persist their media/keyword rules and delay, restore through the foreground service, and can be removed individually or all at once. Telegram tasks skip messages/chats marked as protected. The app also includes local audio/video playback and local trim/export plus copy/rename. Trim export remuxes supported device-readable audio/video tracks into MP4; codec/container compatibility depends on the device. The Android launcher opens directly into local mode; the server/WebView controls have been removed from the local library screen.
+## 📱 Android & Android TV App
+The Android app opens the interactive `dashboard.html` experience when a Destiny server address is configured, and retains the on-device library, Telegram tools, downloads, watchers, media playback, and editor. Use **Server** to change or discover a server and **Device library** to switch to local files. The existing authorized-account restrictions remain in force; protected Telegram content is skipped.
 
-The iOS target now launches a native local app with a Core Data catalog, Files import, direct HTTP(S) downloads over the device network, AVPlayer theater, and AVFoundation trim/export. Its IPA remains unsigned and requires signing before installation.
-
-Neither app currently has full parity with the web backend. Android still lacks the full batch/filter/queue engine, worker-bot pools, advanced media editor/transcoding, advanced streaming/subtitle/probe tools, and dashboard/admin features. iOS still lacks Telegram account/client integration, Telegram download/watch tasks, worker-bot orchestration, persistent background task scheduling, and the web app's advanced editor/streaming/transcoding suite. The existing Telegram download path is for content the account is authorized to access; restricted-content protection is not bypassed.
-
-Every push and pull request builds downloadable artifacts in the GitHub Actions run. Push a version tag such as `v1.0.0` to publish both files on a GitHub Release:
-
-* `app-debug.apk` is debug-key-signed by Android's build tools and installable on supported Android devices. A debug key is for personal sideloading, not Play Store distribution.
-* `Destiny-iOS-unsigned.ipa` is the iPhone/iPad package artifact. It is still unsigned and must be signed with your Apple developer identity in Xcode or a trusted sideloading tool before installation. This repository does not include certificates or signing secrets.
+GitHub Actions builds a universal APK and ABI-specific APKs for `armeabi-v7a` (32-bit ARM), `arm64-v8a` (64-bit ARM), `x86`, and `x86_64`. The same APKs support Android phones/tablets and Android TV; the app declares both mobile and Leanback launcher entries. Push a version tag such as `v1.0.0` to publish all APKs on a GitHub Release. Pushes and pull requests build downloadable Actions artifacts; they do not publish a release. These APKs use the Android debug signing key and are suitable for sideloading, not Play Store distribution.
 
 Keep the backend and device on the same trusted network when using plain HTTP. Use HTTPS for the optional dashboard over the public internet. Android Local mode connects directly to Telegram using credentials entered on the device; it does not require the Destiny Python backend or MongoDB for its current local features.
 ---
