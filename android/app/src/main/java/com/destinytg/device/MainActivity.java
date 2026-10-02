@@ -50,14 +50,17 @@ import java.net.URI;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
+import org.json.JSONArray;
 
 public class MainActivity extends Activity {
     private static final int FILE_CHOOSER_REQUEST = 41;
     private static final int LOCAL_FILE_REQUEST = 42;
-    private final int backgroundColor = Color.rgb(8, 18, 22);
-    private final int surfaceColor = Color.rgb(16, 35, 40);
-    private final int accentColor = Color.rgb(67, 214, 177);
-    private final int foregroundColor = Color.rgb(242, 247, 245);
+    private static final int NOTIFICATION_PERMISSION_REQUEST = 43;
+    private final int backgroundColor = Color.rgb(7, 9, 13);
+    private final int surfaceColor = Color.rgb(17, 24, 39);
+    private final int accentColor = Color.rgb(56, 189, 248);
+    private final int foregroundColor = Color.rgb(241, 245, 249);
+    private final int mutedColor = Color.rgb(148, 163, 184);
     private static final String PREF_APP_MODE = "appMode";
     private static final String MODE_LOCAL = "LOCAL";
     private static final String MODE_WEB = "WEB";
@@ -76,6 +79,7 @@ public class MainActivity extends Activity {
     private ValueCallback<Uri[]> fileChooserCallback;
     private String serverAddress = "";
     private String appMode = MODE_LOCAL;
+    private String activeLocalTab = "Home";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -110,127 +114,223 @@ public class MainActivity extends Activity {
 
         webView = new WebView(this);
         configureWebView();
-        if (serverAddress.isEmpty()) {
+        if (isLocalMode()) {
+            showLocalHome();
+        } else if (serverAddress.isEmpty()) {
             showSetup();
         } else {
             showDashboard();
         }
     }
 
-    private void showLocalLibrary() {
+    private void showLocalHome() {
+        activeLocalTab = "Home";
         dashboardShowing = false;
         showLocalSurface();
         content.removeAllViews();
-        content.setPadding(20, 24, 20, 28);
+        content.setPadding(dp(18), dp(18), dp(18), dp(24));
 
-        TextView title = new TextView(this);
-        title.setText("Your library");
-        title.setTextColor(foregroundColor);
-        title.setTextSize(28);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        content.addView(title, matchWrap());
+        int fileCount = countRows(localLibrary.getFiles());
+        int watcherCount = countRows(localLibrary.getWatchers());
+        int taskCount = countRows(localLibrary.getTasks());
 
-        TextView eyebrow = new TextView(this);
-        eyebrow.setText("DESTINY TG  /  ON DEVICE");
-        eyebrow.setTextColor(accentColor);
-        eyebrow.setTextSize(11);
-        LinearLayout.LayoutParams eyebrowParams = matchWrap();
-        eyebrowParams.bottomMargin = 8;
-        content.addView(eyebrow, 0, eyebrowParams);
+        LinearLayout overview = new LinearLayout(this);
+        overview.setOrientation(LinearLayout.VERTICAL);
+        overview.setPadding(dp(18), dp(18), dp(18), dp(18));
+        GradientDrawable overviewBackground = new GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            new int[]{Color.rgb(18, 39, 57), surfaceColor});
+        overviewBackground.setCornerRadius(dp(8));
+        overviewBackground.setStroke(dp(1), Color.rgb(37, 66, 89));
+        overview.setBackground(overviewBackground);
+        TextView eyebrow = localLabel("DESTINY TG  /  DEVICE DASHBOARD", accentColor);
+        eyebrow.setTextSize(10);
+        eyebrow.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        overview.addView(eyebrow, matchWrap());
 
-        Button dashboardButton = new Button(this);
-        dashboardButton.setText("Open server dashboard");
-        dashboardButton.setOnClickListener(view -> {
-            if (serverAddress.isEmpty()) showSetup();
-            else showDashboard();
+        TextView heading = new TextView(this);
+        heading.setText("System overview");
+        heading.setTextColor(foregroundColor);
+        heading.setTextSize(25);
+        heading.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        LinearLayout.LayoutParams headingParams = matchWrap();
+        headingParams.topMargin = dp(7);
+        overview.addView(heading, headingParams);
+
+        TextView subtitle = localLabel("Telegram tasks and media, managed on this device.",
+            mutedColor);
+        subtitle.setTextSize(13);
+        LinearLayout.LayoutParams subtitleParams = matchWrap();
+        subtitleParams.topMargin = dp(4);
+        overview.addView(subtitle, subtitleParams);
+
+        Button createTask = new Button(this);
+        createTask.setText("Create task or watcher");
+        createTask.setTextColor(backgroundColor);
+        createTask.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        createTask.setMinHeight(dp(48));
+        createTask.setBackground(createRoundedBackground(accentColor, dp(6)));
+        createTask.setOnClickListener(view -> showLocalTools());
+        LinearLayout.LayoutParams createTaskParams = matchWrap();
+        createTaskParams.topMargin = dp(16);
+        overview.addView(createTask, createTaskParams);
+        content.addView(overview, matchWrap());
+
+        addSectionTitle("System overview", content);
+        addDashboardMetricRow("Active tasks", String.valueOf(taskCount),
+            "Live watchers", String.valueOf(watcherCount));
+        addDashboardMetricRow("Media library", String.valueOf(fileCount) + " files",
+            "Local runtime", embeddedRuntimeReady ? "READY" : "OFFLINE");
+
+        LinearLayout sessionPanel = new LinearLayout(this);
+        sessionPanel.setOrientation(LinearLayout.HORIZONTAL);
+        sessionPanel.setGravity(Gravity.CENTER_VERTICAL);
+        sessionPanel.setPadding(dp(14), dp(12), dp(14), dp(12));
+        sessionPanel.setBackground(createRoundedBackground(surfaceColor, dp(6)));
+        LinearLayout.LayoutParams sessionParams = matchWrap();
+        sessionParams.topMargin = dp(12);
+        content.addView(sessionPanel, sessionParams);
+        TextView sessionLabel = localLabel("TELEGRAM SESSION", mutedColor);
+        sessionLabel.setTextSize(10);
+        sessionLabel.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        sessionPanel.addView(sessionLabel, new LinearLayout.LayoutParams(0,
+            ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        TextView sessionState = localLabel(secretsStore.get("telegram_session") == null
+            ? "NOT CONNECTED" : "ONLINE",
+            secretsStore.get("telegram_session") == null ? mutedColor : Color.rgb(52, 211, 153));
+        sessionState.setTextSize(11);
+        sessionState.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        sessionPanel.addView(sessionState, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        addSectionTitle("Quick actions", content);
+        addDashboardActionRow("Downloads", "Telegram and direct links", view -> {
+            if (secretsStore.get("telegram_session") == null) showTelegramSetup();
+            else showTelegramDownload();
+        }, "Watchers", "Automate source forwarding", view -> {
+            if (secretsStore.get("telegram_session") == null) showTelegramSetup();
+            else showTelegramWatcherSetup();
         });
-        LinearLayout.LayoutParams dashboardParams = matchWrap();
-        dashboardParams.topMargin = 12;
-        content.addView(dashboardButton, dashboardParams);
+        addDashboardActionRow("Media library", "Play, edit, and import", view -> showLocalLibrary(),
+            "All dashboard tools", "Network, system, and account", view -> showLocalTools());
+        }
 
-        TextView description = new TextView(this);
-        description.setText(embeddedRuntimeReady
-            ? "Embedded Python runtime is active. Files stay in this app's local library."
-            : "The embedded local runtime could not start. Files remain available in the on-device library.");
-        description.setTextColor(Color.LTGRAY);
-        description.setTextSize(15);
-        LinearLayout.LayoutParams descriptionParams = matchWrap();
-        descriptionParams.topMargin = 8;
-        content.addView(description, descriptionParams);
+        private void addDashboardMetricRow(String firstLabel, String firstValue,
+                           String secondLabel, String secondValue) {
+        LinearLayout row = new LinearLayout(this);
+        LinearLayout.LayoutParams firstParams = new LinearLayout.LayoutParams(0,
+            ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+        firstParams.rightMargin = dp(6);
+        row.addView(createDashboardMetric(firstLabel, firstValue), firstParams);
+        LinearLayout.LayoutParams secondParams = new LinearLayout.LayoutParams(0,
+            ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+        secondParams.leftMargin = dp(6);
+        row.addView(createDashboardMetric(secondLabel, secondValue), secondParams);
+        LinearLayout.LayoutParams rowParams = matchWrap();
+        rowParams.bottomMargin = dp(8);
+        content.addView(row, rowParams);
+        }
 
-        Button telegramButton = new Button(this);
-        telegramButton.setText(secretsStore.get("telegram_session") == null
-            ? "Connect Telegram account" : "Telegram account connected");
-        telegramButton.setOnClickListener(view -> showTelegramSetup());
-        LinearLayout.LayoutParams telegramParams = matchWrap();
-        telegramParams.topMargin = 12;
-        content.addView(telegramButton, telegramParams);
+        private LinearLayout createDashboardMetric(String labelText, String valueText) {
+        LinearLayout metric = new LinearLayout(this);
+        metric.setOrientation(LinearLayout.VERTICAL);
+        metric.setPadding(dp(13), dp(12), dp(13), dp(12));
+        metric.setMinimumHeight(dp(80));
+        GradientDrawable card = createRoundedBackground(surfaceColor, dp(6));
+        card.setStroke(dp(1), Color.rgb(39, 51, 68));
+        metric.setBackground(card);
+        TextView label = localLabel(labelText.toUpperCase(java.util.Locale.ROOT), mutedColor);
+        label.setTextSize(10);
+        label.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        metric.addView(label, matchWrap());
+        TextView value = localLabel(valueText, foregroundColor);
+        value.setTextSize(21);
+        value.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        LinearLayout.LayoutParams valueParams = matchWrap();
+        valueParams.topMargin = dp(5);
+        metric.addView(value, valueParams);
+        return metric;
+        }
 
-        Button downloadButton = new Button(this);
-        downloadButton.setText("Download Telegram message");
-        downloadButton.setEnabled(secretsStore.get("telegram_session") != null);
-        downloadButton.setOnClickListener(view -> showTelegramDownload());
-        content.addView(downloadButton, matchWrap());
+        private void addDashboardActionRow(String firstTitle, String firstDetail,
+                           View.OnClickListener firstListener,
+                           String secondTitle, String secondDetail,
+                           View.OnClickListener secondListener) {
+        LinearLayout row = new LinearLayout(this);
+        LinearLayout.LayoutParams firstParams = new LinearLayout.LayoutParams(0,
+            ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+        firstParams.rightMargin = dp(5);
+        row.addView(createLocalAction(firstTitle, firstDetail, firstListener), firstParams);
+        LinearLayout.LayoutParams secondParams = new LinearLayout.LayoutParams(0,
+            ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+        secondParams.leftMargin = dp(5);
+        row.addView(createLocalAction(secondTitle, secondDetail, secondListener), secondParams);
+        LinearLayout.LayoutParams rowParams = matchWrap();
+        rowParams.bottomMargin = dp(8);
+        content.addView(row, rowParams);
+    }
 
-        Button directDownloadButton = new Button(this);
-        directDownloadButton.setText("Download direct URL");
-        directDownloadButton.setOnClickListener(view -> showDirectUrlDownload());
-        content.addView(directDownloadButton, matchWrap());
+    private void showLocalTasks() {
+        activeLocalTab = "Tasks";
+        dashboardShowing = false;
+        showLocalSurface();
+        content.removeAllViews();
+        content.setPadding(dp(20), dp(20), dp(20), dp(24));
+        addPageHeading("Tasks", "Downloads and Telegram watches running on this device.");
 
-        Button watchButton = new Button(this);
-        watchButton.setText("Add Telegram Watch task");
-        watchButton.setEnabled(secretsStore.get("telegram_session") != null);
-        watchButton.setOnClickListener(view -> showTelegramWatcherSetup());
-        content.addView(watchButton, matchWrap());
+        Button download = new Button(this);
+        download.setText("New Telegram download");
+        stylePrimaryButton(download);
+        download.setOnClickListener(view -> {
+            if (secretsStore.get("telegram_session") == null) showTelegramSetup();
+            else showTelegramDownload();
+        });
+        content.addView(download, matchWrap());
 
+        Button watch = new Button(this);
+        watch.setText("Add Telegram watch");
+        watch.setOnClickListener(view -> {
+            if (secretsStore.get("telegram_session") == null) showTelegramSetup();
+            else showTelegramWatcherSetup();
+        });
+        LinearLayout.LayoutParams watchParams = matchWrap();
+        watchParams.topMargin = dp(8);
+        content.addView(watch, watchParams);
+
+        addSectionTitle("Active watches", content);
         Cursor watchers = localLibrary.getWatchers();
-        if (watchers.getCount() > 0) {
-            TextView watchersTitle = new TextView(this);
-            watchersTitle.setText("Active Watch tasks");
-            watchersTitle.setTextColor(foregroundColor);
-            watchersTitle.setTextSize(18);
-            LinearLayout.LayoutParams watchersTitleParams = matchWrap();
-            watchersTitleParams.topMargin = 16;
-            content.addView(watchersTitle, watchersTitleParams);
+        if (watchers.getCount() == 0) {
+            content.addView(localLabel("No active Telegram watches", Color.rgb(172, 174, 161)),
+                    matchWrap());
+        } else {
             while (watchers.moveToNext()) {
                 long watcherId = watchers.getLong(0);
-                String sourceLink = watchers.getString(1);
-                String destinationChat = watchers.getString(2);
+                String source = watchers.getString(1);
+                String destination = watchers.getString(2);
                 long sourceThread = watchers.getLong(8);
                 long destinationThread = watchers.getLong(9);
-                String watcherStats;
-                try {
-                    JSONObject stats = new JSONObject(watchers.getString(11));
-                    watcherStats = "  detected " + stats.optLong("detected", 0)
-                            + " · sent " + stats.optLong("success", 0)
-                            + " · skipped " + stats.optLong("skipped", 0)
-                            + " · failed " + stats.optLong("failed", 0);
-                } catch (Exception ignored) {
-                    watcherStats = "";
-                }
-                LinearLayout watcherRow = new LinearLayout(this);
-                watcherRow.setGravity(Gravity.CENTER_VERTICAL);
-                TextView watcher = new TextView(this);
-                watcher.setText(sourceLink + "  ->  " + destinationChat
-                    + (sourceThread == 0 ? "" : "  source topic " + sourceThread)
-                    + (destinationThread == 0 ? "" : "  destination topic " + destinationThread)
-                        + "  [" + watchers.getString(3) + "]  checkpoint " + watchers.getLong(10)
-                        + watcherStats);
-                watcher.setTextColor(Color.LTGRAY);
-                watcher.setMaxLines(3);
-                watcherRow.addView(watcher, new LinearLayout.LayoutParams(0,
+                LinearLayout row = new LinearLayout(this);
+                row.setGravity(Gravity.CENTER_VERTICAL);
+                row.setPadding(dp(12), dp(10), dp(8), dp(10));
+                row.setBackground(createRoundedBackground(surfaceColor, dp(6)));
+                TextView label = new TextView(this);
+                label.setText(source + "\n→ " + destination + " · " + watchers.getString(3));
+                label.setTextColor(foregroundColor);
+                label.setTextSize(13);
+                label.setMaxLines(3);
+                row.addView(label, new LinearLayout.LayoutParams(0,
                         ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-                Button removeWatcher = new Button(this);
-                removeWatcher.setText("Stop");
-                removeWatcher.setOnClickListener(view -> {
+                Button stop = new Button(this);
+                stop.setText("Stop");
+                stop.setOnClickListener(view -> {
                     localLibrary.removeWatcher(watcherId);
                     if (Python.isStarted()) {
                         new Thread(() -> {
                             try {
                                 Python.getInstance().getModule("destiny_runtime")
-                                    .callAttr("remove_watcher", sourceLink, destinationChat,
-                                        String.valueOf(sourceThread),
-                                        String.valueOf(destinationThread));
+                                        .callAttr("remove_watcher", source, destination,
+                                                String.valueOf(sourceThread),
+                                                String.valueOf(destinationThread));
                             } catch (Exception ignored) {
                                 // The persisted watcher is removed even if it was not running.
                             }
@@ -240,43 +340,227 @@ public class MainActivity extends Activity {
                     boolean noneRemain = remaining.getCount() == 0;
                     remaining.close();
                     if (noneRemain) stopService(new Intent(this, LocalWatcherService.class));
-                    showLocalLibrary();
+                    showLocalTasks();
                 });
-                watcherRow.addView(removeWatcher, new LinearLayout.LayoutParams(
+                row.addView(stop, new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-                content.addView(watcherRow, matchWrap());
+                LinearLayout.LayoutParams rowParams = matchWrap();
+                rowParams.topMargin = dp(8);
+                content.addView(row, rowParams);
             }
-            Button stopWatchers = new Button(this);
-            stopWatchers.setText("Stop all Watch tasks");
-            stopWatchers.setOnClickListener(view -> {
-                localLibrary.removeAllWatchers();
-                stopService(new Intent(this, LocalWatcherService.class));
-                showLocalLibrary();
-            });
-            content.addView(stopWatchers, matchWrap());
         }
         watchers.close();
 
+        addSectionTitle("Recent downloads", content);
         Cursor tasks = localLibrary.getTasks();
-        if (tasks.getCount() > 0) {
-            TextView tasksTitle = new TextView(this);
-            tasksTitle.setText("Recent download tasks");
-            tasksTitle.setTextColor(foregroundColor);
-            tasksTitle.setTextSize(18);
-            LinearLayout.LayoutParams tasksTitleParams = matchWrap();
-            tasksTitleParams.topMargin = 16;
-            content.addView(tasksTitle, tasksTitleParams);
+        if (tasks.getCount() == 0) {
+            content.addView(localLabel("Your recent task history will appear here.",
+                    Color.rgb(172, 174, 161)), matchWrap());
+        } else {
             while (tasks.moveToNext()) {
-                TextView task = new TextView(this);
-                task.setText(tasks.getString(2) + "  ·  " + tasks.getString(3)
-                        + "\n" + tasks.getString(4));
-                task.setTextColor(Color.LTGRAY);
-                LinearLayout.LayoutParams taskParams = matchWrap();
-                taskParams.topMargin = 6;
-                content.addView(task, taskParams);
+                LinearLayout row = new LinearLayout(this);
+                row.setOrientation(LinearLayout.VERTICAL);
+                row.setPadding(dp(12), dp(10), dp(12), dp(10));
+                row.setBackground(createRoundedBackground(surfaceColor, dp(6)));
+                TextView label = localLabel(tasks.getString(2), foregroundColor);
+                label.setMaxLines(2);
+                row.addView(label, matchWrap());
+                TextView detail = localLabel(tasks.getString(1) + "  ·  " + tasks.getString(3)
+                        + "\n" + tasks.getString(4), Color.rgb(172, 174, 161));
+                detail.setTextSize(12);
+                LinearLayout.LayoutParams detailParams = matchWrap();
+                detailParams.topMargin = dp(4);
+                row.addView(detail, detailParams);
+                LinearLayout.LayoutParams rowParams = matchWrap();
+                rowParams.topMargin = dp(8);
+                content.addView(row, rowParams);
             }
         }
         tasks.close();
+    }
+
+    private void showLocalAccount() {
+        activeLocalTab = "Account";
+        dashboardShowing = false;
+        showLocalSurface();
+        content.removeAllViews();
+        content.setPadding(dp(20), dp(20), dp(20), dp(24));
+        addPageHeading("Account & connection", "Your Telegram session and files stay in app storage.");
+
+        TextView account = localLabel(secretsStore.get("telegram_session") == null
+                ? "Telegram account not connected" : "Telegram account connected on this device",
+                foregroundColor);
+        content.addView(account, matchWrap());
+
+        Button telegram = new Button(this);
+        telegram.setText(secretsStore.get("telegram_session") == null
+                ? "Connect Telegram" : "Manage Telegram connection");
+        stylePrimaryButton(telegram);
+        telegram.setOnClickListener(view -> showTelegramSetup());
+        LinearLayout.LayoutParams telegramParams = matchWrap();
+        telegramParams.topMargin = dp(14);
+        content.addView(telegram, telegramParams);
+
+        addSectionTitle("Device network", content);
+        TextView network = localLabel("Telegram traffic uses this device's active network. "
+                + "Downloads and the media library are stored in this app's local storage.",
+                Color.rgb(172, 174, 161));
+        content.addView(network, matchWrap());
+
+        Button server = new Button(this);
+        server.setText("Local server dashboard settings");
+        server.setOnClickListener(view -> showSetup());
+        LinearLayout.LayoutParams serverParams = matchWrap();
+        serverParams.topMargin = dp(14);
+        content.addView(server, serverParams);
+    }
+
+        private void showLocalTools() {
+        activeLocalTab = "Tools";
+        dashboardShowing = false;
+        showLocalSurface();
+        content.removeAllViews();
+        content.setPadding(dp(20), dp(20), dp(20), dp(24));
+        addPageHeading("Dashboard tools", "Choose a workspace. Device tools run in this app.");
+
+        addSectionTitle("On this device", content);
+        content.addView(createLocalAction("Downloads",
+            "Download Telegram messages or fetch direct URLs", view -> {
+                if (secretsStore.get("telegram_session") == null) showTelegramSetup();
+                else showTelegramDownload();
+            }), actionParams());
+        content.addView(createLocalAction("Watchers",
+            "Create, inspect, and stop Telegram source watches", view -> showLocalTasks()),
+            actionParams());
+        content.addView(createLocalAction("Telegram account",
+            "Connect Telegram directly from this device", view -> showLocalAccount()),
+            actionParams());
+        content.addView(createLocalAction("Media library, theater & editor",
+            "Play, trim, import, and manage locally saved media", view -> showLocalLibrary()),
+            actionParams());
+
+        addSectionTitle("Server dashboard", content);
+        TextView serverNote = localLabel("These panels require a Destiny server connection. "
+            + "The Telegram and media tools above work directly from this device.",
+            Color.rgb(172, 174, 161));
+        content.addView(serverNote, matchWrap());
+        content.addView(createLocalAction("Chats & IDs",
+            "Browse Telegram dialogs and chat identifiers", view -> openServerDashboard()),
+            actionParams());
+        content.addView(createLocalAction("World Explorer",
+            "Open the dashboard's interactive globe", view -> openServerDashboard()),
+            actionParams());
+        content.addView(createLocalAction("Live Network",
+            "View connected clients and network activity", view -> openServerDashboard()),
+            actionParams());
+        content.addView(createLocalAction("Speedtest",
+            "Measure the server's network throughput", view -> openServerDashboard()),
+            actionParams());
+        content.addView(createLocalAction("System SOS & System Logs",
+            "Inspect server health and diagnostic logs", view -> openServerDashboard()),
+            actionParams());
+        content.addView(createLocalAction("Media Inspector & Audio Spectrogram",
+            "Analyze media through the connected server", view -> openServerDashboard()),
+            actionParams());
+        content.addView(createLocalAction("Admin Panel",
+            "Manage server users and access roles", view -> openServerDashboard()),
+            actionParams());
+
+        Button settings = new Button(this);
+        settings.setText("Account and connection settings");
+        settings.setOnClickListener(view -> showLocalAccount());
+        LinearLayout.LayoutParams settingsParams = matchWrap();
+        settingsParams.topMargin = dp(18);
+        content.addView(settings, settingsParams);
+        }
+
+        private void openServerDashboard() {
+        if (serverAddress == null || serverAddress.isEmpty()) showSetup();
+        else showDashboard();
+        }
+
+    private int countRows(Cursor cursor) {
+        try {
+            return cursor.getCount();
+        } finally {
+            cursor.close();
+        }
+    }
+
+    private void addPageHeading(String titleText, String descriptionText) {
+        TextView title = new TextView(this);
+        title.setText(titleText);
+        title.setTextColor(foregroundColor);
+        title.setTextSize(28);
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        content.addView(title, matchWrap());
+        TextView description = localLabel(descriptionText, Color.rgb(172, 174, 161));
+        LinearLayout.LayoutParams descriptionParams = matchWrap();
+        descriptionParams.topMargin = dp(6);
+        content.addView(description, descriptionParams);
+    }
+
+    private void addSectionTitle(String titleText, LinearLayout parent) {
+        TextView title = new TextView(this);
+        title.setText(titleText);
+        title.setTextColor(foregroundColor);
+        title.setTextSize(18);
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        LinearLayout.LayoutParams params = matchWrap();
+        params.topMargin = dp(22);
+        params.bottomMargin = dp(8);
+        parent.addView(title, params);
+    }
+
+    private TextView localLabel(String text, int color) {
+        TextView label = new TextView(this);
+        label.setText(text);
+        label.setTextColor(color);
+        label.setTextSize(14);
+        return label;
+    }
+
+    private LinearLayout createLocalAction(String titleText, String detailText,
+                                           View.OnClickListener listener) {
+        LinearLayout action = new LinearLayout(this);
+        action.setOrientation(LinearLayout.VERTICAL);
+        action.setPadding(dp(14), dp(12), dp(14), dp(12));
+        action.setMinimumHeight(dp(82));
+        GradientDrawable actionSurface = createRoundedBackground(surfaceColor, dp(6));
+        actionSurface.setStroke(dp(1), Color.rgb(39, 51, 68));
+        action.setBackground(new RippleDrawable(
+            android.content.res.ColorStateList.valueOf(Color.rgb(56, 189, 248)),
+            actionSurface, null));
+        TextView title = localLabel(titleText, foregroundColor);
+        title.setTextSize(16);
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        action.addView(title, matchWrap());
+        TextView detail = localLabel(detailText, Color.rgb(172, 174, 161));
+        detail.setTextSize(13);
+        LinearLayout.LayoutParams detailParams = matchWrap();
+        detailParams.topMargin = dp(4);
+        action.addView(detail, detailParams);
+        action.setClickable(true);
+        action.setFocusable(true);
+        action.setOnClickListener(listener);
+        return action;
+    }
+
+    private LinearLayout.LayoutParams actionParams() {
+        LinearLayout.LayoutParams params = matchWrap();
+        params.bottomMargin = dp(8);
+        return params;
+    }
+
+    private void showLocalLibrary() {
+        activeLocalTab = "Media";
+        dashboardShowing = false;
+        showLocalSurface();
+        content.removeAllViews();
+        content.setPadding(dp(18), dp(18), dp(18), dp(24));
+        addPageHeading("Media library", "Saved and imported files stay on this device.");
+
+        addSectionTitle("Your files", content);
 
         Button importButton = new Button(this);
         importButton.setText("Import files");
@@ -289,16 +573,8 @@ public class MainActivity extends Activity {
             startActivityForResult(intent, LOCAL_FILE_REQUEST);
         });
         LinearLayout.LayoutParams importParams = matchWrap();
-        importParams.topMargin = 16;
+        importParams.topMargin = dp(8);
         content.addView(importButton, importParams);
-
-        TextView libraryTitle = new TextView(this);
-        libraryTitle.setText("Saved on this device");
-        libraryTitle.setTextColor(foregroundColor);
-        libraryTitle.setTextSize(18);
-        LinearLayout.LayoutParams listTitleParams = matchWrap();
-        listTitleParams.topMargin = 20;
-        content.addView(libraryTitle, listTitleParams);
 
         Cursor files = localLibrary.getFiles();
         if (files.getCount() == 0) {
@@ -315,33 +591,38 @@ public class MainActivity extends Activity {
                 String uri = files.getString(2);
                 String mimeType = files.getString(3);
                 LinearLayout row = new LinearLayout(this);
-                row.setGravity(Gravity.CENTER_VERTICAL);
+                row.setOrientation(LinearLayout.VERTICAL);
+                row.setPadding(dp(12), dp(10), dp(12), dp(10));
+                row.setBackground(createRoundedBackground(surfaceColor, dp(6)));
                 TextView fileName = new TextView(this);
                 fileName.setText(name);
                 fileName.setTextColor(foregroundColor);
                 fileName.setMaxLines(2);
-                row.addView(fileName, new LinearLayout.LayoutParams(0,
-                        ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+                fileName.setTextSize(15);
+                row.addView(fileName, matchWrap());
+                LinearLayout actions = new LinearLayout(this);
+                actions.setGravity(Gravity.CENTER_VERTICAL);
                 Button openButton = new Button(this);
                 openButton.setText("Open");
                 openButton.setOnClickListener(view -> openLocalFile(name, uri, mimeType));
-                row.addView(openButton, new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                actions.addView(openButton, new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, 1));
                 Button editButton = new Button(this);
                 editButton.setText("Edit");
                 editButton.setOnClickListener(view -> openLocalEditor(name, uri, mimeType));
-                row.addView(editButton, new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                actions.addView(editButton, new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, 1));
                 Button removeButton = new Button(this);
                 removeButton.setText("Remove");
                 removeButton.setOnClickListener(view -> {
                     localLibrary.removeFile(id);
                     showLocalLibrary();
                 });
-                row.addView(removeButton, new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                actions.addView(removeButton, new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+                row.addView(actions, matchWrap());
                 LinearLayout.LayoutParams rowParams = matchWrap();
-                rowParams.topMargin = 8;
+                rowParams.topMargin = dp(8);
                 content.addView(row, rowParams);
             }
         }
@@ -349,14 +630,11 @@ public class MainActivity extends Activity {
     }
 
     private void showTelegramSetup() {
+        activeLocalTab = "Account";
+        showLocalSurface();
         content.removeAllViews();
-        content.setPadding(24, 24, 24, 24);
-
-        TextView title = new TextView(this);
-        title.setText("Telegram account");
-        title.setTextColor(foregroundColor);
-        title.setTextSize(22);
-        content.addView(title, matchWrap());
+        content.setPadding(dp(18), dp(18), dp(18), dp(24));
+        addPageHeading("Connect Telegram", "Sign in directly from this device using Telegram's login code.");
 
         EditText apiId = addAccountInput("Telegram API ID", secretsStore.get("telegram_api_id"));
         apiId.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
@@ -373,13 +651,14 @@ public class MainActivity extends Activity {
                 | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
 
         TextView status = new TextView(this);
-        status.setTextColor(Color.LTGRAY);
+        styleStatusMessage(status);
         LinearLayout.LayoutParams statusParams = matchWrap();
-        statusParams.topMargin = 8;
+        statusParams.topMargin = dp(12);
         content.addView(status, statusParams);
 
         Button sendCode = new Button(this);
         sendCode.setText("Send login code");
+        stylePrimaryButton(sendCode);
         content.addView(sendCode, matchWrap());
         sendCode.setOnClickListener(view -> {
             String id = apiId.getText().toString().trim();
@@ -398,6 +677,7 @@ public class MainActivity extends Activity {
 
         Button verifyCode = new Button(this);
         verifyCode.setText("Verify code");
+        stylePrimaryButton(verifyCode);
         content.addView(verifyCode, matchWrap());
         verifyCode.setOnClickListener(view -> {
             String number = phone.getText().toString().trim();
@@ -412,6 +692,7 @@ public class MainActivity extends Activity {
 
         Button verifyPassword = new Button(this);
         verifyPassword.setText("Verify 2-step password");
+        stylePrimaryButton(verifyPassword);
         content.addView(verifyPassword, matchWrap());
         verifyPassword.setOnClickListener(view -> {
             String value = password.getText().toString();
@@ -424,33 +705,34 @@ public class MainActivity extends Activity {
         });
 
         Button back = new Button(this);
-        back.setText("Back to library");
-        back.setOnClickListener(view -> showLocalLibrary());
+        back.setText("Return to dashboard");
+        back.setOnClickListener(view -> showLocalHome());
         content.addView(back, matchWrap());
     }
 
     private void showTelegramDownload() {
+        activeLocalTab = "Tasks";
+        showLocalSurface();
         content.removeAllViews();
-        content.setPadding(24, 24, 24, 24);
-
-        TextView title = new TextView(this);
-        title.setText("Telegram download");
-        title.setTextColor(foregroundColor);
-        title.setTextSize(22);
-        content.addView(title, matchWrap());
+        content.setPadding(dp(18), dp(18), dp(18), dp(24));
+        addPageHeading("Telegram download", "Choose a message range, destination, and filters.");
 
         EditText link = addAccountInput("https://t.me/channel/123", null);
         link.setInputType(android.text.InputType.TYPE_CLASS_TEXT
                 | android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        addPickerButton("Browse source chats", view -> showChatPicker(link, true));
         EditText startId = addAccountInput("First message ID (blank = linked message)", null);
         startId.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
         EditText endId = addAccountInput("Last message ID (blank = first only)", null);
         endId.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
         EditText destination = addAccountInput("Destination chat (default: Saved Messages)", "me");
+        addPickerButton("Browse destination chats", view -> showChatPicker(destination, false));
         EditText sourceTopic = addAccountInput("Source topic ID (0 for all topics)", "0");
         sourceTopic.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        addPickerButton("Choose source topic", view -> showTopicPicker(link, sourceTopic));
         EditText destinationTopic = addAccountInput("Destination topic ID (0 for default)", "0");
         destinationTopic.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        addPickerButton("Choose destination topic", view -> showTopicPicker(destination, destinationTopic));
         EditText mediaTypes = addAccountInput("Media types: video,document,text,audio,photo,voice,animation,sticker",
             "video,document,text,audio,photo,voice,animation,sticker");
         EditText includeKeywords = addAccountInput("Include keywords (comma-separated, optional)", null);
@@ -460,7 +742,7 @@ public class MainActivity extends Activity {
         delay.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
 
         TextView status = new TextView(this);
-        status.setTextColor(Color.LTGRAY);
+        styleStatusMessage(status);
         LinearLayout.LayoutParams statusParams = matchWrap();
         statusParams.topMargin = 12;
         content.addView(status, statusParams);
@@ -472,6 +754,7 @@ public class MainActivity extends Activity {
         Handler progressHandler = new Handler(Looper.getMainLooper());
         Button cancelTask = new Button(this);
         cancelTask.setText("Cancel current task");
+        styleDangerButton(cancelTask);
         cancelTask.setEnabled(false);
         content.addView(cancelTask, matchWrap());
         Runnable progressPoll = new Runnable() {
@@ -518,6 +801,7 @@ public class MainActivity extends Activity {
 
         Button start = new Button(this);
         start.setText("Start download");
+        stylePrimaryButton(start);
         start.setOnClickListener(view -> {
             if (activeTaskId[0] > 0 && !taskFinished[0]) {
                 status.setText("A download task is already active on this screen.");
@@ -589,26 +873,24 @@ public class MainActivity extends Activity {
     }
 
     private void showDirectUrlDownload() {
+        activeLocalTab = "Tasks";
+        showLocalSurface();
         content.removeAllViews();
-        content.setPadding(24, 24, 24, 24);
-
-        TextView title = new TextView(this);
-        title.setText("Direct download");
-        title.setTextColor(foregroundColor);
-        title.setTextSize(22);
-        content.addView(title, matchWrap());
+        content.setPadding(dp(18), dp(18), dp(18), dp(24));
+        addPageHeading("Direct download", "Fetch a file over HTTP or HTTPS to app storage.");
 
         EditText address = addAccountInput("https://example.com/media.mp4", null);
         address.setInputType(android.text.InputType.TYPE_CLASS_TEXT
                 | android.text.InputType.TYPE_TEXT_VARIATION_URI);
         TextView status = new TextView(this);
-        status.setTextColor(Color.LTGRAY);
+        styleStatusMessage(status);
         LinearLayout.LayoutParams statusParams = matchWrap();
         statusParams.topMargin = 12;
         content.addView(status, statusParams);
 
         Button start = new Button(this);
         start.setText("Download to this device");
+        stylePrimaryButton(start);
         start.setOnClickListener(view -> {
             String rawAddress = address.getText().toString().trim();
             final URI parsed;
@@ -683,23 +965,24 @@ public class MainActivity extends Activity {
     }
 
     private void showTelegramWatcherSetup() {
+        activeLocalTab = "Tasks";
+        showLocalSurface();
         content.removeAllViews();
-        content.setPadding(24, 24, 24, 24);
-
-        TextView title = new TextView(this);
-        title.setText("Telegram Watch task");
-        title.setTextColor(foregroundColor);
-        title.setTextSize(22);
-        content.addView(title, matchWrap());
+        content.setPadding(dp(18), dp(18), dp(18), dp(24));
+        addPageHeading("Create watcher", "Forward new matching posts from a Telegram source.");
 
         EditText source = addAccountInput("Source channel/chat link", null);
         source.setInputType(android.text.InputType.TYPE_CLASS_TEXT
                 | android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        addPickerButton("Browse source chats", view -> showChatPicker(source, true));
         EditText destination = addAccountInput("Destination chat (default: Saved Messages)", "me");
+        addPickerButton("Browse destination chats", view -> showChatPicker(destination, false));
         EditText sourceTopic = addAccountInput("Source topic ID (0 for all topics)", "0");
         sourceTopic.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        addPickerButton("Choose source topic", view -> showTopicPicker(source, sourceTopic));
         EditText destinationTopic = addAccountInput("Destination topic ID (0 for default)", "0");
         destinationTopic.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        addPickerButton("Choose destination topic", view -> showTopicPicker(destination, destinationTopic));
         EditText mediaTypes = addAccountInput("Media types: video,document,text,audio,photo,voice,animation,sticker",
             "video,document,text,audio,photo,voice,animation,sticker");
         EditText includeKeywords = addAccountInput("Include keywords (comma-separated, optional)", null);
@@ -709,13 +992,14 @@ public class MainActivity extends Activity {
         delay.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
 
         TextView status = new TextView(this);
-        status.setTextColor(Color.LTGRAY);
+        styleStatusMessage(status);
         LinearLayout.LayoutParams statusParams = matchWrap();
         statusParams.topMargin = 8;
         content.addView(status, statusParams);
 
         Button start = new Button(this);
         start.setText("Start Watch task");
+        stylePrimaryButton(start);
         start.setOnClickListener(view -> {
             String sourceLink = source.getText().toString().trim();
             String target = destination.getText().toString().trim();
@@ -739,6 +1023,14 @@ public class MainActivity extends Activity {
                 if (sourceThreadId < 0 || destinationThreadId < 0) throw new NumberFormatException();
             } catch (NumberFormatException exception) {
                 status.setText("Enter valid topic IDs and a delay from 3 to 3600 seconds.");
+                return;
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                    && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                    != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},
+                        NOTIFICATION_PERMISSION_REQUEST);
+                status.setText("Allow notifications, then tap Start Watch task again.");
                 return;
             }
             String destinationChat = target.isEmpty() ? "me" : target;
@@ -765,10 +1057,147 @@ public class MainActivity extends Activity {
         input.setSingleLine(true);
         input.setHint(hint);
         if (value != null) input.setText(value);
+        styleInput(input);
         LinearLayout.LayoutParams params = matchWrap();
-        params.topMargin = 8;
+        params.topMargin = dp(8);
         content.addView(input, params);
         return input;
+    }
+
+    private Button addPickerButton(String label, View.OnClickListener listener) {
+        Button button = new Button(this);
+        button.setText(label);
+        button.setMinHeight(dp(42));
+        button.setOnClickListener(listener);
+        LinearLayout.LayoutParams params = matchWrap();
+        params.topMargin = dp(2);
+        params.bottomMargin = dp(4);
+        content.addView(button, params);
+        return button;
+    }
+
+    private void showChatPicker(EditText target, boolean sourceLink) {
+        String apiId = secretsStore.get("telegram_api_id");
+        String apiHash = secretsStore.get("telegram_api_hash");
+        String session = secretsStore.get("telegram_session");
+        if (apiId == null || apiHash == null || session == null) {
+            showTelegramSetup();
+            return;
+        }
+        new Thread(() -> {
+            try {
+                String response = Python.getInstance().getModule("destiny_runtime")
+                        .callAttr("get_chats", apiId, apiHash, session).toString();
+                JSONArray chats = new JSONArray(response);
+                String[] labels = new String[chats.length()];
+                String[] ids = new String[chats.length()];
+                String[] usernames = new String[chats.length()];
+                for (int index = 0; index < chats.length(); index++) {
+                    JSONObject chat = chats.getJSONObject(index);
+                    ids[index] = chat.optString("id");
+                    usernames[index] = chat.optString("username");
+                    labels[index] = chat.optString("title", ids[index]) + "  ·  "
+                            + chat.optString("type", "chat") + "  ·  " + ids[index];
+                }
+                new Handler(Looper.getMainLooper()).post(() ->
+                        new android.app.AlertDialog.Builder(this)
+                                .setTitle(sourceLink ? "Choose Telegram source" : "Choose destination")
+                                .setItems(labels, (dialog, which) -> {
+                                    String value = sourceLink && !usernames[which].isEmpty()
+                                            ? "https://t.me/" + usernames[which] : ids[which];
+                                    target.setText(value);
+                                })
+                                .setNegativeButton("Cancel", null)
+                                .show());
+            } catch (Exception exception) {
+                new Handler(Looper.getMainLooper()).post(() ->
+                        Toast.makeText(this, "Unable to load Telegram chats: "
+                                + exception.getMessage(), Toast.LENGTH_LONG).show());
+            }
+        }, "destiny-chat-picker").start();
+    }
+
+    private void showTopicPicker(EditText chatInput, EditText topicInput) {
+        String chatReference = chatInput.getText().toString().trim();
+        if (chatReference.isEmpty() || "me".equalsIgnoreCase(chatReference)) {
+            Toast.makeText(this, "Choose a forum chat first", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        String apiId = secretsStore.get("telegram_api_id");
+        String apiHash = secretsStore.get("telegram_api_hash");
+        String session = secretsStore.get("telegram_session");
+        if (apiId == null || apiHash == null || session == null) {
+            showTelegramSetup();
+            return;
+        }
+        new Thread(() -> {
+            try {
+                String response = Python.getInstance().getModule("destiny_runtime")
+                        .callAttr("get_forum_topics", apiId, apiHash, session,
+                                chatReference).toString();
+                JSONArray topics = new JSONArray(response);
+                String[] labels = new String[topics.length()];
+                String[] ids = new String[topics.length()];
+                for (int index = 0; index < topics.length(); index++) {
+                    JSONObject topic = topics.getJSONObject(index);
+                    ids[index] = topic.optString("id");
+                    labels[index] = topic.optString("title", "Topic") + "  ·  " + ids[index];
+                }
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    if (labels.length == 0) {
+                        Toast.makeText(this, "No forum topics found for this chat",
+                                Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    new android.app.AlertDialog.Builder(this)
+                            .setTitle("Choose forum topic")
+                            .setItems(labels, (dialog, which) -> topicInput.setText(ids[which]))
+                            .setNegativeButton("Cancel", null)
+                            .show();
+                });
+            } catch (Exception exception) {
+                new Handler(Looper.getMainLooper()).post(() ->
+                        Toast.makeText(this, "Unable to load forum topics: "
+                                + exception.getMessage(), Toast.LENGTH_LONG).show());
+            }
+        }, "destiny-topic-picker").start();
+    }
+
+    private void styleInput(EditText input) {
+        input.setTextColor(foregroundColor);
+        input.setHintTextColor(mutedColor);
+        input.setTextSize(14);
+        input.setPadding(dp(14), dp(12), dp(14), dp(12));
+        input.setMinHeight(dp(50));
+        GradientDrawable field = createRoundedBackground(surfaceColor, dp(6));
+        field.setStroke(dp(1), Color.rgb(39, 51, 68));
+        input.setBackground(field);
+    }
+
+    private void styleStatusMessage(TextView status) {
+        status.setTextColor(mutedColor);
+        status.setTextSize(13);
+        status.setPadding(dp(12), dp(10), dp(12), dp(10));
+        status.setBackground(createRoundedBackground(surfaceColor, dp(6)));
+    }
+
+    private void stylePrimaryButton(Button button) {
+        button.setTextColor(backgroundColor);
+        button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        button.setMinHeight(dp(48));
+        button.setBackground(new RippleDrawable(
+                android.content.res.ColorStateList.valueOf(Color.rgb(125, 211, 252)),
+                createRoundedBackground(accentColor, dp(6)), null));
+    }
+
+    private void styleDangerButton(Button button) {
+        button.setTextColor(Color.rgb(248, 113, 113));
+        button.setMinHeight(dp(46));
+        GradientDrawable dangerSurface = createRoundedBackground(surfaceColor, dp(6));
+        dangerSurface.setStroke(dp(1), Color.rgb(127, 29, 29));
+        button.setBackground(new RippleDrawable(
+                android.content.res.ColorStateList.valueOf(Color.rgb(127, 29, 29)),
+                dangerSurface, null));
     }
 
     private void runPython(String function, String[] args, TextView status, String successMessage) {
@@ -847,7 +1276,7 @@ public class MainActivity extends Activity {
                 }
                 if (response.startsWith("AUTH_OK:")) {
                     secretsStore.put("telegram_session", response.substring("AUTH_OK:".length()));
-                    status.setText(successMessage);
+                    showLocalHome();
                     return;
                 }
                 if ("PASSWORD_REQUIRED".equals(response)) {
@@ -1010,34 +1439,12 @@ public class MainActivity extends Activity {
     }
 
     private void showSetup() {
+        activeLocalTab = "Account";
         dashboardShowing = false;
         showLocalSurface();
         content.removeAllViews();
-        content.setPadding(24, 32, 24, 32);
-
-        TextView eyebrow = new TextView(this);
-        eyebrow.setText("DESTINY TG  /  CONNECT");
-        eyebrow.setTextColor(accentColor);
-        eyebrow.setTextSize(11);
-        content.addView(eyebrow, matchWrap());
-
-        TextView title = new TextView(this);
-        title.setText("Your dashboard,\non every screen.");
-        title.setTextColor(foregroundColor);
-        title.setTextSize(30);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        title.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams titleParams = matchWrap();
-        titleParams.topMargin = 12;
-        content.addView(title, titleParams);
-
-        TextView description = new TextView(this);
-        description.setText("Connect to your Destiny server to open the complete interactive dashboard. Your device library and media tools remain available offline.");
-        description.setTextColor(Color.rgb(154, 174, 170));
-        description.setTextSize(15);
-        LinearLayout.LayoutParams descriptionParams = matchWrap();
-        descriptionParams.topMargin = 10;
-        content.addView(description, descriptionParams);
+        content.setPadding(dp(18), dp(18), dp(18), dp(24));
+        addPageHeading("Connect to Destiny", "Link a local-network or public dashboard server.");
 
         LinearLayout modeRow = new LinearLayout(this);
         modeRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -1063,12 +1470,11 @@ public class MainActivity extends Activity {
 
         EditText addressInput = new EditText(this);
         addressInput.setSingleLine(true);
-        addressInput.setTextColor(foregroundColor);
-        addressInput.setHintTextColor(Color.rgb(119, 143, 138));
         addressInput.setHint(isLocalMode() ? "http://192.168.1.20:8080" : "https://your-server.example");
         addressInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT
                 | android.text.InputType.TYPE_TEXT_VARIATION_URI);
         addressInput.setText(serverAddress);
+        styleInput(addressInput);
         LinearLayout.LayoutParams inputParams = matchWrap();
         inputParams.topMargin = 20;
         content.addView(addressInput, inputParams);
@@ -1084,6 +1490,7 @@ public class MainActivity extends Activity {
 
         Button connect = new Button(this);
         connect.setText("Connect");
+        stylePrimaryButton(connect);
         connect.setOnClickListener(view -> {
             String normalized = normalizeAddress(addressInput.getText().toString());
             if (normalized == null) {
@@ -1100,7 +1507,7 @@ public class MainActivity extends Activity {
 
         Button localLibrary = new Button(this);
         localLibrary.setText("Continue to device library");
-        localLibrary.setOnClickListener(view -> showLocalLibrary());
+        localLibrary.setOnClickListener(view -> showLocalHome());
         LinearLayout.LayoutParams localLibraryParams = matchWrap();
         localLibraryParams.topMargin = 8;
         content.addView(localLibrary, localLibraryParams);
@@ -1282,13 +1689,72 @@ public class MainActivity extends Activity {
     }
 
     private void showLocalSurface() {
-        if (localScrollView.getParent() == root) return;
+        dashboardShowing = false;
         root.removeAllViews();
+        LinearLayout shell = new LinearLayout(this);
+        shell.setOrientation(LinearLayout.VERTICAL);
+        shell.setBackgroundColor(backgroundColor);
+
+        LinearLayout header = new LinearLayout(this);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(dp(12), dp(8), dp(12), dp(8));
+        header.setBackgroundColor(surfaceColor);
+        header.addView(createToolbarAction("Tools", view -> showLocalTools()),
+            new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(42)));
+        TextView brand = new TextView(this);
+        brand.setText("DESTINY TG\n" + activeLocalTab.toUpperCase(java.util.Locale.ROOT));
+        brand.setTextColor(foregroundColor);
+        brand.setTextSize(13);
+        brand.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        brand.setGravity(Gravity.CENTER_VERTICAL);
+        brand.setMaxLines(2);
+        header.addView(brand, new LinearLayout.LayoutParams(0,
+            ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        header.addView(createToolbarAction("Account", view -> showLocalAccount()),
+            new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(42)));
+        shell.addView(header, matchWrap());
+
         if (localScrollView.getParent() != null) {
             ((ViewGroup) localScrollView.getParent()).removeView(localScrollView);
         }
-        root.addView(localScrollView, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        shell.addView(localScrollView, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+
+        LinearLayout navigation = new LinearLayout(this);
+        navigation.setGravity(Gravity.CENTER);
+        navigation.setPadding(dp(6), dp(5), dp(6), dp(5));
+        navigation.setBackgroundColor(surfaceColor);
+        addNavItem(navigation, "Home", view -> showLocalHome());
+        addNavItem(navigation, "Tasks", view -> showLocalTasks());
+        addNavItem(navigation, "Media", view -> showLocalLibrary());
+        addNavItem(navigation, "Tools", view -> showLocalTools());
+        addNavItem(navigation, "Account", view -> showLocalAccount());
+        shell.addView(navigation, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(56)));
+        root.addView(shell, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        }
+
+        private void addNavItem(LinearLayout navigation, String label,
+                    View.OnClickListener listener) {
+        TextView item = new TextView(this);
+        item.setText(label);
+        item.setTextColor(label.equals(activeLocalTab)
+            ? accentColor : Color.rgb(172, 174, 161));
+        item.setTextSize(12);
+        item.setTypeface(Typeface.DEFAULT, label.equals(activeLocalTab)
+            ? Typeface.BOLD : Typeface.NORMAL);
+        item.setMinHeight(dp(44));
+        item.setGravity(Gravity.CENTER);
+        GradientDrawable itemSurface = createRoundedBackground(
+                label.equals(activeLocalTab) ? Color.rgb(17, 45, 64) : Color.TRANSPARENT, dp(6));
+        item.setBackground(new RippleDrawable(
+            android.content.res.ColorStateList.valueOf(Color.rgb(56, 189, 248)), itemSurface, null));
+        item.setClickable(true);
+        item.setFocusable(true);
+        item.setOnClickListener(listener);
+        navigation.addView(item, new LinearLayout.LayoutParams(0,
+            ViewGroup.LayoutParams.MATCH_PARENT, 1));
     }
 
     private Button createToolbarAction(String label, View.OnClickListener listener) {

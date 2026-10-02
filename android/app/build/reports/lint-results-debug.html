@@ -1,0 +1,1452 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+<title>Lint Report</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+ <link rel="stylesheet" href="https://code.getmdl.io/1.2.1/material.blue-indigo.min.css" />
+<link rel="stylesheet" href="http://fonts.googleapis.com/css?family=Roboto:300,400,500,700" type="text/css">
+<script defer src="https://code.getmdl.io/1.2.0/material.min.js"></script>
+<style>
+section.section--center {
+    max-width: 860px;
+}
+.mdl-card__supporting-text + .mdl-card__actions {
+    border-top: 1px solid rgba(0, 0, 0, 0.12);
+}
+main > .mdl-layout__tab-panel {
+  padding: 8px;
+  padding-top: 48px;
+}
+
+.mdl-card__actions {
+    margin: 0;
+    padding: 4px 40px;
+    color: inherit;
+}
+.mdl-card > * {
+    height: auto;
+}
+.mdl-card__actions a {
+    color: #00BCD4;
+    margin: 0;
+}
+.error-icon {
+    color: #bb7777;
+    vertical-align: bottom;
+}
+.warning-icon {
+    vertical-align: bottom;
+}
+.mdl-layout__content section:not(:last-of-type) {
+  position: relative;
+  margin-bottom: 48px;
+}
+
+.mdl-card .mdl-card__supporting-text {
+  margin: 40px;
+  -webkit-flex-grow: 1;
+      -ms-flex-positive: 1;
+          flex-grow: 1;
+  padding: 0;
+  color: inherit;
+  width: calc(100% - 80px);
+}
+div.mdl-layout__drawer-button .material-icons {
+    line-height: 48px;
+}
+.mdl-card .mdl-card__supporting-text {
+    margin-top: 0px;
+}
+.chips {
+    float: right;
+    vertical-align: middle;
+}
+
+pre.errorlines {
+    background-color: white;
+    font-family: monospace;
+    border: 1px solid #e0e0e0;
+    line-height: 0.9rem;
+    font-size: 0.9rem;    padding: 1px 0px 1px; 1px;
+    overflow: scroll;
+}
+.prefix {
+    color: #660e7a;
+    font-weight: bold;
+}
+.attribute {
+    color: #0000ff;
+    font-weight: bold;
+}
+.value {
+    color: #008000;
+    font-weight: bold;
+}
+.tag {
+    color: #000080;
+    font-weight: bold;
+}
+.comment {
+    color: #808080;
+    font-style: italic;
+}
+.javadoc {
+    color: #808080;
+    font-style: italic;
+}
+.annotation {
+    color: #808000;
+}
+.string {
+    color: #008000;
+    font-weight: bold;
+}
+.number {
+    color: #0000ff;
+}
+.keyword {
+    color: #000080;
+    font-weight: bold;
+}
+.caretline {
+    background-color: #fffae3;
+}
+.lineno {
+    color: #999999;
+    background-color: #f0f0f0;
+}
+.error {
+    display: inline-block;
+    position:relative;
+    background: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAABmJLR0QA/wD/AP+gvaeTAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAB3RJTUUH4AwCFR4T/3uLMgAAADxJREFUCNdNyLERQEAABMCjL4lQwIzcjErpguAL+C9AvgKJDbeD/PRpLdm35Hm+MU+cB+tCKaJW4L4YBy+CAiLJrFs9mgAAAABJRU5ErkJggg==) bottom repeat-x;
+}
+.warning {
+    text-decoration: none;
+    background-color: #f6ebbc;
+}
+.overview {
+    padding: 10pt;
+    width: 100%;
+    overflow: auto;
+    border-collapse:collapse;
+}
+.overview tr {
+    border-bottom: solid 1px #eeeeee;
+}
+.categoryColumn a {
+     text-decoration: none;
+     color: inherit;
+}
+.countColumn {
+    text-align: right;
+    padding-right: 20px;
+    width: 50px;
+}
+.issueColumn {
+   padding-left: 16px;
+}
+.categoryColumn {
+   position: relative;
+   left: -50px;
+   padding-top: 20px;
+   padding-bottom: 5px;
+}
+.options {
+   padding-left: 16px;
+}
+</style>
+<script language="javascript" type="text/javascript">
+<!--
+function reveal(id) {
+if (document.getElementById) {
+document.getElementById(id).style.display = 'block';
+document.getElementById(id+'Link').style.display = 'none';
+}
+}
+function hideid(id) {
+if (document.getElementById) {
+document.getElementById(id).style.display = 'none';
+}
+}
+//-->
+</script>
+</head>
+<body class="mdl-color--grey-100 mdl-color-text--grey-700 mdl-base">
+<div class="mdl-layout mdl-js-layout mdl-layout--fixed-header">
+  <header class="mdl-layout__header">
+    <div class="mdl-layout__header-row">
+      <span class="mdl-layout-title">Lint Report: 68 warnings</span>
+      <div class="mdl-layout-spacer"></div>
+      <nav class="mdl-navigation mdl-layout--large-screen-only">Check performed at Fri Oct 02 10:16:57 UTC 2026 by AGP (8.7.3)</nav>
+    </div>
+  </header>
+  <div class="mdl-layout__drawer">
+    <span class="mdl-layout-title">Issue Types</span>
+    <nav class="mdl-navigation">
+      <a class="mdl-navigation__link" href="#overview"><i class="material-icons">dashboard</i>Overview</a>
+      <a class="mdl-navigation__link" href="#VectorRaster"><i class="material-icons warning-icon">warning</i>Vector Image Generation (1)</a>
+      <a class="mdl-navigation__link" href="#SetJavaScriptEnabled"><i class="material-icons warning-icon">warning</i>Using <code>setJavaScriptEnabled</code> (1)</a>
+      <a class="mdl-navigation__link" href="#SetTextI18n"><i class="material-icons warning-icon">warning</i>TextView Internationalization (66)</a>
+    </nav>
+  </div>
+  <main class="mdl-layout__content">
+    <div class="mdl-layout__tab-panel is-active">
+<a name="overview"></a>
+<section class="section--center mdl-grid mdl-grid--no-spacing mdl-shadow--2dp" id="OverviewCard" style="display: block;">
+            <div class="mdl-card mdl-cell mdl-cell--12-col">
+  <div class="mdl-card__title">
+    <h2 class="mdl-card__title-text">Overview</h2>
+  </div>
+              <div class="mdl-card__supporting-text">
+<table class="overview">
+<tr><td class="countColumn"></td><td class="categoryColumn"><a href="#Correctness">Correctness</a>
+</td></tr>
+<tr>
+<td class="countColumn">1</td><td class="issueColumn"><i class="material-icons warning-icon">warning</i>
+<a href="#VectorRaster">VectorRaster</a>: Vector Image Generation</td></tr>
+<tr><td class="countColumn"></td><td class="categoryColumn"><a href="#Security">Security</a>
+</td></tr>
+<tr>
+<td class="countColumn">1</td><td class="issueColumn"><i class="material-icons warning-icon">warning</i>
+<a href="#SetJavaScriptEnabled">SetJavaScriptEnabled</a>: Using <code>setJavaScriptEnabled</code></td></tr>
+<tr><td class="countColumn"></td><td class="categoryColumn"><a href="#Internationalization">Internationalization</a>
+</td></tr>
+<tr>
+<td class="countColumn">66</td><td class="issueColumn"><i class="material-icons warning-icon">warning</i>
+<a href="#SetTextI18n">SetTextI18n</a>: TextView Internationalization</td></tr>
+<tr><td></td><td class="categoryColumn"><a href="#MissingIssues">Disabled Checks (39)</a>
+</td></tr>
+</table>
+<br/>              </div>
+              <div class="mdl-card__actions mdl-card--border">
+<button class="mdl-button mdl-js-button mdl-js-ripple-effect" id="OverviewCardLink" onclick="hideid('OverviewCard');">
+Dismiss</button>            </div>
+            </div>
+          </section>
+<a name="Correctness"></a>
+<a name="VectorRaster"></a>
+<section class="section--center mdl-grid mdl-grid--no-spacing mdl-shadow--2dp" id="VectorRasterCard" style="display: block;">
+            <div class="mdl-card mdl-cell mdl-cell--12-col">
+  <div class="mdl-card__title">
+    <h2 class="mdl-card__title-text">Vector Image Generation</h2>
+  </div>
+              <div class="mdl-card__supporting-text">
+<div class="issue">
+<div class="warningslist">
+<span class="location"><a href="../../src/main/res/drawable/tv_banner.xml">../../src/main/res/drawable/tv_banner.xml</a>:2</span>: <span class="message">Limit vector icons sizes to 200×200 to keep icon drawing fast; see <a href="https://developer.android.com/studio/write/vector-asset-studio#when">https://developer.android.com/studio/write/vector-asset-studio#when</a> for more</span><br /><pre class="errorlines">
+<span class="lineno">  1 </span><span class="tag">&lt;vector</span><span class="attribute"> </span><span class="prefix">xmlns:</span><span class="attribute">android</span>=<span class="value">"http://schemas.android.com/apk/res/android"</span>
+<span class="caretline"><span class="lineno">  2 </span>    <span class="prefix">android:</span><span class="attribute">width</span>=<span class="value">"</span><span class="warning"><span class="value">320dp</span></span><span class="value">"</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  3 </span>    <span class="prefix">android:</span><span class="attribute">height</span>=<span class="value">"180dp"</span>
+<span class="lineno">  4 </span>    <span class="prefix">android:</span><span class="attribute">viewportWidth</span>=<span class="value">"320"</span>
+<span class="lineno">  5 </span>    <span class="prefix">android:</span><span class="attribute">viewportHeight</span>=<span class="value">"180"</span>>
+</pre>
+
+</div>
+<div class="metadata"><div class="explanation" id="explanationVectorRaster" style="display: none;">
+Vector icons require API 21 or API 24 depending on used features, but when <code>minSdkVersion</code> is less than 21 or 24 and Android Gradle plugin 1.4 or higher is used, a vector drawable placed in the <code>drawable</code> folder is automatically moved to <code>drawable-anydpi-v21</code> or <code>drawable-anydpi-v24</code> and bitmap images are generated for different screen resolutions for backwards compatibility.<br/>
+<br/>
+However, there are some limitations to this raster image generation, and this lint check flags elements and attributes that are not fully supported. You should manually check whether the generated output is acceptable for those older devices.<br/>To suppress this error, use the issue id "VectorRaster" as explained in the <a href="#SuppressInfo">Suppressing Warnings and Errors</a> section.<br/>
+<br/></div>
+</div>
+</div>
+<div class="chips">
+<span class="mdl-chip">
+    <span class="mdl-chip__text">VectorRaster</span>
+</span>
+<span class="mdl-chip">
+    <span class="mdl-chip__text">Correctness</span>
+</span>
+<span class="mdl-chip">
+    <span class="mdl-chip__text">Warning</span>
+</span>
+<span class="mdl-chip">
+    <span class="mdl-chip__text">Priority 5/10</span>
+</span>
+</div>
+              </div>
+              <div class="mdl-card__actions mdl-card--border">
+<button class="mdl-button mdl-js-button mdl-js-ripple-effect" id="explanationVectorRasterLink" onclick="reveal('explanationVectorRaster');">
+Explain</button><button class="mdl-button mdl-js-button mdl-js-ripple-effect" id="VectorRasterCardLink" onclick="hideid('VectorRasterCard');">
+Dismiss</button>            </div>
+            </div>
+          </section>
+<a name="Security"></a>
+<a name="SetJavaScriptEnabled"></a>
+<section class="section--center mdl-grid mdl-grid--no-spacing mdl-shadow--2dp" id="SetJavaScriptEnabledCard" style="display: block;">
+            <div class="mdl-card mdl-cell mdl-cell--12-col">
+  <div class="mdl-card__title">
+    <h2 class="mdl-card__title-text">Using setJavaScriptEnabled</h2>
+  </div>
+              <div class="mdl-card__supporting-text">
+<div class="issue">
+<div class="warningslist">
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:1240</span>: <span class="message">Using <code>setJavaScriptEnabled</code> can introduce XSS vulnerabilities into your application, review carefully</span><br /><pre class="errorlines">
+<span class="lineno"> 1237 </span>
+<span class="lineno"> 1238 </span>    <span class="keyword">private</span> <span class="keyword">void</span> configureWebView() {
+<span class="lineno"> 1239 </span>        WebSettings settings = webView.getSettings();
+<span class="caretline"><span class="lineno"> 1240 </span>        <span class="warning">settings.setJavaScriptEnabled(<span class="keyword">true</span>)</span>;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno"> 1241 </span>        settings.setDomStorageEnabled(<span class="keyword">true</span>);
+<span class="lineno"> 1242 </span>        settings.setMediaPlaybackRequiresUserGesture(<span class="keyword">false</span>);
+<span class="lineno"> 1243 </span>        settings.setAllowFileAccess(<span class="keyword">false</span>);
+</pre>
+
+</div>
+<div class="metadata"><div class="explanation" id="explanationSetJavaScriptEnabled" style="display: none;">
+Your code should not invoke <code>setJavaScriptEnabled</code> if you are not sure that your app really requires JavaScript support.<br/><div class="moreinfo">More info: <ul><li><a href="https://goo.gle/SetJavaScriptEnabled">https://goo.gle/SetJavaScriptEnabled</a>
+<li><a href="https://developer.android.com/training/articles/security-tips">https://developer.android.com/training/articles/security-tips</a>
+</ul></div>To suppress this error, use the issue id "SetJavaScriptEnabled" as explained in the <a href="#SuppressInfo">Suppressing Warnings and Errors</a> section.<br/>
+<br/></div>
+</div>
+</div>
+<div class="chips">
+<span class="mdl-chip">
+    <span class="mdl-chip__text">SetJavaScriptEnabled</span>
+</span>
+<span class="mdl-chip">
+    <span class="mdl-chip__text">Security</span>
+</span>
+<span class="mdl-chip">
+    <span class="mdl-chip__text">Warning</span>
+</span>
+<span class="mdl-chip">
+    <span class="mdl-chip__text">Priority 6/10</span>
+</span>
+</div>
+              </div>
+              <div class="mdl-card__actions mdl-card--border">
+<button class="mdl-button mdl-js-button mdl-js-ripple-effect" id="explanationSetJavaScriptEnabledLink" onclick="reveal('explanationSetJavaScriptEnabled');">
+Explain</button><button class="mdl-button mdl-js-button mdl-js-ripple-effect" id="SetJavaScriptEnabledCardLink" onclick="hideid('SetJavaScriptEnabledCard');">
+Dismiss</button>            </div>
+            </div>
+          </section>
+<a name="Internationalization"></a>
+<a name="SetTextI18n"></a>
+<section class="section--center mdl-grid mdl-grid--no-spacing mdl-shadow--2dp" id="SetTextI18nCard" style="display: block;">
+            <div class="mdl-card mdl-cell mdl-cell--12-col">
+  <div class="mdl-card__title">
+    <h2 class="mdl-card__title-text">TextView Internationalization</h2>
+  </div>
+              <div class="mdl-card__supporting-text">
+<div class="issue">
+<div class="warningslist">
+<span class="location"><a href="../../src/main/java/com/destinytg/device/LocalMediaEditorActivity.java">../../src/main/java/com/destinytg/device/LocalMediaEditorActivity.java</a>:61</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  58 </span>        root.setBackgroundColor(Color.rgb(<span class="number">7</span>, <span class="number">9</span>, <span class="number">13</span>));
+<span class="lineno">  59 </span>
+<span class="lineno">  60 </span>        TextView title = <span class="keyword">new</span> TextView(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno">  61 </span>        title.setText(<span class="warning"><span class="string">"Media editor"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  62 </span>        title.setTextSize(<span class="number">26</span>);
+<span class="lineno">  63 </span>        title.setTextColor(Color.rgb(<span class="number">56</span>, <span class="number">189</span>, <span class="number">248</span>));
+<span class="lineno">  64 </span>        title.setGravity(Gravity.CENTER_VERTICAL);
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/LocalMediaEditorActivity.java">../../src/main/java/com/destinytg/device/LocalMediaEditorActivity.java</a>:78</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  75 </span>        root.addView(info, infoParams);
+<span class="lineno">  76 </span>
+<span class="lineno">  77 </span>        TextView trimLabel = <span class="keyword">new</span> TextView(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno">  78 </span>        trimLabel.setText(<span class="warning"><span class="string">"TRIM RANGE"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  79 </span>        trimLabel.setTextColor(Color.rgb(<span class="number">56</span>, <span class="number">189</span>, <span class="number">248</span>));
+<span class="lineno">  80 </span>        trimLabel.setTextSize(<span class="number">10</span>);
+<span class="lineno">  81 </span>        trimLabel.setTypeface(android.graphics.Typeface.DEFAULT,
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/LocalMediaEditorActivity.java">../../src/main/java/com/destinytg/device/LocalMediaEditorActivity.java</a>:116</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno"> 113 </span>        root.addView(editStatus, statusParams);
+<span class="lineno"> 114 </span>
+<span class="lineno"> 115 </span>        Button trim = <span class="keyword">new</span> Button(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno"> 116 </span>        trim.setText(<span class="warning"><span class="string">"Trim and export MP4"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno"> 117 </span>        trim.setTextColor(Color.rgb(<span class="number">7</span>, <span class="number">9</span>, <span class="number">13</span>));
+<span class="lineno"> 118 </span>        trim.setTypeface(android.graphics.Typeface.DEFAULT,
+<span class="lineno"> 119 </span>            android.graphics.Typeface.BOLD);
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/LocalMediaEditorActivity.java">../../src/main/java/com/destinytg/device/LocalMediaEditorActivity.java</a>:133</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno"> 130 </span>                }
+<span class="lineno"> 131 </span>                trimMedia(startSeconds, endSeconds, editStatus, trim);
+<span class="lineno"> 132 </span>            } <span class="keyword">catch</span> (Exception exception) {
+<span class="caretline"><span class="lineno"> 133 </span>                editStatus.setText(<span class="warning"><span class="string">"Enter valid start/end times in seconds."</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno"> 134 </span>            }
+<span class="lineno"> 135 </span>        });
+<span class="lineno"> 136 </span>        root.addView(trim, matchWrap());
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/LocalMediaEditorActivity.java">../../src/main/java/com/destinytg/device/LocalMediaEditorActivity.java</a>:139</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno"> 136 </span>        root.addView(trim, matchWrap());
+<span class="lineno"> 137 </span>
+<span class="lineno"> 138 </span>        Button theater = <span class="keyword">new</span> Button(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno"> 139 </span>        theater.setText(<span class="warning"><span class="string">"Open in theater"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno"> 140 </span>        theater.setOnClickListener(view -> openInTheater());
+<span class="lineno"> 141 </span>        root.addView(theater, matchWrap());
+</pre>
+
+<button class="mdl-button mdl-js-button mdl-button--primary" id="SetTextI18nDivLink" onclick="reveal('SetTextI18nDiv');" />+ 61 More Occurrences...</button>
+<div id="SetTextI18nDiv" style="display: none">
+<span class="location"><a href="../../src/main/java/com/destinytg/device/LocalMediaEditorActivity.java">../../src/main/java/com/destinytg/device/LocalMediaEditorActivity.java</a>:144</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno"> 141 </span>        root.addView(theater, matchWrap());
+<span class="lineno"> 142 </span>
+<span class="lineno"> 143 </span>        Button export = <span class="keyword">new</span> Button(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno"> 144 </span>        export.setText(<span class="warning"><span class="string">"Duplicate to local editor export"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno"> 145 </span>        export.setOnClickListener(view -> duplicateCurrentFile());
+<span class="lineno"> 146 </span>        root.addView(export, matchWrap());
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/LocalMediaEditorActivity.java">../../src/main/java/com/destinytg/device/LocalMediaEditorActivity.java</a>:149</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno"> 146 </span>        root.addView(export, matchWrap());
+<span class="lineno"> 147 </span>
+<span class="lineno"> 148 </span>        Button rename = <span class="keyword">new</span> Button(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno"> 149 </span>        rename.setText(<span class="warning"><span class="string">"Rename export"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno"> 150 </span>        rename.setOnClickListener(view -> renameCurrentFile());
+<span class="lineno"> 151 </span>        root.addView(rename, matchWrap());
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/LocalMediaEditorActivity.java">../../src/main/java/com/destinytg/device/LocalMediaEditorActivity.java</a>:154</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno"> 151 </span>        root.addView(rename, matchWrap());
+<span class="lineno"> 152 </span>
+<span class="lineno"> 153 </span>        Button back = <span class="keyword">new</span> Button(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno"> 154 </span>        back.setText(<span class="warning"><span class="string">"Back to library"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno"> 155 </span>        back.setOnClickListener(view -> finish());
+<span class="lineno"> 156 </span>        root.addView(back, matchWrap());
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/LocalMediaEditorActivity.java">../../src/main/java/com/destinytg/device/LocalMediaEditorActivity.java</a>:277</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno"> 274 </span>    <span class="keyword">private</span> <span class="keyword">void</span> trimMedia(<span class="keyword">double</span> startSeconds, <span class="keyword">double</span> endSeconds,
+<span class="lineno"> 275 </span>                           TextView status, Button trimButton) {
+<span class="lineno"> 276 </span>        trimButton.setEnabled(<span class="keyword">false</span>);
+<span class="caretline"><span class="lineno"> 277 </span>        status.setText(<span class="warning"><span class="string">"Preparing local trim…"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno"> 278 </span>        <span class="keyword">new</span> Thread(() -> {
+<span class="lineno"> 279 </span>            MediaExtractor extractor = <span class="keyword">new</span> MediaExtractor();
+<span class="lineno"> 280 </span>            MediaMuxer muxer = <span class="keyword">null</span>;
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/LocalTheaterActivity.java">../../src/main/java/com/destinytg/device/LocalTheaterActivity.java</a>:38</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  35 </span>   root.setBackgroundColor(Color.BLACK);
+<span class="lineno">  36 </span>
+<span class="lineno">  37 </span>   TextView eyebrow = <span class="keyword">new</span> TextView(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno">  38 </span>   eyebrow.setText(<span class="warning"><span class="string">"LOCAL THEATER"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  39 </span>   eyebrow.setTextColor(Color.rgb(<span class="number">56</span>, <span class="number">189</span>, <span class="number">248</span>));
+<span class="lineno">  40 </span>   eyebrow.setTextSize(<span class="number">10</span>);
+<span class="lineno">  41 </span>   eyebrow.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/LocalTheaterActivity.java">../../src/main/java/com/destinytg/device/LocalTheaterActivity.java</a>:72</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  69 </span>                    ViewGroup.LayoutParams.MATCH_PARENT, <span class="number">0</span>, <span class="number">1</span>));
+<span class="lineno">  70 </span>        } <span class="keyword">else</span> <span class="keyword">if</span> (mimeType.startsWith(<span class="string">"audio/"</span>)) {
+<span class="lineno">  71 </span>            TextView audioLabel = <span class="keyword">new</span> TextView(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno">  72 </span>            audioLabel.setText(<span class="warning"><span class="string">"AUDIO  /  PLAYING FROM THIS DEVICE"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  73 </span>            audioLabel.setTextColor(Color.rgb(<span class="number">148</span>, <span class="number">163</span>, <span class="number">184</span>));
+<span class="lineno">  74 </span>            audioLabel.setTextSize(<span class="number">13</span>);
+<span class="lineno">  75 </span>            audioLabel.setGravity(Gravity.CENTER);
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/LocalTheaterActivity.java">../../src/main/java/com/destinytg/device/LocalTheaterActivity.java</a>:80</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  77 </span>                    ViewGroup.LayoutParams.MATCH_PARENT, <span class="number">0</span>, <span class="number">1</span>));
+<span class="lineno">  78 </span>
+<span class="lineno">  79 </span>            Button playPause = <span class="keyword">new</span> Button(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno">  80 </span>            playPause.setText(<span class="warning"><span class="string">"Preparing audio"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  81 </span>                playPause.setTextColor(Color.rgb(<span class="number">7</span>, <span class="number">9</span>, <span class="number">13</span>));
+<span class="lineno">  82 </span>                playPause.setTypeface(android.graphics.Typeface.DEFAULT,
+<span class="lineno">  83 </span>                    android.graphics.Typeface.BOLD);
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/LocalTheaterActivity.java">../../src/main/java/com/destinytg/device/LocalTheaterActivity.java</a>:95</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  92 </span>                audioPlayer = <span class="keyword">new</span> MediaPlayer();
+<span class="lineno">  93 </span>                audioPlayer.setDataSource(<span class="keyword">this</span>, mediaUri);
+<span class="lineno">  94 </span>                audioPlayer.setOnPreparedListener(player -> {
+<span class="caretline"><span class="lineno">  95 </span>                    playPause.setText(<span class="warning"><span class="string">"Pause"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  96 </span>                    playPause.setEnabled(<span class="keyword">true</span>);
+<span class="lineno">  97 </span>                    player.start();
+<span class="lineno">  98 </span>                });
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/LocalTheaterActivity.java">../../src/main/java/com/destinytg/device/LocalTheaterActivity.java</a>:99</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  96 </span>         playPause.setEnabled(<span class="keyword">true</span>);
+<span class="lineno">  97 </span>         player.start();
+<span class="lineno">  98 </span>     });
+<span class="caretline"><span class="lineno">  99 </span>     audioPlayer.setOnCompletionListener(player -> playPause.setText(<span class="warning"><span class="string">"Replay"</span></span>));&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno"> 100 </span>     audioPlayer.setOnErrorListener((player, what, extra) -> {
+<span class="lineno"> 101 </span>         Toast.makeText(<span class="keyword">this</span>, <span class="string">"This audio format is not supported on this device"</span>,
+<span class="lineno"> 102 </span>                 Toast.LENGTH_LONG).show();
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/LocalTheaterActivity.java">../../src/main/java/com/destinytg/device/LocalTheaterActivity.java</a>:110</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno"> 107 </span>      <span class="keyword">if</span> (audioPlayer == <span class="keyword">null</span>) <span class="keyword">return</span>;
+<span class="lineno"> 108 </span>      <span class="keyword">if</span> (audioPlayer.isPlaying()) {
+<span class="lineno"> 109 </span>          audioPlayer.pause();
+<span class="caretline"><span class="lineno"> 110 </span>          playPause.setText(<span class="warning"><span class="string">"Play"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno"> 111 </span>      } <span class="keyword">else</span> {
+<span class="lineno"> 112 </span>          <span class="keyword">if</span> (audioPlayer.getCurrentPosition() >= audioPlayer.getDuration()) {
+<span class="lineno"> 113 </span>              audioPlayer.seekTo(<span class="number">0</span>);
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/LocalTheaterActivity.java">../../src/main/java/com/destinytg/device/LocalTheaterActivity.java</a>:116</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno"> 113 </span>                            audioPlayer.seekTo(<span class="number">0</span>);
+<span class="lineno"> 114 </span>                        }
+<span class="lineno"> 115 </span>                        audioPlayer.start();
+<span class="caretline"><span class="lineno"> 116 </span>                        playPause.setText(<span class="warning"><span class="string">"Pause"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno"> 117 </span>                    }
+<span class="lineno"> 118 </span>                });
+<span class="lineno"> 119 </span>                audioPlayer.prepareAsync();
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:151</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  148 </span>        overview.addView(eyebrow, matchWrap());
+<span class="lineno">  149 </span>
+<span class="lineno">  150 </span>        TextView heading = <span class="keyword">new</span> TextView(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno">  151 </span>        heading.setText(<span class="warning"><span class="string">"System overview"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  152 </span>        heading.setTextColor(foregroundColor);
+<span class="lineno">  153 </span>        heading.setTextSize(<span class="number">25</span>);
+<span class="lineno">  154 </span>        heading.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:167</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  164 </span>        overview.addView(subtitle, subtitleParams);
+<span class="lineno">  165 </span>
+<span class="lineno">  166 </span>        Button createTask = <span class="keyword">new</span> Button(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno">  167 </span>        createTask.setText(<span class="warning"><span class="string">"Create task or watcher"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  168 </span>        createTask.setTextColor(backgroundColor);
+<span class="lineno">  169 </span>        createTask.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+<span class="lineno">  170 </span>        createTask.setMinHeight(dp(<span class="number">48</span>));
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:281</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  278 </span>        addPageHeading(<span class="string">"Tasks"</span>, <span class="string">"Downloads and Telegram watches running on this device."</span>);
+<span class="lineno">  279 </span>
+<span class="lineno">  280 </span>        Button download = <span class="keyword">new</span> Button(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno">  281 </span>        download.setText(<span class="warning"><span class="string">"New Telegram download"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  282 </span>        stylePrimaryButton(download);
+<span class="lineno">  283 </span>        download.setOnClickListener(view -> {
+<span class="lineno">  284 </span>            <span class="keyword">if</span> (secretsStore.get(<span class="string">"telegram_session"</span>) == <span class="keyword">null</span>) showTelegramSetup();
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:290</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  287 </span>        content.addView(download, matchWrap());
+<span class="lineno">  288 </span>
+<span class="lineno">  289 </span>        Button watch = <span class="keyword">new</span> Button(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno">  290 </span>        watch.setText(<span class="warning"><span class="string">"Add Telegram watch"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  291 </span>        watch.setOnClickListener(view -> {
+<span class="lineno">  292 </span>            <span class="keyword">if</span> (secretsStore.get(<span class="string">"telegram_session"</span>) == <span class="keyword">null</span>) showTelegramSetup();
+<span class="lineno">  293 </span>            <span class="keyword">else</span> showTelegramWatcherSetup();
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:316</span>: <span class="message">Do not concatenate text displayed with <code>setText</code>. Use resource string with placeholders.</span><br /><pre class="errorlines">
+<span class="lineno">  313 </span>     row.setPadding(dp(<span class="number">12</span>), dp(<span class="number">10</span>), dp(<span class="number">8</span>), dp(<span class="number">10</span>));
+<span class="lineno">  314 </span>     row.setBackground(createRoundedBackground(surfaceColor, dp(<span class="number">6</span>)));
+<span class="lineno">  315 </span>     TextView label = <span class="keyword">new</span> TextView(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno">  316 </span>     label.setText(<span class="warning">source + <span class="string">"\n→ "</span> + destination + <span class="string">" · "</span> + watchers.getString(<span class="number">3</span>)</span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  317 </span>     label.setTextColor(foregroundColor);
+<span class="lineno">  318 </span>     label.setTextSize(<span class="number">13</span>);
+<span class="lineno">  319 </span>     label.setMaxLines(<span class="number">3</span>);
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:323</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  320 </span>                row.addView(label, <span class="keyword">new</span> LinearLayout.LayoutParams(<span class="number">0</span>,
+<span class="lineno">  321 </span>                        ViewGroup.LayoutParams.WRAP_CONTENT, <span class="number">1</span>));
+<span class="lineno">  322 </span>                Button stop = <span class="keyword">new</span> Button(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno">  323 </span>                stop.setText(<span class="warning"><span class="string">"Stop"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  324 </span>                stop.setOnClickListener(view -> {
+<span class="lineno">  325 </span>                    localLibrary.removeWatcher(watcherId);
+<span class="lineno">  326 </span>                    <span class="keyword">if</span> (Python.isStarted()) {
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:410</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  407 </span>        content.addView(network, matchWrap());
+<span class="lineno">  408 </span>
+<span class="lineno">  409 </span>        Button server = <span class="keyword">new</span> Button(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno">  410 </span>        server.setText(<span class="warning"><span class="string">"Local server dashboard settings"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  411 </span>        server.setOnClickListener(view -> showSetup());
+<span class="lineno">  412 </span>        LinearLayout.LayoutParams serverParams = matchWrap();
+<span class="lineno">  413 </span>        serverParams.topMargin = dp(<span class="number">14</span>);
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:469</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  466 </span>            actionParams());
+<span class="lineno">  467 </span>
+<span class="lineno">  468 </span>        Button settings = <span class="keyword">new</span> Button(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno">  469 </span>        settings.setText(<span class="warning"><span class="string">"Account and connection settings"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  470 </span>        settings.setOnClickListener(view -> showLocalAccount());
+<span class="lineno">  471 </span>        LinearLayout.LayoutParams settingsParams = matchWrap();
+<span class="lineno">  472 </span>        settingsParams.topMargin = dp(<span class="number">18</span>);
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:565</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  562 </span>        addSectionTitle(<span class="string">"Your files"</span>, content);
+<span class="lineno">  563 </span>
+<span class="lineno">  564 </span>        Button importButton = <span class="keyword">new</span> Button(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno">  565 </span>        importButton.setText(<span class="warning"><span class="string">"Import files"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  566 </span>        importButton.setOnClickListener(view -> {
+<span class="lineno">  567 </span>            Intent intent = <span class="keyword">new</span> Intent(Intent.ACTION_OPEN_DOCUMENT);
+<span class="lineno">  568 </span>            intent.addCategory(Intent.CATEGORY_OPENABLE);
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:581</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  578 </span>        Cursor files = localLibrary.getFiles();
+<span class="lineno">  579 </span>        <span class="keyword">if</span> (files.getCount() == <span class="number">0</span>) {
+<span class="lineno">  580 </span>            TextView empty = <span class="keyword">new</span> TextView(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno">  581 </span>            empty.setText(<span class="warning"><span class="string">"No files imported yet"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  582 </span>            empty.setTextColor(Color.LTGRAY);
+<span class="lineno">  583 </span>            LinearLayout.LayoutParams emptyParams = matchWrap();
+<span class="lineno">  584 </span>            emptyParams.topMargin = <span class="number">8</span>;
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:605</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  602 </span>        LinearLayout actions = <span class="keyword">new</span> LinearLayout(<span class="keyword">this</span>);
+<span class="lineno">  603 </span>        actions.setGravity(Gravity.CENTER_VERTICAL);
+<span class="lineno">  604 </span>        Button openButton = <span class="keyword">new</span> Button(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno">  605 </span>        openButton.setText(<span class="warning"><span class="string">"Open"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  606 </span>        openButton.setOnClickListener(view -> openLocalFile(name, uri, mimeType));
+<span class="lineno">  607 </span>        actions.addView(openButton, <span class="keyword">new</span> LinearLayout.LayoutParams(<span class="number">0</span>,
+<span class="lineno">  608 </span>            ViewGroup.LayoutParams.WRAP_CONTENT, <span class="number">1</span>));
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:610</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  607 </span>      actions.addView(openButton, <span class="keyword">new</span> LinearLayout.LayoutParams(<span class="number">0</span>,
+<span class="lineno">  608 </span>          ViewGroup.LayoutParams.WRAP_CONTENT, <span class="number">1</span>));
+<span class="lineno">  609 </span>      Button editButton = <span class="keyword">new</span> Button(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno">  610 </span>      editButton.setText(<span class="warning"><span class="string">"Edit"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  611 </span>      editButton.setOnClickListener(view -> openLocalEditor(name, uri, mimeType));
+<span class="lineno">  612 </span>      actions.addView(editButton, <span class="keyword">new</span> LinearLayout.LayoutParams(<span class="number">0</span>,
+<span class="lineno">  613 </span>          ViewGroup.LayoutParams.WRAP_CONTENT, <span class="number">1</span>));
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:615</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  612 </span>                actions.addView(editButton, <span class="keyword">new</span> LinearLayout.LayoutParams(<span class="number">0</span>,
+<span class="lineno">  613 </span>                    ViewGroup.LayoutParams.WRAP_CONTENT, <span class="number">1</span>));
+<span class="lineno">  614 </span>                Button removeButton = <span class="keyword">new</span> Button(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno">  615 </span>                removeButton.setText(<span class="warning"><span class="string">"Remove"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  616 </span>                removeButton.setOnClickListener(view -> {
+<span class="lineno">  617 </span>                    localLibrary.removeFile(id);
+<span class="lineno">  618 </span>                    showLocalLibrary();
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:659</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  656 </span>        content.addView(status, statusParams);
+<span class="lineno">  657 </span>
+<span class="lineno">  658 </span>        Button sendCode = <span class="keyword">new</span> Button(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno">  659 </span>        sendCode.setText(<span class="warning"><span class="string">"Send login code"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  660 </span>        stylePrimaryButton(sendCode);
+<span class="lineno">  661 </span>        content.addView(sendCode, matchWrap());
+<span class="lineno">  662 </span>        sendCode.setOnClickListener(view -> {
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:667</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  664 </span>            String hash = apiHash.getText().toString().trim();
+<span class="lineno">  665 </span>            String number = phone.getText().toString().trim();
+<span class="lineno">  666 </span>            <span class="keyword">if</span> (id.isEmpty() || hash.isEmpty() || number.isEmpty()) {
+<span class="caretline"><span class="lineno">  667 </span>                status.setText(<span class="warning"><span class="string">"Enter API ID, API hash, and phone number first."</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  668 </span>                <span class="keyword">return</span>;
+<span class="lineno">  669 </span>            }
+<span class="lineno">  670 </span>            secretsStore.put(<span class="string">"telegram_api_id"</span>, id);
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:678</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  675 </span>        });
+<span class="lineno">  676 </span>
+<span class="lineno">  677 </span>        Button verifyCode = <span class="keyword">new</span> Button(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno">  678 </span>        verifyCode.setText(<span class="warning"><span class="string">"Verify code"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  679 </span>        stylePrimaryButton(verifyCode);
+<span class="lineno">  680 </span>        content.addView(verifyCode, matchWrap());
+<span class="lineno">  681 </span>        verifyCode.setOnClickListener(view -> {
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:685</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  682 </span>            String number = phone.getText().toString().trim();
+<span class="lineno">  683 </span>            String value = code.getText().toString().trim();
+<span class="lineno">  684 </span>            <span class="keyword">if</span> (number.isEmpty() || value.isEmpty()) {
+<span class="caretline"><span class="lineno">  685 </span>                status.setText(<span class="warning"><span class="string">"Enter your phone number and Telegram code."</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  686 </span>                <span class="keyword">return</span>;
+<span class="lineno">  687 </span>            }
+<span class="lineno">  688 </span>            runPython(<span class="string">"verify_login_code"</span>, <span class="keyword">new</span> String[]{number, value}, status,
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:693</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  690 </span>        });
+<span class="lineno">  691 </span>
+<span class="lineno">  692 </span>        Button verifyPassword = <span class="keyword">new</span> Button(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno">  693 </span>        verifyPassword.setText(<span class="warning"><span class="string">"Verify 2-step password"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  694 </span>        stylePrimaryButton(verifyPassword);
+<span class="lineno">  695 </span>        content.addView(verifyPassword, matchWrap());
+<span class="lineno">  696 </span>        verifyPassword.setOnClickListener(view -> {
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:699</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  696 </span>        verifyPassword.setOnClickListener(view -> {
+<span class="lineno">  697 </span>            String value = password.getText().toString();
+<span class="lineno">  698 </span>            <span class="keyword">if</span> (value.isEmpty()) {
+<span class="caretline"><span class="lineno">  699 </span>                status.setText(<span class="warning"><span class="string">"Enter your Telegram 2-step verification password."</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  700 </span>                <span class="keyword">return</span>;
+<span class="lineno">  701 </span>            }
+<span class="lineno">  702 </span>            runPython(<span class="string">"verify_login_password"</span>, <span class="keyword">new</span> String[]{value}, status,
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:707</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  704 </span>        });
+<span class="lineno">  705 </span>
+<span class="lineno">  706 </span>        Button back = <span class="keyword">new</span> Button(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno">  707 </span>        back.setText(<span class="warning"><span class="string">"Return to dashboard"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  708 </span>        back.setOnClickListener(view -> showLocalHome());
+<span class="lineno">  709 </span>        content.addView(back, matchWrap());
+<span class="lineno">  710 </span>    }
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:751</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  748 </span>        <span class="keyword">boolean</span>[] cancellationRequested = {<span class="keyword">false</span>};
+<span class="lineno">  749 </span>        Handler progressHandler = <span class="keyword">new</span> Handler(Looper.getMainLooper());
+<span class="lineno">  750 </span>        Button cancelTask = <span class="keyword">new</span> Button(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno">  751 </span>        cancelTask.setText(<span class="warning"><span class="string">"Cancel current task"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  752 </span>        styleDangerButton(cancelTask);
+<span class="lineno">  753 </span>        cancelTask.setEnabled(<span class="keyword">false</span>);
+<span class="lineno">  754 </span>        content.addView(cancelTask, matchWrap());
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:786</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  783 </span>     cancellationRequested[<span class="number">0</span>] = <span class="keyword">true</span>;
+<span class="lineno">  784 </span>     localLibrary.updateTask(taskId, <span class="string">"CANCEL_REQUESTED"</span>, <span class="string">"Cancellation requested"</span>);
+<span class="lineno">  785 </span>     cancelTask.setEnabled(<span class="keyword">false</span>);
+<span class="caretline"><span class="lineno">  786 </span>     status.setText(<span class="warning"><span class="string">"Cancellation requested; the current transfer may finish first."</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  787 </span>     <span class="keyword">new</span> Thread(() -> {
+<span class="lineno">  788 </span>         <span class="keyword">try</span> {
+<span class="lineno">  789 </span>             Python.getInstance().getModule(<span class="string">"destiny_runtime"</span>)
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:798</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  795 </span>        });
+<span class="lineno">  796 </span>
+<span class="lineno">  797 </span>        Button start = <span class="keyword">new</span> Button(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno">  798 </span>        start.setText(<span class="warning"><span class="string">"Start download"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  799 </span>        stylePrimaryButton(start);
+<span class="lineno">  800 </span>        start.setOnClickListener(view -> {
+<span class="lineno">  801 </span>            <span class="keyword">if</span> (activeTaskId[<span class="number">0</span>] > <span class="number">0</span> &amp;&amp; !taskFinished[<span class="number">0</span>]) {
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:802</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  799 </span>        stylePrimaryButton(start);
+<span class="lineno">  800 </span>        start.setOnClickListener(view -> {
+<span class="lineno">  801 </span>            <span class="keyword">if</span> (activeTaskId[<span class="number">0</span>] > <span class="number">0</span> &amp;&amp; !taskFinished[<span class="number">0</span>]) {
+<span class="caretline"><span class="lineno">  802 </span>                status.setText(<span class="warning"><span class="string">"A download task is already active on this screen."</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  803 </span>                <span class="keyword">return</span>;
+<span class="lineno">  804 </span>            }
+<span class="lineno">  805 </span>            String apiId = secretsStore.get(<span class="string">"telegram_api_id"</span>);
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:811</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  808 </span>            String messageLink = link.getText().toString().trim();
+<span class="lineno">  809 </span>            String target = destination.getText().toString().trim();
+<span class="lineno">  810 </span>            <span class="keyword">if</span> (apiId == <span class="keyword">null</span> || apiHash == <span class="keyword">null</span> || session == <span class="keyword">null</span>) {
+<span class="caretline"><span class="lineno">  811 </span>                status.setText(<span class="warning"><span class="string">"Connect a Telegram account first."</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  812 </span>                <span class="keyword">return</span>;
+<span class="lineno">  813 </span>            }
+<span class="lineno">  814 </span>            <span class="keyword">if</span> (messageLink.isEmpty()) {
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:815</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  812 </span>                <span class="keyword">return</span>;
+<span class="lineno">  813 </span>            }
+<span class="lineno">  814 </span>            <span class="keyword">if</span> (messageLink.isEmpty()) {
+<span class="caretline"><span class="lineno">  815 </span>                status.setText(<span class="warning"><span class="string">"Enter a Telegram message link."</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  816 </span>                <span class="keyword">return</span>;
+<span class="lineno">  817 </span>            }
+<span class="lineno">  818 </span>            String first = startId.getText().toString().trim();
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:833</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  830 </span>              <span class="keyword">throw</span> <span class="keyword">new</span> NumberFormatException();
+<span class="lineno">  831 </span>          }
+<span class="lineno">  832 </span>      } <span class="keyword">catch</span> (NumberFormatException exception) {
+<span class="caretline"><span class="lineno">  833 </span>          status.setText(<span class="warning"><span class="string">"Enter valid topic IDs and a delay from 3 to 3600 seconds."</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  834 </span>          <span class="keyword">return</span>;
+<span class="lineno">  835 </span>      }
+<span class="lineno">  836 </span>      String label = messageLink + (first.isEmpty() ? <span class="string">""</span> : <span class="string">"  IDs "</span> + first + <span class="string">"-"</span></pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:865</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  862 </span>        content.addView(start, matchWrap());
+<span class="lineno">  863 </span>
+<span class="lineno">  864 </span>        Button back = <span class="keyword">new</span> Button(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno">  865 </span>        back.setText(<span class="warning"><span class="string">"Back to library"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  866 </span>        back.setOnClickListener(view -> showLocalLibrary());
+<span class="lineno">  867 </span>        content.addView(back, matchWrap());
+<span class="lineno">  868 </span>    }
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:887</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  884 </span>        content.addView(status, statusParams);
+<span class="lineno">  885 </span>
+<span class="lineno">  886 </span>        Button start = <span class="keyword">new</span> Button(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno">  887 </span>        start.setText(<span class="warning"><span class="string">"Download to this device"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  888 </span>        stylePrimaryButton(start);
+<span class="lineno">  889 </span>        start.setOnClickListener(view -> {
+<span class="lineno">  890 </span>            String rawAddress = address.getText().toString().trim();
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:899</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  896 </span>              <span class="keyword">throw</span> <span class="keyword">new</span> IllegalArgumentException(<span class="string">"Enter a valid direct HTTP(S) URL."</span>);
+<span class="lineno">  897 </span>          }
+<span class="lineno">  898 </span>      } <span class="keyword">catch</span> (Exception exception) {
+<span class="caretline"><span class="lineno">  899 </span>          status.setText(<span class="warning"><span class="string">"Enter a valid direct HTTP(S) URL."</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  900 </span>          <span class="keyword">return</span>;
+<span class="lineno">  901 </span>      }
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:903</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  900 </span>                <span class="keyword">return</span>;
+<span class="lineno">  901 </span>            }
+<span class="lineno">  902 </span>
+<span class="caretline"><span class="lineno">  903 </span>            status.setText(<span class="warning"><span class="string">"Connecting…"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  904 </span>            <span class="keyword">new</span> Thread(() -> {
+<span class="lineno">  905 </span>                HttpURLConnection connection = <span class="keyword">null</span>;
+<span class="lineno">  906 </span>                File downloadedFile = <span class="keyword">null</span>;
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:957</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  954 </span>        content.addView(start, matchWrap());
+<span class="lineno">  955 </span>
+<span class="lineno">  956 </span>        Button back = <span class="keyword">new</span> Button(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno">  957 </span>        back.setText(<span class="warning"><span class="string">"Back to library"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  958 </span>        back.setOnClickListener(view -> showLocalLibrary());
+<span class="lineno">  959 </span>        content.addView(back, matchWrap());
+<span class="lineno">  960 </span>    }
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:992</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  989 </span>        content.addView(status, statusParams);
+<span class="lineno">  990 </span>
+<span class="lineno">  991 </span>        Button start = <span class="keyword">new</span> Button(<span class="keyword">this</span>);
+<span class="caretline"><span class="lineno">  992 </span>        start.setText(<span class="warning"><span class="string">"Start Watch task"</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  993 </span>        stylePrimaryButton(start);
+<span class="lineno">  994 </span>        start.setOnClickListener(view -> {
+<span class="lineno">  995 </span>            String sourceLink = source.getText().toString().trim();
+</pre>
+
+<span class="location"><a href="../../src/main/java/com/destinytg/device/MainActivity.java">../../src/main/java/com/destinytg/device/MainActivity.java</a>:998</span>: <span class="message">String literal in <code>setText</code> can not be translated. Use Android resources instead.</span><br /><pre class="errorlines">
+<span class="lineno">  995 </span>            String sourceLink = source.getText().toString().trim();
+<span class="lineno">  996 </span>            String target = destination.getText().toString().trim();
+<span class="lineno">  997 </span>            <span class="keyword">if</span> (sourceLink.isEmpty()) {
+<span class="caretline"><span class="lineno">  998 </span>                status.setText(<span class="warning"><span class="string">"Enter a Telegram source link."</span></span>);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno">  999 </span>                <span class="keyword">return</span>;
+<span class="lineno"> 1000 </span>            }
+<span class="lineno"> 1001 </span>            String mediaFilter = mediaTypes.getText().toString().trim();
+</pre>
+
+<br/><b>NOTE: 16 results omitted.</b><br/><br/></div>
+</div>
+<div class="metadata"><div class="explanation" id="explanationSetTextI18n" style="display: none;">
+When calling <code>TextView#setText</code><br/>
+* Never call <code>Number#toString()</code> to format numbers; it will not handle fraction separators and locale-specific digits properly. Consider using <code>String#format</code> with proper format specifications (<code>%d</code> or <code>%f</code>) instead.<br/>
+* Do not pass a string literal (e.g. "Hello") to display text. Hardcoded text can not be properly translated to other languages. Consider using Android resource strings instead.<br/>
+* Do not build messages by concatenating text chunks. Such messages can not be properly translated.<br/><div class="moreinfo">More info: <a href="https://developer.android.com/guide/topics/resources/localization.html">https://developer.android.com/guide/topics/resources/localization.html</a>
+</div>To suppress this error, use the issue id "SetTextI18n" as explained in the <a href="#SuppressInfo">Suppressing Warnings and Errors</a> section.<br/>
+<br/></div>
+</div>
+</div>
+<div class="chips">
+<span class="mdl-chip">
+    <span class="mdl-chip__text">SetTextI18n</span>
+</span>
+<span class="mdl-chip">
+    <span class="mdl-chip__text">Internationalization</span>
+</span>
+<span class="mdl-chip">
+    <span class="mdl-chip__text">Warning</span>
+</span>
+<span class="mdl-chip">
+    <span class="mdl-chip__text">Priority 6/10</span>
+</span>
+</div>
+              </div>
+              <div class="mdl-card__actions mdl-card--border">
+<button class="mdl-button mdl-js-button mdl-js-ripple-effect" id="explanationSetTextI18nLink" onclick="reveal('explanationSetTextI18n');">
+Explain</button><button class="mdl-button mdl-js-button mdl-js-ripple-effect" id="SetTextI18nCardLink" onclick="hideid('SetTextI18nCard');">
+Dismiss</button>            </div>
+            </div>
+          </section>
+<a name="MissingIssues"></a>
+<section class="section--center mdl-grid mdl-grid--no-spacing mdl-shadow--2dp" id="MissingIssuesCard" style="display: block;">
+            <div class="mdl-card mdl-cell mdl-cell--12-col">
+  <div class="mdl-card__title">
+    <h2 class="mdl-card__title-text">Disabled Checks</h2>
+  </div>
+              <div class="mdl-card__supporting-text">
+One or more issues were not run by lint, either
+because the check is not enabled by default, or because
+it was disabled with a command line flag or via one or
+more <code>lint.xml</code> configuration files in the project directories.
+<div id="SuppressedIssues" style="display: none;"><br/><br/><div class="issue">
+<div class="id">AppCompatMethod<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+When using the appcompat library, there are some methods you should be calling instead of the normal ones; for example, <code>getSupportActionBar()</code> instead of <code>getActionBar()</code>. This lint check looks for calls to the wrong method.<br/><div class="moreinfo">More info: <a href="https://developer.android.com/topic/libraries/support-library/">https://developer.android.com/topic/libraries/support-library/</a>
+</div>Note: This issue has an associated quickfix operation in Android Studio and IntelliJ IDEA.<br>
+<br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">AppLinksAutoVerify<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+Ensures that app links are correctly set and associated with website.<br/><div class="moreinfo">More info: <a href="https://g.co/appindexing/applinks">https://g.co/appindexing/applinks</a>
+</div><br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">BackButton<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+According to the Android Design Guide,<br/>
+<br/>
+"Other platforms use an explicit back button with label to allow the user to navigate up the application's hierarchy. Instead, Android uses the main action bar's app icon for hierarchical navigation and the navigation bar's back button for temporal navigation."<br/>
+<br/>
+This check is not very sophisticated (it just looks for buttons with the label "Back"), so it is disabled by default to not trigger on common scenarios like pairs of Back/Next buttons to paginate through screens.<br/><div class="moreinfo">More info: <a href="https://d.android.com/r/studio-ui/designer/material/design">https://d.android.com/r/studio-ui/designer/material/design</a>
+</div><br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">ConvertToWebp<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+The WebP format is typically more compact than PNG and JPEG. As of Android 4.2.1 it supports transparency and lossless conversion as well. Note that there is a quickfix in the IDE which lets you perform conversion.<br/>
+<br/>
+Previously, launcher icons were required to be in the PNG format but that restriction is no longer there, so lint now flags these.<br/>Note: This issue has an associated quickfix operation in Android Studio and IntelliJ IDEA.<br>
+<br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">DalvikOverride<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+The Dalvik virtual machine will treat a package private method in one class as overriding a package private method in its super class, even if they are in separate packages.<br/>
+<br/>
+If you really did intend for this method to override the other, make the method <code>protected</code> instead.<br/>
+<br/>
+If you did <b>not</b> intend the override, consider making the method private, or changing its name or signature.<br/>
+<br/>
+Note that this check is disabled be default, because ART (the successor to Dalvik) no longer has this behavior.<br/><br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">DefaultEncoding<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+Some APIs will implicitly use the default system character encoding instead of UTF-8 when converting to or from bytes, such as when creating a default <code>FileReader</code>.<br/>
+<br/>
+This is <i>usually</i> not correct; you only want to do this if you need to read files created by other programs where they have deliberately written in the same encoding. The default encoding varies from platform to platform and can vary from locale to locale, so this makes it difficult to interpret files containing non-ASCII characters.<br/>
+<br/>
+We recommend using UTF-8 everywhere.<br/>
+<br/>
+Note that on Android, the default file encoding is always UTF-8 (see <a href="https://developer.android.com/reference/java/nio/charset/Charset#defaultCharset(">https://developer.android.com/reference/java/nio/charset/Charset#defaultCharset(</a>) for more), so this lint check deliberately does not flag any problems in Android code, since it is always safe to rely on the default character encoding there.<br/><br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">DuplicateStrings<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+Duplicate strings can make applications larger unnecessarily.<br/>
+<br/>
+This lint check looks for duplicate strings, including differences for strings where the only difference is in capitalization. Title casing and all uppercase can all be adjusted in the layout or in code.<br/><div class="moreinfo">More info: <a href="https://developer.android.com/reference/android/widget/TextView.html#attr_android:inputType">https://developer.android.com/reference/android/widget/TextView.html#attr_android:inputType</a>
+</div><br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">EasterEgg<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+An "easter egg" is code deliberately hidden in the code, both from potential users and even from other developers. This lint check looks for code which looks like it may be hidden from sight.<br/><br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">ExpensiveAssertion<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+In Kotlin, assertions are not handled the same way as from the Java programming language. In particular, they're just implemented as a library call, and inside the library call the error is only thrown if assertions are enabled.<br/>
+<br/>
+This means that the arguments to the <code>assert</code> call will <b>always</b> be evaluated. If you're doing any computation in the expression being asserted, that computation will unconditionally be performed whether or not assertions are turned on. This typically turns into wasted work in release builds.<br/>
+<br/>
+This check looks for cases where the assertion condition is nontrivial, e.g. it is performing method calls or doing more work than simple comparisons on local variables or fields.<br/>
+<br/>
+You can work around this by writing your own inline assert method instead:<br/>
+
+<pre>
+@Suppress("INVISIBLE_REFERENCE", "INVISIBLE_MEMBER")
+inline fun assert(condition: () -> Boolean) {
+    if (_Assertions.ENABLED &amp;&amp; !condition()) {
+        throw AssertionError()
+    }
+}
+</pre>
+<br/>
+In Android, because assertions are not enforced at runtime, instead use this:<br/>
+
+<pre>
+inline fun assert(condition: () -> Boolean) {
+    if (BuildConfig.DEBUG &amp;&amp; !condition()) {
+        throw AssertionError()
+    }
+}
+</pre>
+<br/>Note: This issue has an associated quickfix operation in Android Studio and IntelliJ IDEA.<br>
+<br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">IconExpectedSize<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+There are predefined sizes (for each density) for launcher icons. You should follow these conventions to make sure your icons fit in with the overall look of the platform.<br/><div class="moreinfo">More info: <a href="https://d.android.com/r/studio-ui/designer/material/iconography">https://d.android.com/r/studio-ui/designer/material/iconography</a>
+</div><br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">ImplicitSamInstance<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+Kotlin's support for SAM (single accessor method) interfaces lets you pass a lambda to the interface. This will create a new instance on the fly even though there is no explicit constructor call. If you pass one of these lambdas or method references into a method which (for example) stores or compares the object identity, unexpected results may happen.<br/>Note: This issue has an associated quickfix operation in Android Studio and IntelliJ IDEA.<br>
+<br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">InvalidPackage<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+This check scans through libraries looking for calls to APIs that are not included in Android.<br/>
+<br/>
+When you create Android projects, the classpath is set up such that you can only access classes in the API packages that are included in Android. However, if you add other projects to your libs/ folder, there is no guarantee that those .jar files were built with an Android specific classpath, and in particular, they could be accessing unsupported APIs such as java.applet.<br/>
+<br/>
+This check scans through library jars and looks for references to API packages that are not included in Android and flags these. This is only an error if your code calls one of the library classes which wind up referencing the unsupported package.<br/><br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">KotlinPropertyAccess<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+For a method to be represented as a property in Kotlin, strict &#8220;bean&#8221;-style prefixing must be used.<br/>
+<br/>
+Accessor methods require a <code>get</code> prefix or for boolean-returning methods an <code>is</code> prefix can be used.<br/><div class="moreinfo">More info: <a href="https://android.github.io/kotlin-guides/interop.html#property-prefixes">https://android.github.io/kotlin-guides/interop.html#property-prefixes</a>
+</div><br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">KotlincFE10<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+K2, the new version of Kotlin compiler, which encompasses the new frontend, is coming. Try to avoid using internal APIs from the old frontend if possible.<br/><br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">LambdaLast<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+To improve calling this code from Kotlin, parameter types eligible for SAM conversion should be last.<br/><div class="moreinfo">More info: <a href="https://android.github.io/kotlin-guides/interop.html#lambda-parameters-last">https://android.github.io/kotlin-guides/interop.html#lambda-parameters-last</a>
+</div><br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">LintDocExample<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+Lint's tool for generating documentation for each issue has special support for including a code example which shows how to trigger the report. It will pick the first unit test it can find and pick out the source file referenced from the error message, but you can instead designate a unit test to be the documentation example, and in that case, all the files are included.<br/>
+<br/>
+To designate a unit test as the documentation example for an issue, name the test <code>testDocumentationExample</code>, or if your detector reports multiple issues, <code>testDocumentationExample</code>&lt;Id>, such as <code>testDocumentationExampleMyId</code>.<br/><br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">LintImplPsiEquals<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+You should never compare two PSI elements for equality with <code>equals</code>; use <code>isEquivalentTo(PsiElement)</code> instead.<br/><br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">LintImplUnexpectedDomain<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+This checks flags URLs to domains that have not been explicitly allowed for use as a documentation source.<br/><br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">LogConditional<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+The <code>BuildConfig</code> class provides a constant, <code>DEBUG</code>, which indicates whether the code is being built in release mode or in debug mode. In release mode, you typically want to strip out all the logging calls. Since the compiler will automatically remove all code which is inside a <code>if (false)</code> check, surrounding your logging calls with a check for <code>BuildConfig.DEBUG</code> is a good idea.<br/>
+<br/>
+If you <b>really</b> intend for the logging to be present in release mode, you can suppress this warning with a <code>@SuppressLint</code> annotation for the intentional logging calls.<br/><br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">MangledCRLF<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+On Windows, line endings are typically recorded as carriage return plus newline: \r\n.<br/>
+<br/>
+This detector looks for invalid line endings with repeated carriage return characters (without newlines). Previous versions of the ADT plugin could accidentally introduce these into the file, and when editing the file, the editor could produce confusing visual artifacts.<br/><div class="moreinfo">More info: <a href="https://bugs.eclipse.org/bugs/show_bug.cgi?id=375421">https://bugs.eclipse.org/bugs/show_bug.cgi?id=375421</a>
+</div><br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">MinSdkTooLow<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+The value of the <code>minSdkVersion</code> property is too low and can be incremented without noticeably reducing the number of supported devices.<br/>Note: This issue has an associated quickfix operation in Android Studio and IntelliJ IDEA.<br>
+<br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">NegativeMargin<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+Margin values should be positive. Negative values are generally a sign that you are making assumptions about views surrounding the current one, or may be tempted to turn off child clipping to allow a view to escape its parent. Turning off child clipping to do this not only leads to poor graphical performance, it also results in wrong touch event handling since touch events are based strictly on a chain of parent-rect hit tests. Finally, making assumptions about the size of strings can lead to localization problems.<br/><br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">NewerVersionAvailable<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+This detector checks with a central repository to see if there are newer versions available for the dependencies used by this project. This is similar to the <code>GradleDependency</code> check, which checks for newer versions available in the Android SDK tools and libraries, but this works with any MavenCentral dependency, and connects to the library every time, which makes it more flexible but also <b>much</b> slower.<br/>Note: This issue has an associated quickfix operation in Android Studio and IntelliJ IDEA.<br>
+<br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">NoHardKeywords<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+Do not use Kotlin&#8217;s hard keywords as the name of methods or fields. These require the use of backticks to escape when calling from Kotlin. Soft keywords, modifier keywords, and special identifiers are allowed.<br/>
+<br/>
+For example, ActionEvent's <code>getWhen()</code> method requires backticks when used from Kotlin:
+<pre>
+val timestamp = event.`when`
+</pre>
+<br/><div class="moreinfo">More info: <a href="https://android.github.io/kotlin-guides/interop.html#no-hard-keywords">https://android.github.io/kotlin-guides/interop.html#no-hard-keywords</a>
+</div><br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">NoOp<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+This check looks for code which looks like it's a no-op -- usually leftover expressions from interactive debugging, but in some cases bugs where you had intended to do something with the expression such as assign it to a field.<br/><br/>
+This check can be configured via the following options:<br/><br/>
+<div class="options">
+<b>pure-getters</b> (default is false):<br/>
+Whether to assume methods with getter-names have no side effects.<br/>
+<br/>
+Getter methods (where names start with <code>get</code> or <code>is</code>, and have non-void return types, and no arguments) should not have side effects. With this option turned on, lint will assume that is the case and will list any getter calls whose results are ignored as suspicious code.<br/>
+<br/>
+To configure this option, use a `lint.xml` file in the project or source folder using an <code>&lt;option&gt;</code> block like the following:
+<pre class="errorlines">
+<span class="lineno"> 1 </span><span class="tag">&lt;lint></span>
+<span class="lineno"> 2 </span>    <span class="tag">&lt;issue</span><span class="attribute"> id</span>=<span class="value">"NoOp"</span>>
+<span class="caretline"><span class="lineno"> 3 </span>        <span class="tag">&lt;option</span><span class="attribute"> name</span>=<span class="warning"><span class="value">"pure-getters"</span> <span class="attribute">value</span>=<span class="value">"false"</span></span> />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno"> 4 </span>    <span class="tag">&lt;/issue></span>
+<span class="lineno"> 5 </span><span class="tag">&lt;/lint></span>
+</pre>
+</div><br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">PermissionNamingConvention<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+Permissions should be prefixed with an app's package name, using reverse-domain-style naming. This prefix should be followed by <code>.permission.</code>, and then a description of the capability that the permission represents, in upper SNAKE_CASE. For example, <code>com.example.myapp.permission.ENGAGE_HYPERSPACE</code>.<br/>
+<br/>
+Following this recommendation avoids naming collisions, and helps clearly identify the owner and intention of a custom permission.<br/><br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">Registered<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+Activities, services and content providers should be registered in the <code>AndroidManifest.xml</code> file using <code>&lt;activity></code>, <code>&lt;service></code> and <code>&lt;provider></code> tags.<br/>
+<br/>
+If your activity is simply a parent class intended to be subclassed by other "real" activities, make it an abstract class.<br/><div class="moreinfo">More info: <a href="https://developer.android.com/guide/topics/manifest/manifest-intro.html">https://developer.android.com/guide/topics/manifest/manifest-intro.html</a>
+</div><br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">RequiredSize<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+All views must specify an explicit <code>layout_width</code> and <code>layout_height</code> attribute. There is a runtime check for this, so if you fail to specify a size, an exception is thrown at runtime.<br/>
+<br/>
+It's possible to specify these widths via styles as well. GridLayout, as a special case, does not require you to specify a size.<br/><br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">SelectableText<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+If a <code>&lt;TextView></code> is used to display data, the user might want to copy that data and paste it elsewhere. To allow this, the <code>&lt;TextView></code> should specify <code>android:textIsSelectable="true"</code>.<br/>
+<br/>
+This lint check looks for TextViews which are likely to be displaying data: views whose text is set dynamically.<br/>Note: This issue has an associated quickfix operation in Android Studio and IntelliJ IDEA.<br>
+<br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">StopShip<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+Using the comment <code>// STOPSHIP</code> can be used to flag code that is incomplete but checked in. This comment marker can be used to indicate that the code should not be shipped until the issue is addressed, and lint will look for these. In Gradle projects, this is only checked for non-debug (release) builds.<br/>
+<br/>
+In Kotlin, the <code>TODO()</code> method is also treated as a stop ship marker; you can use it to make incomplete code compile, but it will throw an exception at runtime and therefore should be fixed before shipping releases.<br/>Note: This issue has an associated quickfix operation in Android Studio and IntelliJ IDEA.<br>
+<br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">StringFormatTrivial<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+Every call to <code>String.format</code> creates a new <code>Formatter</code> instance, which will decrease the performance of your app. <code>String.format</code> should only be used when necessary--if the formatted string contains only trivial conversions (e.g. <code>b</code>, <code>s</code>, <code>c</code>) and there are no translation concerns, it will be more efficient to replace them and concatenate with <code>+</code>.<br/><br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">SyntheticAccessor<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+A private inner class which is accessed from the outer class will force the compiler to insert a synthetic accessor; this means that you are causing extra overhead. This is not important in small projects, but is important for large apps running up against the 64K method handle limit, and especially for <b>libraries</b> where you want to make sure your library is as small as possible for the cases where your library is used in an app running up against the 64K limit.<br/>Note: This issue has an associated quickfix operation in Android Studio and IntelliJ IDEA.<br>
+<br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">TypographyQuotes<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+Straight single quotes and double quotes, when used as a pair, can be replaced by "curvy quotes" (or directional quotes). Use the right single quotation mark for apostrophes. Never use generic quotes ", ' or free-standing accents `, ´ for quotation marks, apostrophes, or primes. This can make the text more readable.<br/><div class="moreinfo">More info: <a href="https://en.wikipedia.org/wiki/Quotation_mark">https://en.wikipedia.org/wiki/Quotation_mark</a>
+</div>Note: This issue has an associated quickfix operation in Android Studio and IntelliJ IDEA.<br>
+<br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">UnknownNullness<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+To improve referencing this code from Kotlin, consider adding explicit nullness information here with either <code>@NonNull</code> or <code>@Nullable</code>.<br/><br/>
+This check can be configured via the following options:<br/><br/>
+<div class="options">
+<b>ignore-deprecated</b> (default is false):<br/>
+Whether to ignore classes and members that have been annotated with <code>@Deprecated</code>.<br/>
+<br/>
+Normally this lint check will flag all unannotated elements, but by setting this option to <code>true</code> it will skip any deprecated elements.<br/>
+<br/>
+To configure this option, use a `lint.xml` file in the project or source folder using an <code>&lt;option&gt;</code> block like the following:
+<pre class="errorlines">
+<span class="lineno"> 1 </span><span class="tag">&lt;lint></span>
+<span class="lineno"> 2 </span>    <span class="tag">&lt;issue</span><span class="attribute"> id</span>=<span class="value">"UnknownNullness"</span>>
+<span class="caretline"><span class="lineno"> 3 </span>        <span class="tag">&lt;option</span><span class="attribute"> name</span>=<span class="warning"><span class="value">"ignore-deprecated"</span> <span class="attribute">value</span>=<span class="value">"false"</span></span> />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+<span class="lineno"> 4 </span>    <span class="tag">&lt;/issue></span>
+<span class="lineno"> 5 </span><span class="tag">&lt;/lint></span>
+</pre>
+</div><div class="moreinfo">More info: <a href="https://developer.android.com/kotlin/interop#nullability_annotations">https://developer.android.com/kotlin/interop#nullability_annotations</a>
+</div>Note: This issue has an associated quickfix operation in Android Studio and IntelliJ IDEA.<br>
+<br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">UnsupportedChromeOsHardware<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+The <code>&lt;uses-feature></code> element should not require this unsupported large screen hardware feature. Any &lt;uses-feature> not explicitly marked with <code>required="false"</code> is necessary on the device to be installed on. Ensure that any features that might prevent it from being installed on a ChromeOS, large screen, or foldable device are reviewed and marked as not required in the manifest.<br/><div class="moreinfo">More info: <a href="https://developer.android.com/topic/arc/manifest.html#incompat-entries">https://developer.android.com/topic/arc/manifest.html#incompat-entries</a>
+</div>Note: This issue has an associated quickfix operation in Android Studio and IntelliJ IDEA.<br>
+<br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">UnusedIds<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+This resource id definition appears not to be needed since it is not referenced from anywhere. Having id definitions, even if unused, is not necessarily a bad idea since they make working on layouts and menus easier, so there is not a strong reason to delete these.<br/>
+<br/>
+<br/>
+The unused resource check can ignore tests. If you want to include resources that are only referenced from tests, consider packaging them in a test source set instead.<br/>
+<br/>
+You can include test sources in the unused resource check by setting the system property lint.unused-resources.include-tests =true, and to exclude them (usually for performance reasons), use lint.unused-resources.exclude-tests =true.<br/>
+<br/>Note: This issue has an associated quickfix operation in Android Studio and IntelliJ IDEA.<br>
+<br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">ValidActionsXml<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+Ensures that an actions XML file is properly formed<br/>Note: This issue has an associated quickfix operation in Android Studio and IntelliJ IDEA.<br>
+<br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">VulnerableCordovaVersion<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+The version of Cordova used in the app is vulnerable to security issues. Please update to the latest Apache Cordova version.<br/><div class="moreinfo">More info: <a href="https://cordova.apache.org/announcements/2015/11/20/security.html">https://cordova.apache.org/announcements/2015/11/20/security.html</a>
+</div><br/>
+<br/></div>
+</div>
+</div>
+<div class="issue">
+<div class="id">WrongThreadInterprocedural<div class="issueSeparator"></div>
+</div>
+<div class="metadata">Disabled By: Default<br/>
+<div class="explanation">
+Searches for interprocedural call paths that violate thread annotations in the program. Tracks the flow of instantiated types and lambda expressions to increase accuracy across method boundaries.<br/><div class="moreinfo">More info: <a href="https://developer.android.com/guide/components/processes-and-threads.html#Threads">https://developer.android.com/guide/components/processes-and-threads.html#Threads</a>
+</div><br/>
+<br/></div>
+</div>
+</div>
+</div>
+              </div>
+              <div class="mdl-card__actions mdl-card--border">
+<button class="mdl-button mdl-js-button mdl-js-ripple-effect" id="SuppressedIssuesLink" onclick="reveal('SuppressedIssues');">
+List Missing Issues</button><button class="mdl-button mdl-js-button mdl-js-ripple-effect" id="MissingIssuesCardLink" onclick="hideid('MissingIssuesCard');">
+Dismiss</button>            </div>
+            </div>
+          </section>
+<a name="SuppressInfo"></a>
+<section class="section--center mdl-grid mdl-grid--no-spacing mdl-shadow--2dp" id="SuppressCard" style="display: block;">
+            <div class="mdl-card mdl-cell mdl-cell--12-col">
+  <div class="mdl-card__title">
+    <h2 class="mdl-card__title-text">Suppressing Warnings and Errors</h2>
+  </div>
+              <div class="mdl-card__supporting-text">
+Lint errors can be suppressed in a variety of ways:<br/>
+<br/>
+1. With a <code>@SuppressLint</code> annotation in the Java code<br/>
+2. With a <code>tools:ignore</code> attribute in the XML file<br/>
+3. With a //noinspection comment in the source code<br/>
+4. With ignore flags specified in the <code>build.gradle</code> file, as explained below<br/>
+5. With a <code>lint.xml</code> configuration file in the project<br/>
+6. With a <code>lint.xml</code> configuration file passed to lint via the --config flag<br/>
+7. With the --ignore flag passed to lint.<br/>
+<br/>
+To suppress a lint warning with an annotation, add a <code>@SuppressLint("id")</code> annotation on the class, method or variable declaration closest to the warning instance you want to disable. The id can be one or more issue id's, such as <code>"UnusedResources"</code> or <code>{"UnusedResources","UnusedIds"}</code>, or it can be <code>"all"</code> to suppress all lint warnings in the given scope.<br/>
+<br/>
+To suppress a lint warning with a comment, add a <code>//noinspection id</code> comment on the line before the statement with the error.<br/>
+<br/>
+To suppress a lint warning in an XML file, add a <code>tools:ignore="id"</code> attribute on the element containing the error, or one of its surrounding elements. You also need to define the namespace for the tools prefix on the root element in your document, next to the <code>xmlns:android</code> declaration:<br/>
+<code>xmlns:tools="http://schemas.android.com/tools"</code><br/>
+<br/>
+To suppress a lint warning in a <code>build.gradle</code> file, add a section like this:<br/>
+
+<pre>
+android {
+    lintOptions {
+        disable 'TypographyFractions','TypographyQuotes'
+    }
+}
+</pre>
+<br/>
+Here we specify a comma separated list of issue id's after the disable command. You can also use <code>warning</code> or <code>error</code> instead of <code>disable</code> to change the severity of issues.<br/>
+<br/>
+To suppress lint warnings with a configuration XML file, create a file named <code>lint.xml</code> and place it at the root directory of the module in which it applies.<br/>
+<br/>
+The format of the <code>lint.xml</code> file is something like the following:<br/>
+
+<pre>
+&lt;?xml version="1.0" encoding="UTF-8"?>
+&lt;lint>
+    &lt;!-- Ignore everything in the test source set -->
+    &lt;issue id="all">
+        &lt;ignore path="\*/test/\*" />
+    &lt;/issue>
+
+    &lt;!-- Disable this given check in this project -->
+    &lt;issue id="IconMissingDensityFolder" severity="ignore" />
+
+    &lt;!-- Ignore the ObsoleteLayoutParam issue in the given files -->
+    &lt;issue id="ObsoleteLayoutParam">
+        &lt;ignore path="res/layout/activation.xml" />
+        &lt;ignore path="res/layout-xlarge/activation.xml" />
+        &lt;ignore regexp="(foo|bar)\.java" />
+    &lt;/issue>
+
+    &lt;!-- Ignore the UselessLeaf issue in the given file -->
+    &lt;issue id="UselessLeaf">
+        &lt;ignore path="res/layout/main.xml" />
+    &lt;/issue>
+
+    &lt;!-- Change the severity of hardcoded strings to "error" -->
+    &lt;issue id="HardcodedText" severity="error" />
+&lt;/lint>
+</pre>
+<br/>
+To suppress lint checks from the command line, pass the --ignore flag with a comma separated list of ids to be suppressed, such as:<br/>
+<code>$ lint --ignore UnusedResources,UselessLeaf /my/project/path</code><br/>
+<br/>
+For more information, see <a href="https://developer.android.com/studio/write/lint.html#config">https://developer.android.com/studio/write/lint.html#config</a><br/>
+
+            </div>
+            </div>
+          </section>    </div>
+  </main>
+</div>
+</body>
+</html>

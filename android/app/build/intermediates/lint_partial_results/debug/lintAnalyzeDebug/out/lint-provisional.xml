@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<incidents format="6" by="lint 8.7.3" type="conditional_incidents">
+
+    <incident
+        id="NotificationPermission"
+        severity="error"
+        message="When targeting Android 13 or higher, posting a permission requires holding the `POST_NOTIFICATIONS` permission">
+        <fix-data missing="android.permission.POST_NOTIFICATIONS"/>
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/destinytg/device/LocalWatcherService.java"
+            line="160"
+            column="9"
+            startOffset="7175"
+            endLine="160"
+            endColumn="54"
+            endOffset="7220"/>
+    </incident>
+
+</incidents>

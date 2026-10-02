@@ -1,0 +1,9 @@
+com.destinytg.device:style/AppTheme = 0x7f030001
+com.destinytg.device:style/AppButton = 0x7f030000
+com.destinytg.device:drawable/tv_banner = 0x7f020001
+com.destinytg.device:drawable/app_icon = 0x7f020000
+com.destinytg.device:color/app_accent = 0x7f010000
+com.destinytg.device:color/app_text = 0x7f010004
+com.destinytg.device:color/app_surface = 0x7f010003
+com.destinytg.device:color/app_muted = 0x7f010002
+com.destinytg.device:color/app_background = 0x7f010001

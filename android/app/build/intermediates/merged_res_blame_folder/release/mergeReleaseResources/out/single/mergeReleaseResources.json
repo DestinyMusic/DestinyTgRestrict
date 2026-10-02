@@ -1,0 +1,10 @@
+[
+    {
+        "merged": "com.destinytg.device.app-release-4:/drawable_tv_banner.xml.flat",
+        "source": "com.destinytg.device.app-main-5:/drawable/tv_banner.xml"
+    },
+    {
+        "merged": "com.destinytg.device.app-release-4:/drawable_app_icon.xml.flat",
+        "source": "com.destinytg.device.app-main-5:/drawable/app_icon.xml"
+    }
+]

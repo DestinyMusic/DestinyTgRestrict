@@ -1,0 +1,7 @@
+com.destinytg.device.app-pngs-0 /workspaces/DestinyTgRestrict1/android/app/build/generated/res/pngs/release
+com.destinytg.device.app-resValues-1 /workspaces/DestinyTgRestrict1/android/app/build/generated/res/resValues/release
+com.destinytg.device.app-packageReleaseResources-2 /workspaces/DestinyTgRestrict1/android/app/build/intermediates/incremental/release/packageReleaseResources/merged.dir
+com.destinytg.device.app-packageReleaseResources-3 /workspaces/DestinyTgRestrict1/android/app/build/intermediates/incremental/release/packageReleaseResources/stripped.dir
+com.destinytg.device.app-release-4 /workspaces/DestinyTgRestrict1/android/app/build/intermediates/merged_res/release/mergeReleaseResources
+com.destinytg.device.app-main-5 /workspaces/DestinyTgRestrict1/android/app/src/main/res
+com.destinytg.device.app-release-6 /workspaces/DestinyTgRestrict1/android/app/src/release/res

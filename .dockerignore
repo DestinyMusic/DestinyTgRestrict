@@ -1,0 +1,44 @@
+# Repository metadata and local tooling
+.git
+.github
+.vscode
+.idea
+**/.git
+**/.DS_Store
+**/__pycache__/
+**/*.py[cod]
+**/*.pyo
+**/*.pyd
+**/*.so
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.venv/
+**/venv/
+**/node_modules/
+**/dist/
+**/build/
+**/.gradle/
+**/*.apk
+**/*.aab
+**/*.jar
+**/*.keystore
+**/local.properties
+**/gradlew
+**/gradlew.bat
+**/gradle/
+
+# Platform-specific folders that are not part of the web deployment
+android/
+android/**
+android-sdk/
+android-sdk/**
+ios/
+ios/**
+
+# Docker / deployment caches
+.docker/
+.cache/
+
+# Keep the web runtime requirements file available to the container
+!requirements.txt

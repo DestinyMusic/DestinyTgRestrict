@@ -75,8 +75,8 @@ public final class LocalWatcherService extends Service {
                 } catch (Exception watcherError) {
                     NotificationManager manager = getSystemService(NotificationManager.class);
                     if (manager != null) {
-                        manager.notify(NOTIFICATION_ID, buildNotification("Watch restore failed: "
-                                + watcherError.getMessage()));
+                        notifyIfAllowed(manager, buildNotification("Watch restore failed: "
+                            + watcherError.getMessage()));
                     }
                 }
             }
@@ -87,8 +87,8 @@ public final class LocalWatcherService extends Service {
         } catch (Exception exception) {
             NotificationManager manager = getSystemService(NotificationManager.class);
             if (manager != null) {
-                manager.notify(NOTIFICATION_ID, buildNotification("Watcher error: "
-                        + exception.getMessage()));
+                notifyIfAllowed(manager, buildNotification("Watcher error: "
+                    + exception.getMessage()));
             }
             stopSelf();
         }
@@ -135,8 +135,8 @@ public final class LocalWatcherService extends Service {
             }
             NotificationManager manager = getSystemService(NotificationManager.class);
             if (manager != null && active.length() > 0) {
-                manager.notify(NOTIFICATION_ID, buildNotification(active.length() + " active · "
-                        + forwarded + " forwarded · " + skipped + " filtered · " + failed + " failed"));
+                notifyIfAllowed(manager, buildNotification(active.length() + " active · "
+                    + forwarded + " forwarded · " + skipped + " filtered · " + failed + " failed"));
             }
         } catch (Exception ignored) {
             // A status refresh should not stop active Watch tasks.
@@ -149,6 +149,15 @@ public final class LocalWatcherService extends Service {
                 "Telegram watchers", NotificationManager.IMPORTANCE_LOW);
         NotificationManager manager = getSystemService(NotificationManager.class);
         if (manager != null) manager.createNotificationChannel(channel);
+    }
+
+    private void notifyIfAllowed(NotificationManager manager, Notification notification) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+        manager.notify(NOTIFICATION_ID, notification);
     }
 
     private Notification buildNotification() {

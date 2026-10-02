@@ -45,8 +45,17 @@ ARG CACHE_BUSTER=1
 RUN pip install --upgrade pip setuptools wheel && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy source
-COPY . .
+# Copy only the web deployment code paths.
+# Android and iOS sources are intentionally excluded from the web runtime.
+COPY main.py ./main.py
+COPY config.py ./config.py
+COPY config.env ./config.env
+COPY bot ./bot
+COPY core ./core
+COPY database ./database
+COPY media ./media
+COPY streaming ./streaming
+COPY web ./web
 
 # Permissions
 RUN chown -R user:user /app

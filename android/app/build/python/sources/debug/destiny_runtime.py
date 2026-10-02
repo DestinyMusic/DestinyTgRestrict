@@ -11,6 +11,7 @@ from pyrogram.handlers import MessageHandler
 from task_filters import (
     clean_keyword_tags,
     is_protected,
+    copy_or_fallback,
     iter_message_ids,
     matches_message_filters,
     message_category,
@@ -44,6 +45,72 @@ def runtime_status():
         "engine": "destiny-device",
         "telegram_client_version": pyrogram.__version__,
     }
+
+
+def get_chats(api_id, api_hash, session_string):
+    client = Client(
+        "destiny-device-chat-picker",
+        api_id=int(api_id),
+        api_hash=api_hash,
+        session_string=session_string,
+        in_memory=True,
+        no_updates=True,
+        workers=1,
+        workdir=_storage_directory,
+    )
+
+    async def load_chats():
+        await client.start()
+        try:
+            chats = []
+            async for dialog in client.get_dialogs(limit=500):
+                chat = dialog.chat
+                title = (getattr(chat, "title", None)
+                         or getattr(chat, "first_name", None)
+                         or getattr(chat, "username", None)
+                         or str(chat.id))
+                chats.append({
+                    "id": str(chat.id),
+                    "title": title,
+                    "username": getattr(chat, "username", None) or "",
+                    "type": str(getattr(chat, "type", "unknown")),
+                    "is_forum": bool(getattr(chat, "is_forum", False)),
+                })
+            return json.dumps(chats)
+        finally:
+            await client.stop()
+
+    return client.loop.run_until_complete(load_chats())
+
+
+def get_forum_topics(api_id, api_hash, session_string, chat_reference):
+    chat_reference = str(chat_reference or "").strip()
+    if chat_reference.startswith("@"):
+        chat_id = chat_reference[1:]
+    else:
+        chat_id = _parse_source_chat(chat_reference)
+    client = Client(
+        "destiny-device-topic-picker",
+        api_id=int(api_id),
+        api_hash=api_hash,
+        session_string=session_string,
+        in_memory=True,
+        no_updates=True,
+        workers=1,
+        workdir=_storage_directory,
+    )
+
+    async def load_topics():
+        await client.start()
+        try:
+            topics = []
+            async for topic in client.get_forum_topics(chat_id, limit=250):
+                topics.append({"id": str(topic.id), "title": topic.title})
+            return json.dumps(topics)
+        finally:
+            await client.stop()
+
+    return client.loop.run_until_complete(load_topics())
 
 
 def send_login_code(api_id, api_hash, phone):
@@ -146,6 +213,78 @@ async def _retry_task_operation(operation, attempts=3):
                 raise
             wait_seconds = max(2 ** attempt, int(getattr(error, "value", 0) or 0))
             await asyncio.sleep(min(wait_seconds, 60))
+
+
+async def _download_and_forward_message(client, message, category, destination,
+                                        destination_thread_id, cleanup_keywords,
+                                        download_directory, persist_local):
+    os.makedirs(download_directory, exist_ok=True)
+    local_path = await _retry_task_operation(lambda: client.download_media(
+        message, file_name=download_directory + os.sep))
+    if not local_path:
+        raise RuntimeError("Telegram did not provide a downloadable file")
+
+    completed = False
+    media = getattr(message, category, None)
+    mime_type = getattr(media, "mime_type", None) or {
+        "video": "video/mp4",
+        "audio": "audio/mpeg",
+        "voice": "audio/ogg",
+        "photo": "image/jpeg",
+        "animation": "video/mp4",
+        "sticker": "image/webp",
+    }.get(category, "application/octet-stream")
+    caption = _clean_watch_caption(message.caption, cleanup_keywords)
+    caption_entities = (message.caption_entities
+                        if caption == (message.caption or "") else None)
+    thread_arguments = {"message_thread_id": destination_thread_id} \
+        if destination_thread_id else {}
+
+    try:
+        if category == "video":
+            await _retry_task_operation(lambda: client.send_video(
+                destination, local_path, caption=caption,
+                caption_entities=caption_entities,
+                duration=getattr(media, "duration", 0),
+                width=getattr(media, "width", 0), height=getattr(media, "height", 0),
+                **thread_arguments))
+        elif category == "audio":
+            await _retry_task_operation(lambda: client.send_audio(
+                destination, local_path, caption=caption,
+                caption_entities=caption_entities,
+                duration=getattr(media, "duration", 0),
+                performer=getattr(media, "performer", None),
+                title=getattr(media, "title", None), **thread_arguments))
+        elif category == "voice":
+            await _retry_task_operation(lambda: client.send_voice(
+                destination, local_path, caption=caption,
+                caption_entities=caption_entities,
+                duration=getattr(media, "duration", 0), **thread_arguments))
+        elif category == "photo":
+            await _retry_task_operation(lambda: client.send_photo(
+                destination, local_path, caption=caption,
+                caption_entities=caption_entities, **thread_arguments))
+        elif category == "animation":
+            await _retry_task_operation(lambda: client.send_animation(
+                destination, local_path, caption=caption,
+                caption_entities=caption_entities, **thread_arguments))
+        elif category == "sticker":
+            await _retry_task_operation(lambda: client.send_sticker(
+                destination, local_path, **thread_arguments))
+        elif category == "document":
+            await _retry_task_operation(lambda: client.send_document(
+                destination, local_path, caption=caption,
+                caption_entities=caption_entities, **thread_arguments))
+        else:
+            raise ValueError("Unsupported media category: " + str(category))
+        completed = True
+        return local_path, mime_type
+    finally:
+        if (not persist_local or not completed) and os.path.isfile(local_path):
+            try:
+                os.remove(local_path)
+            except OSError:
+                pass
 
 
 def download_message(api_id, api_hash, session_string, link, destination="me"):
@@ -278,6 +417,7 @@ def download_messages(api_id, api_hash, session_string, link, start_id="", end_i
         processed = 0
         client_started = False
         task_state = "COMPLETE"
+        processed_album_ids = set()
         download_directory = os.path.join(_storage_directory, "downloads")
         os.makedirs(download_directory, exist_ok=True)
         write_progress("RUNNING", 0, downloaded, skipped, failed)
@@ -290,12 +430,15 @@ def download_messages(api_id, api_hash, session_string, link, start_id="", end_i
                     cancelled = True
                     processed -= 1
                     break
+                if current_id in processed_album_ids:
+                    skipped += 1
+                    write_progress("RUNNING", current_id - first_id + 1,
+                                   downloaded, skipped, failed)
+                    continue
                 try:
                     message = await _retry_task_operation(
                         lambda: client.get_messages(chat_id, current_id))
                     if message is None or message.empty:
-                        skipped += 1
-                    elif is_protected(message):
                         skipped += 1
                     elif not matches_message_filters(message, selected_types, include, exclude):
                         skipped += 1
@@ -317,50 +460,46 @@ def download_messages(api_id, api_hash, session_string, link, start_id="", end_i
                                     **thread_argument))
                                 downloaded += 1
                                 continue
-                        local_path = await _retry_task_operation(
-                            lambda: client.download_media(
-                                message, file_name=download_directory + os.sep))
-                        if not local_path:
-                            raise RuntimeError("Telegram did not provide a downloadable file")
-                        media = getattr(message, category, None)
-                        mime_type = getattr(media, "mime_type", None) or {
-                            "video": "video/mp4", "audio": "audio/mpeg",
-                            "photo": "image/jpeg", "animation": "video/mp4",
-                            "voice": "audio/ogg", "sticker": "image/webp",
-                        }.get(category, "application/octet-stream")
-                        write_event({"type": "file", "name": os.path.basename(local_path),
-                                     "mime_type": mime_type, "path": local_path})
-                        downloaded += 1
-                        caption = _clean_watch_caption(message.caption, cleanup)
-                        caption_entities = (message.caption_entities
-                                            if caption == (message.caption or "") else None)
-                        if category == "photo":
-                            await _retry_task_operation(lambda: client.send_photo(
-                                destination, local_path, caption=caption,
-                                caption_entities=caption_entities, **thread_argument))
-                        elif category == "video":
-                            await _retry_task_operation(lambda: client.send_video(
-                                destination, local_path, caption=caption,
-                                caption_entities=caption_entities, **thread_argument))
-                        elif category == "audio":
-                            await _retry_task_operation(lambda: client.send_audio(
-                                destination, local_path, caption=caption,
-                                caption_entities=caption_entities, **thread_argument))
-                        elif category == "voice":
-                            await _retry_task_operation(lambda: client.send_voice(
-                                destination, local_path, caption=caption,
-                                caption_entities=caption_entities, **thread_argument))
-                        elif category == "animation":
-                            await _retry_task_operation(lambda: client.send_animation(
-                                destination, local_path, caption=caption,
-                                caption_entities=caption_entities, **thread_argument))
-                        elif category == "sticker":
-                            await _retry_task_operation(lambda: client.send_sticker(
-                                destination, local_path, **thread_argument))
+                            media_group_id = getattr(message, "media_group_id", None)
+
+                            async def copy_media():
+                                if media_group_id is not None:
+                                    try:
+                                        group_messages = await client.get_media_group(
+                                            chat_id, current_id)
+                                    except Exception:
+                                        group_messages = [message]
+                                    result = await _retry_task_operation(lambda:
+                                        client.copy_media_group(
+                                            chat_id=destination, from_chat_id=chat_id,
+                                            message_id=current_id, **thread_argument))
+                                    if result:
+                                        processed_album_ids.update(
+                                            int(member.id) for member in group_messages)
+                                    return result
+                                return await _retry_task_operation(lambda:
+                                    client.copy_message(
+                                        chat_id=destination, from_chat_id=chat_id,
+                                        message_id=current_id, **thread_argument))
+
+                            async def download_and_forward():
+                                local_path, mime_type = await _download_and_forward_message(
+                                    client, message, category, destination,
+                                    destination_thread_id, cleanup, download_directory, True)
+                                write_event({
+                                    "type": "file",
+                                    "name": os.path.basename(local_path),
+                                    "mime_type": mime_type,
+                                    "path": local_path,
+                                })
+                                return True
+
+                            await copy_or_fallback(
+                                message, copy_media, download_and_forward,
+                                force_fallback=bool(cleanup))
+                            downloaded += 1
                         else:
-                            await _retry_task_operation(lambda: client.send_document(
-                                destination, local_path, caption=caption,
-                                caption_entities=caption_entities, **thread_argument))
+                            skipped += 1
                 except Exception as error:
                     failed += 1
                 write_progress("RUNNING", current_id - first_id + 1,
@@ -406,6 +545,9 @@ def cancel_download_task(task_id):
 
 
 def _parse_source_chat(link):
+    link = str(link or "").strip()
+    if link.lstrip("-").isdigit():
+        return int(link)
     parsed = urlparse(link if "://" in link else "https://" + link)
     if parsed.netloc.lower() not in {"t.me", "www.t.me", "telegram.me", "www.telegram.me"}:
         raise ValueError("Enter a Telegram source link")
@@ -519,8 +661,7 @@ def start_watcher(api_id, api_hash, session_string, source_link, destination="me
             if topic_id is None:
                 topic_id = getattr(message, "reply_to_top_message_id", None)
             state["stats"]["detected"] = state["stats"].get("detected", 0) + 1
-            should_skip = (is_protected(message)
-                           or not matches_message_filters(message, selected_types, include, exclude)
+            should_skip = (not matches_message_filters(message, selected_types, include, exclude)
                            or (source_thread_id and int(topic_id or 0) != source_thread_id))
             if should_skip:
                 state["stats"]["skipped"] += 1
@@ -545,22 +686,46 @@ def start_watcher(api_id, api_hash, session_string, source_link, destination="me
                 state["last_message_id"] = message_id
                 save_checkpoint()
                 return
-            copy_arguments = {
-                "chat_id": destination,
-                "from_chat_id": message.chat.id,
-                "message_id": message_id,
-            }
-            if destination_thread_id:
-                copy_arguments["message_thread_id"] = destination_thread_id
-            if cleanup and caption != (message.caption or ""):
-                copy_arguments["caption"] = caption
-                copy_arguments["caption_entities"] = []
+            media_category = message_category(message)
+
+            async def copy_media():
+                thread_arguments = {"message_thread_id": destination_thread_id} \
+                    if destination_thread_id else {}
+                if getattr(message, "media_group_id", None) is not None:
+                    try:
+                        group_messages = await _watch_client.get_media_group(
+                            message.chat.id, message_id)
+                    except Exception:
+                        group_messages = [message]
+                    result = await _retry_task_operation(lambda:
+                        _watch_client.copy_media_group(
+                            chat_id=destination, from_chat_id=message.chat.id,
+                            message_id=message_id, **thread_arguments))
+                    if result:
+                        state["last_message_id"] = max(
+                            [state["last_message_id"]]
+                            + [int(member.id) for member in group_messages])
+                    return result
+                return await _retry_task_operation(lambda:
+                    _watch_client.copy_message(
+                        chat_id=destination, from_chat_id=message.chat.id,
+                        message_id=message_id, **thread_arguments))
+
+            async def download_and_forward():
+                await _download_and_forward_message(
+                    _watch_client, message, media_category, destination,
+                    destination_thread_id, cleanup,
+                    os.path.join(_storage_directory, "watcher_transfers"), False)
+                return True
+
             try:
-                await _retry_task_operation(lambda: _watch_client.copy_message(**copy_arguments))
+                await copy_or_fallback(
+                    message, copy_media, download_and_forward,
+                    force_fallback=bool(cleanup))
                 state["stats"]["success"] += 1
             except Exception:
                 state["stats"]["failed"] += 1
-            state["last_message_id"] = message_id
+            state["last_message_id"] = max(state["last_message_id"], message_id)
             save_checkpoint()
 
         async def forward_new_message(client, message):

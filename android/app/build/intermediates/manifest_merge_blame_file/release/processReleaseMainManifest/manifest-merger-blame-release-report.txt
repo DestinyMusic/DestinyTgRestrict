@@ -1,0 +1,114 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="com.destinytg.device"
+4    android:versionCode="1"
+5    android:versionName="1.0.0" >
+6
+7    <uses-sdk
+8        android:minSdkVersion="24"
+9        android:targetSdkVersion="35" />
+10
+11    <uses-permission android:name="android.permission.INTERNET" />
+11-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:2:5-67
+11-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:2:22-64
+12    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+12-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:3:5-76
+12-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:3:22-73
+13    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+13-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:4:5-79
+13-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:4:22-76
+14    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+14-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:5:5-77
+14-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:5:22-74
+15    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+15-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:6:5-77
+15-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:6:22-74
+16    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+16-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:7:5-87
+16-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:7:22-84
+17
+18    <uses-feature
+18-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:8:5-87
+19        android:name="android.software.leanback"
+19-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:8:19-59
+20        android:required="false" />
+20-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:8:60-84
+21    <uses-feature
+21-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:9:5-90
+22        android:name="android.hardware.touchscreen"
+22-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:9:19-62
+23        android:required="false" />
+23-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:9:63-87
+24    <uses-feature
+24-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:10:5-83
+25        android:name="android.hardware.wifi"
+25-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:10:19-55
+26        android:required="false" />
+26-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:10:56-80
+27
+28    <application
+28-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:12:5-41:19
+29        android:banner="@drawable/tv_banner"
+29-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:13:9-45
+30        android:extractNativeLibs="false"
+31        android:icon="@drawable/app_icon"
+31-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:14:9-42
+32        android:label="Destiny TG"
+32-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:15:9-35
+33        android:theme="@style/AppTheme"
+33-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:17:9-40
+34        android:usesCleartextTraffic="true" >
+34-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:16:9-44
+35        <activity
+35-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:18:9-30:20
+36            android:name="com.destinytg.device.MainActivity"
+36-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:19:13-41
+37            android:configChanges="keyboard|keyboardHidden|orientation|screenSize"
+37-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:20:13-83
+38            android:exported="true" >
+38-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:21:13-36
+39            <intent-filter>
+39-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:22:13-25:29
+40                <action android:name="android.intent.action.MAIN" />
+40-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:23:17-69
+40-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:23:25-66
+41
+42                <category android:name="android.intent.category.LAUNCHER" />
+42-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:24:17-77
+42-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:24:27-74
+43            </intent-filter>
+44            <intent-filter>
+44-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:26:13-29:29
+45                <action android:name="android.intent.action.MAIN" />
+45-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:23:17-69
+45-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:23:25-66
+46
+47                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+47-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:28:17-86
+47-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:28:27-83
+48            </intent-filter>
+49        </activity>
+50        <activity
+50-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:31:9-33:40
+51            android:name="com.destinytg.device.LocalTheaterActivity"
+51-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:32:13-49
+52            android:exported="false" />
+52-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:33:13-37
+53        <activity
+53-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:34:9-36:40
+54            android:name="com.destinytg.device.LocalMediaEditorActivity"
+54-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:35:13-53
+55            android:exported="false" />
+55-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:36:13-37
+56
+57        <service
+57-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:37:9-40:56
+58            android:name="com.destinytg.device.LocalWatcherService"
+58-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:38:13-48
+59            android:exported="false"
+59-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:39:13-37
+60            android:foregroundServiceType="dataSync" />
+60-->/workspaces/DestinyTgRestrict1/android/app/src/main/AndroidManifest.xml:40:13-53
+61    </application>
+62
+63</manifest>

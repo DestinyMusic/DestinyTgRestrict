@@ -1,0 +1,159 @@
+Metadata-Version: 2.5
+Name: Kurigram
+Version: 2.2.25
+Summary: Elegant, modern and asynchronous Telegram MTProto API framework in Python for users and bots
+Project-URL: Homepage, https://kurigram.icu
+Project-URL: Documentation, https://docs.kurigram.icu
+Project-URL: Source, https://github.com/KurimuzonAkuma/pyrogram
+Project-URL: Issues, https://github.com/KurimuzonAkuma/pyrogram/issues
+Project-URL: Community, https://t.me/kurigram_chat
+Author-email: Dan <dan@pyrogram.org>
+Maintainer: KurimuzonAkuma
+License-Expression: LGPL-3.0-or-later
+License-File: COPYING
+License-File: COPYING.lesser
+Keywords: api,chat,client,library,messenger,mtproto,python,telegram
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)
+Classifier: Natural Language :: English
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Programming Language :: Python :: 3.14
+Classifier: Programming Language :: Python :: Implementation
+Classifier: Programming Language :: Python :: Implementation :: CPython
+Classifier: Programming Language :: Python :: Implementation :: PyPy
+Classifier: Topic :: Communications
+Classifier: Topic :: Communications :: Chat
+Classifier: Topic :: Internet
+Classifier: Topic :: Software Development :: Libraries
+Classifier: Topic :: Software Development :: Libraries :: Application Frameworks
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Requires-Python: >=3.8
+Requires-Dist: pyaes<=1.6.1
+Requires-Dist: python-socks[asyncio]<=2.8.1
+Provides-Extra: dev
+Requires-Dist: hatch<=1.17.0; extra == 'dev'
+Requires-Dist: keyring<=25.7.0; extra == 'dev'
+Requires-Dist: pytest-asyncio<=1.4.0; extra == 'dev'
+Requires-Dist: pytest-cov<=7.1.0; extra == 'dev'
+Requires-Dist: pytest<=9.1.1; extra == 'dev'
+Requires-Dist: twine<=6.2.0; extra == 'dev'
+Provides-Extra: docs
+Requires-Dist: pygments<=2.20.0; extra == 'docs'
+Requires-Dist: shibuya<=2026.5.19; extra == 'docs'
+Requires-Dist: sphinx-autobuild<=2025.8.25; extra == 'docs'
+Requires-Dist: sphinx-copybutton<=0.5.2; extra == 'docs'
+Requires-Dist: sphinx-design<=0.7.0; extra == 'docs'
+Requires-Dist: sphinx-iconify<=0.3.0; extra == 'docs'
+Requires-Dist: sphinx<=9.1.0; extra == 'docs'
+Provides-Extra: fast
+Requires-Dist: tgcrypto<=1.2.5; extra == 'fast'
+Requires-Dist: uvloop<=0.22.1; (sys_platform == 'darwin' or sys_platform == 'linux') and extra == 'fast'
+Description-Content-Type: text/markdown
+
+<p align="center">
+    <a href="https://github.com/KurimuzonAkuma/kurigram">
+        <img src="https://raw.githubusercontent.com/KurimuzonAkuma/kurigramartwork/master/kurigram-logo.png" alt="Kurigram" width="128">
+    </a>
+    <br>
+    <b>Telegram MTProto API Framework for Python</b>
+    <br>
+    <a href="https://kurigram.icu">
+        Homepage
+    </a>
+    •
+    <a href="https://docs.kurigram.icu">
+        Documentation
+    </a>
+    •
+    <a href="https://t.me/kurigram_news">
+        News
+    </a>
+    •
+    <a href="https://t.me/kurigram_chat">
+        Chat
+    </a>
+    <br/>
+    <br/>
+    <a href="https://pypi.python.org/pypi/kurigram">
+        <img src="https://img.shields.io/pypi/v/kurigram.svg?logo=pypi&logoColor=white" alt="PyPI package version">
+    </a>
+    <a href="https://pypi.python.org/pypi/kurigram">
+        <img src="https://img.shields.io/pypi/l/kurigram.svg" alt="License">
+    </a>
+    <a href="https://pypi.python.org/pypi/kurigram">
+        <img src="https://img.shields.io/pypi/pyversions/kurigram.svg" alt="Python versions">
+    </a>
+</p>
+
+## Kurigram
+
+> Elegant, modern and asynchronous Telegram MTProto API framework in Python for users and bots
+
+Kurigram is an actively maintained pyrogram fork for Python designed as a drop-in replacement for Pyrogram, Kurigram provides support for the latest Telegram features including Gifts, Stories, Topics, Business Accounts, and more.
+
+```python
+from pyrogram import Client, filters
+
+app = Client("my_account")
+
+
+@app.on_message(filters.private)
+async def hello(client, message):
+    await message.reply("Hello from Kurigram!")
+
+
+app.run()
+```
+
+**Kurigram** is a modern, elegant and asynchronous [MTProto API](https://docs.kurigram.icu/topics/mtproto-vs-botapi)
+framework. It enables you to easily interact with the main Telegram API through a user account (custom client) or a bot
+identity (bot API alternative) using Python.
+
+### Support
+
+Kurigram is an open source project. Your support helps us maintain and improve the library, consider supporting its development:
+
+- `kurimuzonakuma.ton` - TON
+- `TYAY3cVST3NY5mqs1M2qGV6PjXDjLLeC6v` - USDT TRC20
+
+Thank you for supporting Kurigram ❤️
+
+### Key Features
+
+- **Ready**: Install Kurigram with pip and start building your applications right away.
+- **Easy**: Makes the Telegram API simple and intuitive, while still allowing advanced usages.
+- **Elegant**: Low-level details are abstracted and re-presented in a more convenient way.
+- **Fast**: Boosted up by [TgCrypto](https://github.com/pyrogram/tgcrypto), a high-performance cryptography library written in C.
+- **Type-hinted**: Types and methods are all type-hinted, enabling excellent editor support.
+- **Async**: Fully asynchronous (also usable synchronously if wanted, for convenience).
+- **Powerful**: Full access to Telegram's API to execute any official client action and more.
+
+### Installing
+
+Stable version
+
+``` bash
+pip install kurigram
+```
+
+Dev version
+
+``` bash
+pip install https://github.com/KurimuzonAkuma/kurigram/archive/dev.zip --force-reinstall
+```
+
+### Resources
+
+- Check out the [docs](https://docs.kurigram.icu) to learn more about Kurigram, get started right
+away and discover more in-depth material for building your client applications.
+- Join the [official channel](https://t.me/kurigram_news) and stay tuned for news, updates and announcements.
+- Join the [official chat](https://t.me/kurigram_chat) to communicate with people.
