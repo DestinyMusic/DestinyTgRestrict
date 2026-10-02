@@ -14,7 +14,7 @@ jobs:
         with:
           lfs: true
 
-      - name: Export only web deployment files
+      - name: Export and Push web deployment files
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_SPACE_ID: ${{ vars.HF_SPACE_ID }}
@@ -29,31 +29,32 @@ jobs:
           rm -rf "$SYNC_DIR"
           mkdir -p "$SYNC_DIR"
 
+          # 1. Sync files, explicitly keeping Dockerfile and .dockerignore
           rsync -a --delete \
-            --exclude='.git' \
-            --exclude='.github' \
-            --exclude='android' \
-            --exclude='android-sdk' \
-            --exclude='ios' \
-            --exclude='**/__pycache__' \
-            --exclude='.pytest_cache' \
-            --exclude='.gradle' \
-            --exclude='build' \
-            --exclude='dist' \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='android/' \
+            --exclude='android-sdk/' \
+            --exclude='ios/' \
+            --exclude='__pycache__/' \
+            --exclude='.pytest_cache/' \
+            --exclude='.gradle/' \
+            --exclude='build/' \
+            --exclude='dist/' \
             --exclude='*.apk' \
             --exclude='*.aab' \
-            --exclude='.dockerignore' \
-            --exclude='Dockerfile' \
             "$GITHUB_WORKSPACE"/ "$SYNC_DIR"/
 
+          # 2. Move to isolated sync directory
           cd "$SYNC_DIR"
-          rm -rf .git
           git init
           git checkout -b main
 
+          # 3. Setup GitHub Actions Bot Identity
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+          # 4. Initialize LFS and track large files
           git lfs install
           git lfs track "*.ttf"
           git lfs track "*.pyc"
@@ -63,6 +64,7 @@ jobs:
           git lfs track "*.session"
           find . -type f -size +9M -exec git lfs track {} + || true
 
+          # 5. Commit and Force Push
           git add .
           git commit -m "Auto-sync Restrict Engine to Hugging Face Space"
 
