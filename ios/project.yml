@@ -1,0 +1,17 @@
+name: DestinyDevice
+options:
+  deploymentTarget:
+    iOS: "15.0"
+targets:
+  DestinyDevice:
+    type: application
+    platform: iOS
+    sources:
+      - path: DestinyDevice
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.destinytg.device
+        INFOPLIST_FILE: DestinyDevice/Info.plist
+        SWIFT_VERSION: "5.0"
+        IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+        TARGETED_DEVICE_FAMILY: "1,2"

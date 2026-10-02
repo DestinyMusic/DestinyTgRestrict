@@ -1,0 +1,109 @@
+-- Merging decision tree log ---
+manifest
+ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:1:1-38:12
+INJECTED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:1:1-38:12
+INJECTED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:1:1-38:12
+INJECTED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:1:1-38:12
+	package
+		INJECTED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml
+	android:versionName
+		INJECTED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml
+	android:versionCode
+		INJECTED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml
+	xmlns:android
+		ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:1:11-69
+uses-permission#android.permission.INTERNET
+ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:2:5-67
+	android:name
+		ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:2:22-64
+uses-permission#android.permission.ACCESS_WIFI_STATE
+ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:3:5-76
+	android:name
+		ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:3:22-73
+uses-permission#android.permission.ACCESS_NETWORK_STATE
+ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:4:5-79
+	android:name
+		ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:4:22-76
+uses-permission#android.permission.FOREGROUND_SERVICE
+ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:5:5-77
+	android:name
+		ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:5:22-74
+uses-permission#android.permission.FOREGROUND_SERVICE_DATA_SYNC
+ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:6:5-87
+	android:name
+		ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:6:22-84
+uses-feature#android.software.leanback
+ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:7:5-87
+	android:required
+		ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:7:60-84
+	android:name
+		ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:7:19-59
+uses-feature#android.hardware.touchscreen
+ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:8:5-90
+	android:required
+		ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:8:63-87
+	android:name
+		ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:8:19-62
+application
+ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:10:5-37:19
+INJECTED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:10:5-37:19
+	android:extractNativeLibs
+		INJECTED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml
+	android:label
+		ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:11:9-35
+	android:theme
+		ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:13:9-72
+	android:usesCleartextTraffic
+		ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:12:9-44
+activity#com.destinytg.device.MainActivity
+ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:14:9-26:20
+	android:exported
+		ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:17:13-36
+	android:configChanges
+		ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:16:13-83
+	android:name
+		ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:15:13-41
+intent-filter#action:name:android.intent.action.MAIN+category:name:android.intent.category.LAUNCHER
+ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:18:13-21:29
+action#android.intent.action.MAIN
+ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:19:17-69
+	android:name
+		ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:19:25-66
+category#android.intent.category.LAUNCHER
+ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:20:17-77
+	android:name
+		ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:20:27-74
+intent-filter#action:name:android.intent.action.MAIN+category:name:android.intent.category.LEANBACK_LAUNCHER
+ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:22:13-25:29
+category#android.intent.category.LEANBACK_LAUNCHER
+ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:24:17-86
+	android:name
+		ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:24:27-83
+activity#com.destinytg.device.LocalTheaterActivity
+ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:27:9-29:40
+	android:exported
+		ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:29:13-37
+	android:name
+		ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:28:13-49
+activity#com.destinytg.device.LocalMediaEditorActivity
+ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:30:9-32:40
+	android:exported
+		ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:32:13-37
+	android:name
+		ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:31:13-53
+service#com.destinytg.device.LocalWatcherService
+ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:33:9-36:56
+	android:exported
+		ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:35:13-37
+	android:foregroundServiceType
+		ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:36:13-53
+	android:name
+		ADDED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml:34:13-48
+uses-sdk
+INJECTED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml reason: use-sdk injection requested
+INJECTED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml
+INJECTED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml
+	android:targetSdkVersion
+		INJECTED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml
+	android:minSdkVersion
+		INJECTED from /workspaces/DestinyTgRestrict/android/app/src/main/AndroidManifest.xml
