@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "android/app/src/ma
 
 from task_filters import (
     clean_keyword_tags,
+    copy_or_fallback,
     is_protected,
     iter_message_ids,
     matches_message_filters,
@@ -80,6 +81,93 @@ class DeviceTaskFilterTests(unittest.TestCase):
             iter_message_ids(0, 5)
         with self.assertRaises(ValueError):
             iter_message_ids(10, 5)
+
+
+class CopyFallbackTests(unittest.IsolatedAsyncioTestCase):
+    async def test_unrestricted_media_uses_copy(self):
+        calls = []
+
+        async def copy_operation():
+            calls.append("copy")
+            return "copied"
+
+        async def fallback_operation():
+            calls.append("fallback")
+            return "uploaded"
+
+        result = await copy_or_fallback(message(), copy_operation, fallback_operation)
+
+        self.assertEqual(result, "copied")
+        self.assertEqual(calls, ["copy"])
+
+    async def test_protected_media_uses_download_fallback(self):
+        calls = []
+
+        async def copy_operation():
+            calls.append("copy")
+            return "copied"
+
+        async def fallback_operation():
+            calls.append("fallback")
+            return "uploaded"
+
+        result = await copy_or_fallback(
+            message(has_protected_content=True), copy_operation, fallback_operation)
+
+        self.assertEqual(result, "uploaded")
+        self.assertEqual(calls, ["fallback"])
+
+    async def test_forward_restriction_uses_download_fallback(self):
+        async def copy_operation():
+            raise RuntimeError("CHAT_FORWARDS_RESTRICTED")
+
+        async def fallback_operation():
+            return "uploaded"
+
+        result = await copy_or_fallback(message(), copy_operation, fallback_operation)
+
+        self.assertEqual(result, "uploaded")
+
+    async def test_cleanup_can_force_download_fallback(self):
+        calls = []
+
+        async def copy_operation():
+            calls.append("copy")
+            return "copied"
+
+        async def fallback_operation():
+            calls.append("fallback")
+            return "uploaded"
+
+        result = await copy_or_fallback(
+            message(), copy_operation, fallback_operation, force_fallback=True)
+
+        self.assertEqual(result, "uploaded")
+        self.assertEqual(calls, ["fallback"])
+
+    async def test_unrelated_copy_failure_does_not_trigger_download(self):
+        calls = []
+
+        async def copy_operation():
+            raise RuntimeError("NETWORK_TIMEOUT")
+
+        async def fallback_operation():
+            calls.append("fallback")
+            return "uploaded"
+
+        with self.assertRaisesRegex(RuntimeError, "NETWORK_TIMEOUT"):
+            await copy_or_fallback(message(), copy_operation, fallback_operation)
+        self.assertEqual(calls, [])
+
+    async def test_false_copy_result_is_not_reported_as_success(self):
+        async def copy_operation():
+            return None
+
+        async def fallback_operation():
+            return "uploaded"
+
+        with self.assertRaisesRegex(RuntimeError, "no result"):
+            await copy_or_fallback(message(), copy_operation, fallback_operation)
 
 
 if __name__ == "__main__":

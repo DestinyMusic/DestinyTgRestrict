@@ -1,0 +1,4 @@
+#Fri Oct 02 10:52:22 UTC 2026
+base.0=/workspaces/DestinyTgRestrict1/android/app/build/intermediates/dex/release/mergeDexRelease/classes.dex
+path.0=classes.dex
+renamed.0=classes.dex

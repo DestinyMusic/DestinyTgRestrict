@@ -1,0 +1,84 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.destinytg.device.app-mergeReleaseResources-2:/values/values.xml",
+            "map": [
+                {
+                    "source": "/workspaces/DestinyTgRestrict1/android/app/src/main/res/values/styles.xml",
+                    "from": {
+                        "startLines": "-1,1",
+                        "startColumns": "-1,4",
+                        "startOffsets": "-1,16",
+                        "endLines": "-1,16",
+                        "endColumns": "-1,12",
+                        "endOffsets": "-1,1072"
+                    },
+                    "to": {
+                        "startLines": "7,13",
+                        "startColumns": "4,4",
+                        "startOffsets": "282,607",
+                        "endLines": "12,28",
+                        "endColumns": "12,12",
+                        "endOffsets": "602,1663"
+                    }
+                },
+                {
+                    "source": "/workspaces/DestinyTgRestrict1/android/app/src/main/res/values/colors.xml",
+                    "from": {
+                        "startLines": "-1,-1,-1,-1,-1",
+                        "startColumns": "-1,-1,-1,-1,-1",
+                        "startOffsets": "-1,-1,-1,-1,-1"
+                    },
+                    "to": {
+                        "startLines": "2,3,4,5,6",
+                        "startColumns": "4,4,4,4,4",
+                        "startOffsets": "55,100,149,193,239",
+                        "endColumns": "44,48,43,45,42",
+                        "endOffsets": "95,144,188,234,277"
+                    }
+                }
+            ]
+        },
+        {
+            "outputFile": "/home/codespace/.gradle/daemon/8.10.2/com.destinytg.device.app-mergeReleaseResources-2:/values/values.xml",
+            "map": [
+                {
+                    "source": "/workspaces/DestinyTgRestrict1/android/app/src/main/res/values/styles.xml",
+                    "from": {
+                        "startLines": "19,1",
+                        "startColumns": "4,4",
+                        "startOffsets": "1145,16",
+                        "endLines": "24,17",
+                        "endColumns": "12,12",
+                        "endOffsets": "1465,1139"
+                    },
+                    "to": {
+                        "startLines": "7,13",
+                        "startColumns": "4,4",
+                        "startOffsets": "282,607",
+                        "endLines": "12,29",
+                        "endColumns": "12,12",
+                        "endOffsets": "602,1730"
+                    }
+                },
+                {
+                    "source": "/workspaces/DestinyTgRestrict1/android/app/src/main/res/values/colors.xml",
+                    "from": {
+                        "startLines": "3,1,5,2,4",
+                        "startColumns": "4,4,4,4,4",
+                        "startOffsets": "111,16,199,65,156",
+                        "endColumns": "44,48,43,45,42",
+                        "endOffsets": "151,60,238,106,194"
+                    },
+                    "to": {
+                        "startLines": "2,3,4,5,6",
+                        "startColumns": "4,4,4,4,4",
+                        "startOffsets": "55,100,149,193,239",
+                        "endColumns": "44,48,43,45,42",
+                        "endOffsets": "95,144,188,234,277"
+                    }
+                }
+            ]
+        }
+    ]
+}

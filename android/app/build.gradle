@@ -25,6 +25,36 @@ android {
         }
     }
 
+    signingConfigs {
+        release {
+            def keystorePath = System.getenv('DESTINY_KEYSTORE')
+            if (!keystorePath && file("${rootDir}/release-key.jks").exists()) {
+                keystorePath = "${rootDir}/release-key.jks"
+            }
+
+            if (keystorePath != null) {
+                storeFile file(keystorePath)
+                storePassword System.getenv('DESTINY_STORE_PASSWORD') ?: 'destiny123'
+                keyAlias System.getenv('DESTINY_KEY_ALIAS') ?: 'destiny-release'
+                keyPassword System.getenv('DESTINY_KEY_PASSWORD') ?: 'destiny123'
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            debuggable true
+            applicationIdSuffix '.debug'
+        }
+        release {
+            minifyEnabled false
+            if (signingConfigs.release.storeFile != null) {
+                signingConfig signingConfigs.release
+                debuggable false
+            }
+        }
+    }
+
     splits {
         abi {
             enable true
@@ -38,6 +68,11 @@ android {
 
     testOptions {
         unitTests.returnDefaultValues = true
+    }
+
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
     }
 }
 

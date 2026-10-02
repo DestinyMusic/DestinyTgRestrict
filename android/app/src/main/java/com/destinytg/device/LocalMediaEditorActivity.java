@@ -3,6 +3,9 @@ package com.destinytg.device;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
+import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.media.MediaCodec;
 import android.media.MediaExtractor;
 import android.media.MediaMetadataRetriever;
@@ -15,6 +18,7 @@ import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -24,6 +28,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 
 public final class LocalMediaEditorActivity extends Activity {
@@ -48,44 +53,74 @@ public final class LocalMediaEditorActivity extends Activity {
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(20, 20, 20, 20);
+        root.setPadding(dp(20), dp(20), dp(20), dp(24));
         root.setGravity(Gravity.TOP);
+        root.setBackgroundColor(Color.rgb(7, 9, 13));
 
         TextView title = new TextView(this);
         title.setText("Media editor");
-        title.setTextSize(22);
-        title.setTextColor(0xFFF1F5F9);
-        title.setGravity(Gravity.CENTER);
+        title.setTextSize(26);
+        title.setTextColor(Color.rgb(56, 189, 248));
+        title.setGravity(Gravity.CENTER_VERTICAL);
         root.addView(title, matchWrap());
 
         TextView info = new TextView(this);
         info.setText(buildInfoText());
-        info.setTextColor(0xFFCBD5E1);
+        info.setTextColor(Color.rgb(241, 245, 249));
         info.setTextSize(14);
+        info.setPadding(dp(14), dp(12), dp(14), dp(12));
+        info.setBackground(createRoundedBackground(Color.rgb(17, 24, 39), dp(6)));
         LinearLayout.LayoutParams infoParams = matchWrap();
-        infoParams.topMargin = 12;
+        infoParams.topMargin = dp(14);
         root.addView(info, infoParams);
+
+        TextView trimLabel = new TextView(this);
+        trimLabel.setText("TRIM RANGE");
+        trimLabel.setTextColor(Color.rgb(56, 189, 248));
+        trimLabel.setTextSize(10);
+        trimLabel.setTypeface(android.graphics.Typeface.DEFAULT,
+            android.graphics.Typeface.BOLD);
+        LinearLayout.LayoutParams trimLabelParams = matchWrap();
+        trimLabelParams.topMargin = dp(20);
+        root.addView(trimLabel, trimLabelParams);
 
         EditText trimStart = new EditText(this);
         trimStart.setSingleLine(true);
         trimStart.setHint("Trim start (seconds)");
         trimStart.setInputType(android.text.InputType.TYPE_CLASS_NUMBER
                 | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
-        root.addView(trimStart, matchWrap());
+        styleInputField(trimStart);
+        LinearLayout.LayoutParams trimStartParams = matchWrap();
+        trimStartParams.topMargin = dp(8);
+        root.addView(trimStart, trimStartParams);
 
         EditText trimEnd = new EditText(this);
         trimEnd.setSingleLine(true);
         trimEnd.setHint("Trim end (seconds)");
         trimEnd.setInputType(android.text.InputType.TYPE_CLASS_NUMBER
                 | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
-        root.addView(trimEnd, matchWrap());
+        styleInputField(trimEnd);
+        LinearLayout.LayoutParams trimEndParams = matchWrap();
+        trimEndParams.topMargin = dp(8);
+        root.addView(trimEnd, trimEndParams);
 
         TextView editStatus = new TextView(this);
-        editStatus.setTextColor(0xFFCBD5E1);
-        root.addView(editStatus, matchWrap());
+        editStatus.setTextColor(Color.rgb(148, 163, 184));
+        editStatus.setPadding(dp(12), dp(10), dp(12), dp(10));
+        editStatus.setBackground(createRoundedBackground(Color.rgb(17, 24, 39), dp(6)));
+        LinearLayout.LayoutParams statusParams = matchWrap();
+        statusParams.topMargin = dp(8);
+        root.addView(editStatus, statusParams);
 
         Button trim = new Button(this);
         trim.setText("Trim and export MP4");
+        trim.setTextColor(Color.rgb(7, 9, 13));
+        trim.setTypeface(android.graphics.Typeface.DEFAULT,
+            android.graphics.Typeface.BOLD);
+        trim.setMinHeight(dp(48));
+        trim.setBackground(new RippleDrawable(
+            android.content.res.ColorStateList.valueOf(Color.rgb(125, 211, 252)),
+            createRoundedBackground(Color.rgb(56, 189, 248), dp(6)), null));
         trim.setOnClickListener(view -> {
             try {
                 double startSeconds = Double.parseDouble(trimStart.getText().toString().trim());
@@ -120,7 +155,34 @@ public final class LocalMediaEditorActivity extends Activity {
         back.setOnClickListener(view -> finish());
         root.addView(back, matchWrap());
 
-        setContentView(root);
+        ScrollView scrollView = new ScrollView(this);
+        scrollView.setFillViewport(true);
+        scrollView.setBackgroundColor(Color.rgb(7, 9, 13));
+        scrollView.addView(root, new ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        setContentView(scrollView);
+    }
+
+    private GradientDrawable createRoundedBackground(int color, int radius) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(color);
+        drawable.setCornerRadius(radius);
+        return drawable;
+    }
+
+    private void styleInputField(EditText input) {
+        input.setTextColor(Color.rgb(241, 245, 249));
+        input.setHintTextColor(Color.rgb(148, 163, 184));
+        input.setTextSize(14);
+        input.setPadding(dp(14), dp(12), dp(14), dp(12));
+        input.setMinHeight(dp(50));
+        GradientDrawable field = createRoundedBackground(Color.rgb(17, 24, 39), dp(6));
+        field.setStroke(dp(1), Color.rgb(39, 51, 68));
+        input.setBackground(field);
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
     private String buildInfoText() {
@@ -155,9 +217,9 @@ public final class LocalMediaEditorActivity extends Activity {
         long minutes = (totalSeconds % 3600L) / 60L;
         long seconds = totalSeconds % 60L;
         if (hours > 0) {
-            return String.format("%02d:%02d:%02d", hours, minutes, seconds);
+            return String.format(Locale.ROOT, "%02d:%02d:%02d", hours, minutes, seconds);
         }
-        return String.format("%02d:%02d", minutes, seconds);
+        return String.format(Locale.ROOT, "%02d:%02d", minutes, seconds);
     }
 
     private void openInTheater() {
@@ -274,8 +336,10 @@ public final class LocalMediaEditorActivity extends Activity {
                     if (sampleSize > buffer.capacity()) {
                         throw new IllegalArgumentException("A sample exceeds the local trim buffer");
                     }
-                    bufferInfo.set(0, sampleSize, sampleTimeUs - startUs,
-                            extractor.getSampleFlags());
+                        int sampleFlags = extractor.getSampleFlags();
+                        int muxerFlags = (sampleFlags & MediaExtractor.SAMPLE_FLAG_SYNC) != 0
+                            ? MediaCodec.BUFFER_FLAG_KEY_FRAME : 0;
+                        bufferInfo.set(0, sampleSize, sampleTimeUs - startUs, muxerFlags);
                     Integer outputTrack = outputTracks.get(sourceTrack);
                     if (outputTrack != null) {
                         muxer.writeSampleData(outputTrack, buffer, bufferInfo);

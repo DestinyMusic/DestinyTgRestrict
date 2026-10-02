@@ -14,7 +14,7 @@ jobs:
         with:
           lfs: true
 
-      - name: Push to Hugging Face Space
+      - name: Export only web deployment files
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_SPACE_ID: ${{ vars.HF_SPACE_ID }}
@@ -24,21 +24,36 @@ jobs:
             echo "::error::Missing HF_TOKEN secret or HF_SPACE_ID variable."
             exit 1
           fi
-          HF_USER="${HF_SPACE_ID%%/*}"
 
-          # 1. Erase old git history
+          export SYNC_DIR="/tmp/hf-web-sync"
+          rm -rf "$SYNC_DIR"
+          mkdir -p "$SYNC_DIR"
+
+          rsync -a --delete \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='android' \
+            --exclude='android-sdk' \
+            --exclude='ios' \
+            --exclude='**/__pycache__' \
+            --exclude='.pytest_cache' \
+            --exclude='.gradle' \
+            --exclude='build' \
+            --exclude='dist' \
+            --exclude='*.apk' \
+            --exclude='*.aab' \
+            --exclude='.dockerignore' \
+            --exclude='Dockerfile' \
+            "$GITHUB_WORKSPACE"/ "$SYNC_DIR"/
+
+          cd "$SYNC_DIR"
           rm -rf .git
           git init
           git checkout -b main
 
-          # 2. Setup GitHub Actions Bot Identity
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # 3. Clean up cache files
-          find . -type d -name "__pycache__" -exec rm -r {} + || true
-
-          # 4. Initialize Git LFS and explicitly track binaries HF blocks
           git lfs install
           git lfs track "*.ttf"
           git lfs track "*.pyc"
@@ -46,13 +61,12 @@ jobs:
           git lfs track "*.sqlite3"
           git lfs track "*.db"
           git lfs track "*.session"
-          
-          # Catch any remaining large files over 9MB
-          find . -type f -size +9M -exec git lfs track {} +
+          find . -type f -size +9M -exec git lfs track {} + || true
 
-          # 5. Commit and Force Push
           git add .
           git commit -m "Auto-sync Restrict Engine to Hugging Face Space"
+
+          HF_USER="${HF_SPACE_ID%%/*}"
           git push --force "https://${HF_USER}:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE_ID}.git" main
 
           echo "Pushed successfully to https://huggingface.co/spaces/${HF_SPACE_ID}"

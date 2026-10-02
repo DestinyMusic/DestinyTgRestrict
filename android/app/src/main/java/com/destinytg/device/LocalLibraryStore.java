@@ -85,7 +85,7 @@ final class LocalLibraryStore extends SQLiteOpenHelper {
                     + " ADD COLUMN last_message_id INTEGER NOT NULL DEFAULT 0");
             }
         if (oldVersion < 3) createTasksTable(database);
-                if (oldVersion >= 2 && oldVersion < 5) rebuildWatchersTable(database);
+        if (oldVersion >= 2 && oldVersion < 5) rebuildWatchersTable(database);
         if (oldVersion == 5) {
             database.execSQL("ALTER TABLE " + TABLE_WATCHERS
                 + " ADD COLUMN stats_json TEXT NOT NULL DEFAULT '{}'");

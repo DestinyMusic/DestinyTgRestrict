@@ -1,0 +1,240 @@
+/workspaces/DestinyTgRestrict1/android/app/src/main/res/drawable/tv_banner.xml:2: Warning: Limit vector icons sizes to 200×200 to keep icon drawing fast; see https://developer.android.com/studio/write/vector-asset-studio#when for more [VectorRaster]
+    android:width="320dp"
+                   ~~~~~
+
+   Explanation for issues of type "VectorRaster":
+   Vector icons require API 21 or API 24 depending on used features, but when
+   minSdkVersion is less than 21 or 24 and Android Gradle plugin 1.4 or higher
+   is used, a vector drawable placed in the drawable folder is automatically
+   moved to drawable-anydpi-v21 or drawable-anydpi-v24 and bitmap images are
+   generated for different screen resolutions for backwards compatibility.
+
+   However, there are some limitations to this raster image generation, and
+   this lint check flags elements and attributes that are not fully supported.
+   You should manually check whether the generated output is acceptable for
+   those older devices.
+
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:1240: Warning: Using setJavaScriptEnabled can introduce XSS vulnerabilities into your application, review carefully [SetJavaScriptEnabled]
+        settings.setJavaScriptEnabled(true);
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "SetJavaScriptEnabled":
+   Your code should not invoke setJavaScriptEnabled if you are not sure that
+   your app really requires JavaScript support.
+
+   https://goo.gle/SetJavaScriptEnabled
+   https://developer.android.com/training/articles/security-tips
+
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/LocalMediaEditorActivity.java:61: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        title.setText("Media editor");
+                      ~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/LocalMediaEditorActivity.java:78: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        trimLabel.setText("TRIM RANGE");
+                          ~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/LocalMediaEditorActivity.java:116: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        trim.setText("Trim and export MP4");
+                     ~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/LocalMediaEditorActivity.java:133: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                editStatus.setText("Enter valid start/end times in seconds.");
+                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/LocalMediaEditorActivity.java:139: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        theater.setText("Open in theater");
+                        ~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/LocalMediaEditorActivity.java:144: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        export.setText("Duplicate to local editor export");
+                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/LocalMediaEditorActivity.java:149: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        rename.setText("Rename export");
+                       ~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/LocalMediaEditorActivity.java:154: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        back.setText("Back to library");
+                     ~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/LocalMediaEditorActivity.java:277: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        status.setText("Preparing local trim…");
+                       ~~~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/LocalTheaterActivity.java:38: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        eyebrow.setText("LOCAL THEATER");
+                        ~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/LocalTheaterActivity.java:72: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+            audioLabel.setText("AUDIO  /  PLAYING FROM THIS DEVICE");
+                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/LocalTheaterActivity.java:80: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+            playPause.setText("Preparing audio");
+                              ~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/LocalTheaterActivity.java:95: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                    playPause.setText("Pause");
+                                      ~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/LocalTheaterActivity.java:99: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                audioPlayer.setOnCompletionListener(player -> playPause.setText("Replay"));
+                                                                                ~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/LocalTheaterActivity.java:110: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                        playPause.setText("Play");
+                                          ~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/LocalTheaterActivity.java:116: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                        playPause.setText("Pause");
+                                          ~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:151: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        heading.setText("System overview");
+                        ~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:167: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        createTask.setText("Create task or watcher");
+                           ~~~~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:281: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        download.setText("New Telegram download");
+                         ~~~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:290: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        watch.setText("Add Telegram watch");
+                      ~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:316: Warning: Do not concatenate text displayed with setText. Use resource string with placeholders. [SetTextI18n]
+                label.setText(source + "\n→ " + destination + " · " + watchers.getString(3));
+                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:323: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                stop.setText("Stop");
+                             ~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:410: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        server.setText("Local server dashboard settings");
+                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:469: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        settings.setText("Account and connection settings");
+                         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:565: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        importButton.setText("Import files");
+                             ~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:581: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+            empty.setText("No files imported yet");
+                          ~~~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:605: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                openButton.setText("Open");
+                                   ~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:610: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                editButton.setText("Edit");
+                                   ~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:615: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                removeButton.setText("Remove");
+                                     ~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:659: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        sendCode.setText("Send login code");
+                         ~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:667: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                status.setText("Enter API ID, API hash, and phone number first.");
+                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:678: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        verifyCode.setText("Verify code");
+                           ~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:685: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                status.setText("Enter your phone number and Telegram code.");
+                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:693: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        verifyPassword.setText("Verify 2-step password");
+                               ~~~~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:699: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                status.setText("Enter your Telegram 2-step verification password.");
+                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:707: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        back.setText("Return to dashboard");
+                     ~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:751: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        cancelTask.setText("Cancel current task");
+                           ~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:786: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+            status.setText("Cancellation requested; the current transfer may finish first.");
+                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:798: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        start.setText("Start download");
+                      ~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:802: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                status.setText("A download task is already active on this screen.");
+                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:811: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                status.setText("Connect a Telegram account first.");
+                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:815: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                status.setText("Enter a Telegram message link.");
+                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:833: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                status.setText("Enter valid topic IDs and a delay from 3 to 3600 seconds.");
+                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:865: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        back.setText("Back to library");
+                     ~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:887: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        start.setText("Download to this device");
+                      ~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:899: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                status.setText("Enter a valid direct HTTP(S) URL.");
+                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:903: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+            status.setText("Connecting…");
+                           ~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:957: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        back.setText("Back to library");
+                     ~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:992: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        start.setText("Start Watch task");
+                      ~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:998: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                status.setText("Enter a Telegram source link.");
+                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:1016: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                status.setText("Enter valid topic IDs and a delay from 3 to 3600 seconds.");
+                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:1024: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                status.setText("Allow notifications, then tap Start Watch task again.");
+                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:1036: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+            status.setText("Filtered Watch task saved. It runs while the foreground service is active.");
+                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:1041: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        back.setText("Back to library");
+                     ~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:1130: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        status.setText("Connecting to Telegram…");
+                       ~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:1175: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                    status.setText("Telegram requires your 2-step password.");
+                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:1191: Warning: Do not concatenate text displayed with setText. Use resource string with placeholders. [SetTextI18n]
+                        status.setText("Saved to this device and " + parts[1]);
+                                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:1191: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                        status.setText("Saved to this device and " + parts[1]);
+                                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:1193: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+                        status.setText("Telegram message copied to destination.");
+                                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:1344: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        localButton.setText("Local network");
+                            ~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:1352: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        webButton.setText("Public server");
+                          ~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:1376: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+            autoDetect.setText("Auto-detect local server");
+                               ~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:1384: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        connect.setText("Connect");
+                        ~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:1401: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        localLibrary.setText("Continue to device library");
+                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:1531: Warning: String literal in setText can not be translated. Use Android resources instead. [SetTextI18n]
+        brand.setText("DESTINY");
+                      ~~~~~~~~~
+/workspaces/DestinyTgRestrict1/android/app/src/main/java/com/destinytg/device/MainActivity.java:1597: Warning: Do not concatenate text displayed with setText. Use resource string with placeholders. [SetTextI18n]
+        brand.setText("DESTINY TG\n" + activeLocalTab.toUpperCase(java.util.Locale.ROOT));
+                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "SetTextI18n":
+   When calling TextView#setText
+   * Never call Number#toString() to format numbers; it will not handle
+   fraction separators and locale-specific digits properly. Consider using
+   String#format with proper format specifications (%d or %f) instead.
+   * Do not pass a string literal (e.g. "Hello") to display text. Hardcoded
+   text can not be properly translated to other languages. Consider using
+   Android resource strings instead.
+   * Do not build messages by concatenating text chunks. Such messages can not
+   be properly translated.
+
+   https://developer.android.com/guide/topics/resources/localization.html
+
+0 errors, 68 warnings

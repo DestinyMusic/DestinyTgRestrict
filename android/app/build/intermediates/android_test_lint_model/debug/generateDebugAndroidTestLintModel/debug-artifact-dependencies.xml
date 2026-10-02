@@ -1,0 +1,11 @@
+<dependencies>
+  <compile
+      roots="__local_aars__:/home/codespace/.gradle/caches/modules-2/files-2.1/com.chaquo.python.runtime/chaquopy_java/16.1.0/8ae33fd5f914a0f029a1b670ed960b1a58dc7034/chaquopy_java-16.1.0.jar:unspecified@jar,:@@:app::debug">
+    <dependency
+        name="__local_aars__:/home/codespace/.gradle/caches/modules-2/files-2.1/com.chaquo.python.runtime/chaquopy_java/16.1.0/8ae33fd5f914a0f029a1b670ed960b1a58dc7034/chaquopy_java-16.1.0.jar:unspecified@jar"
+        simpleName="__local_aars__:/home/codespace/.gradle/caches/modules-2/files-2.1/com.chaquo.python.runtime/chaquopy_java/16.1.0/8ae33fd5f914a0f029a1b670ed960b1a58dc7034/chaquopy_java-16.1.0.jar"/>
+    <dependency
+        name=":@@:app::debug"
+        simpleName="artifacts::app"/>
+  </compile>
+</dependencies>

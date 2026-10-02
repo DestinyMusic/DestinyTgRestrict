@@ -31,14 +31,24 @@ public final class LocalTheaterActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setGravity(Gravity.CENTER);
-        root.setPadding(16, 16, 16, 16);
+        root.setPadding(dp(16), dp(12), dp(16), dp(16));
         root.setBackgroundColor(Color.BLACK);
+
+        TextView eyebrow = new TextView(this);
+        eyebrow.setText("LOCAL THEATER");
+        eyebrow.setTextColor(Color.rgb(56, 189, 248));
+        eyebrow.setTextSize(10);
+        eyebrow.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        root.addView(eyebrow, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView title = new TextView(this);
         title.setText(displayName == null ? "Now playing" : displayName);
-        title.setTextColor(Color.WHITE);
+        title.setTextColor(Color.rgb(241, 245, 249));
         title.setTextSize(18);
-        title.setGravity(Gravity.CENTER);
+        title.setMaxLines(1);
+        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        title.setGravity(Gravity.CENTER_VERTICAL);
         root.addView(title, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -59,14 +69,21 @@ public final class LocalTheaterActivity extends Activity {
                     ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
         } else if (mimeType.startsWith("audio/")) {
             TextView audioLabel = new TextView(this);
-            audioLabel.setText("Audio playback");
-            audioLabel.setTextColor(Color.LTGRAY);
+            audioLabel.setText("AUDIO  /  PLAYING FROM THIS DEVICE");
+            audioLabel.setTextColor(Color.rgb(148, 163, 184));
+            audioLabel.setTextSize(13);
             audioLabel.setGravity(Gravity.CENTER);
             root.addView(audioLabel, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
 
             Button playPause = new Button(this);
             playPause.setText("Preparing audio");
+                playPause.setTextColor(Color.rgb(7, 9, 13));
+                playPause.setTypeface(android.graphics.Typeface.DEFAULT,
+                    android.graphics.Typeface.BOLD);
+                playPause.setMinHeight(dp(50));
+                playPause.setBackgroundTintList(android.content.res.ColorStateList.valueOf(
+                    Color.rgb(56, 189, 248)));
             playPause.setEnabled(false);
             root.addView(playPause, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -107,6 +124,10 @@ public final class LocalTheaterActivity extends Activity {
         }
 
         setContentView(root);
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
     @Override

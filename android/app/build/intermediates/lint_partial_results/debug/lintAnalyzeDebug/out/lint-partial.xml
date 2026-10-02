@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<incidents format="6" by="lint 8.7.3" type="partial_results">
+    <map id="NotificationPermission">
+        <entry
+            name="source"
+            boolean="true"/>
+    </map>
+    <map id="UnsafeImplicitIntentLaunch">
+            <map id="actionsSent">
+                    <map id="android.intent.action.VIEW (used to start an activity)">
+                        <location id="0"
+                            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/destinytg/device/MainActivity.java"
+                            line="1220"
+                            column="29"
+                            startOffset="59924"
+                            endLine="1220"
+                            endColumn="59"
+                            endOffset="59954"/>
+                        <location id="1"
+                            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/destinytg/device/MainActivity.java"
+                            line="1327"
+                            column="27"
+                            startOffset="64519"
+                            endLine="1327"
+                            endColumn="62"
+                            endOffset="64554"/>
+                    </map>
+            </map>
+    </map>
+    <map id="UnsafeIntentLaunch">
+            <map id="unprotected">
+                <entry
+                    name="com.destinytg.device.MainActivity"
+                    boolean="true"/>
+            </map>
+    </map>
+    <map id="UnusedResources">
+        <entry
+            name="model"
+            string="color[app_background(U),app_surface(U),app_accent(U),app_text(U),app_muted(U)],drawable[tv_banner(U),app_icon(U)],style[AppTheme(U),AppButton(U)];7^2^1^0^4^8,8^1^3;;;"/>
+    </map>
+
+</incidents>

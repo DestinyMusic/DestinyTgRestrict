@@ -10,6 +10,24 @@ def is_protected(message):
     return bool(getattr(message, "has_protected_content", False)
                 or getattr(chat, "has_protected_content", False))
 
+def is_forward_restriction_error(error):
+    message = str(error).upper()
+    return "CHAT_FORWARDS_RESTRICTED" in message or "RESTRICTED" in message
+
+async def copy_or_fallback(message, copy_operation, fallback_operation,
+                           force_fallback=False):
+    if force_fallback or is_protected(message):
+        return await fallback_operation()
+    try:
+        copied = await copy_operation()
+    except Exception as error:
+        if not is_forward_restriction_error(error):
+            raise
+        return await fallback_operation()
+    if not copied:
+        raise RuntimeError("Telegram copy operation returned no result")
+    return copied
+
 
 def message_category(message):
     if message.text:
