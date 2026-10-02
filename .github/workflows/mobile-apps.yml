@@ -1,10 +1,6 @@
 name: Build mobile apps
 
 on:
-  push:
-    branches: [main, master]
-    tags: ["v*"]
-  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -61,13 +57,12 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  # The ios job has been temporarily removed from this file so the Android APK can publish independently. 
-
   github-release:
-    if: github.ref == 'refs/heads/main'
     needs: [android]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: release-assets
@@ -77,7 +72,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "main-${{ github.run_number }}" release-assets/* \
-            --title "Dev Build #${{ github.run_number }}" \
+          gh release create "manual-${{ github.run_number }}" release-assets/* \
+            --title "Manual Build #${{ github.run_number }}" \
             --generate-notes \
             --prerelease
