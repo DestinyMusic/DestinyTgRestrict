@@ -87,7 +87,7 @@ jobs:
           mkdir -p build/ios/Payload
           ditto build/ios/Build/Products/Release-iphoneos/DestinyDevice.app \
             build/ios/Payload/DestinyDevice.app
-          (cd build/ios && zip -qry ../../release-assets/Destiny-iOS-unsigned.ipa Payload)
+          (cd build/ios && zip -qry "$GITHUB_WORKSPACE/release-assets/Destiny-iOS-unsigned.ipa" Payload)
 
       - uses: actions/upload-artifact@v4
         with:
