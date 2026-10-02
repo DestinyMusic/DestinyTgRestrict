@@ -1,0 +1,7 @@
+<resources>
+    <color name="app_background">#081216</color>
+    <color name="app_surface">#102328</color>
+    <color name="app_accent">#43D6B1</color>
+    <color name="app_text">#F2F7F5</color>
+    <color name="app_muted">#9AAEAA</color>
+</resources>

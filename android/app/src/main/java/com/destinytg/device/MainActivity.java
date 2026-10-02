@@ -6,13 +6,19 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.net.Uri;
 import android.net.wifi.WifiManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
+import android.view.View;
 import android.view.ViewGroup;
+import android.webkit.WebResourceError;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -21,7 +27,10 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 import org.json.JSONObject;
@@ -45,8 +54,10 @@ import java.util.List;
 public class MainActivity extends Activity {
     private static final int FILE_CHOOSER_REQUEST = 41;
     private static final int LOCAL_FILE_REQUEST = 42;
-    private final int backgroundColor = Color.rgb(15, 23, 42);
-    private final int foregroundColor = Color.rgb(241, 245, 249);
+    private final int backgroundColor = Color.rgb(8, 18, 22);
+    private final int surfaceColor = Color.rgb(16, 35, 40);
+    private final int accentColor = Color.rgb(67, 214, 177);
+    private final int foregroundColor = Color.rgb(242, 247, 245);
     private static final String PREF_APP_MODE = "appMode";
     private static final String MODE_LOCAL = "LOCAL";
     private static final String MODE_WEB = "WEB";
@@ -55,8 +66,13 @@ public class MainActivity extends Activity {
     private LocalLibraryStore localLibrary;
     private LocalSecretsStore secretsStore;
     private boolean embeddedRuntimeReady;
+    private boolean dashboardShowing;
+    private LinearLayout root;
     private LinearLayout content;
+    private ScrollView localScrollView;
     private WebView webView;
+    private ProgressBar pageProgress;
+    private TextView pageError;
     private ValueCallback<Uri[]> fileChooserCallback;
     private String serverAddress = "";
     private String appMode = MODE_LOCAL;
@@ -79,13 +95,17 @@ public class MainActivity extends Activity {
         } catch (RuntimeException exception) {
             embeddedRuntimeReady = false;
         }
-        LinearLayout root = new LinearLayout(this);
+        root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(backgroundColor);
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        root.addView(content, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        content.setPadding(20, 24, 20, 28);
+        localScrollView = new ScrollView(this);
+        localScrollView.setFillViewport(true);
+        localScrollView.setClipToPadding(false);
+        localScrollView.addView(content, new ScrollView.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         setContentView(root);
 
         webView = new WebView(this);
@@ -98,14 +118,25 @@ public class MainActivity extends Activity {
     }
 
     private void showLocalLibrary() {
+        dashboardShowing = false;
+        showLocalSurface();
         content.removeAllViews();
-        content.setPadding(24, 24, 24, 24);
+        content.setPadding(20, 24, 20, 28);
 
         TextView title = new TextView(this);
-        title.setText("On-device library");
+        title.setText("Your library");
         title.setTextColor(foregroundColor);
-        title.setTextSize(24);
+        title.setTextSize(28);
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         content.addView(title, matchWrap());
+
+        TextView eyebrow = new TextView(this);
+        eyebrow.setText("DESTINY TG  /  ON DEVICE");
+        eyebrow.setTextColor(accentColor);
+        eyebrow.setTextSize(11);
+        LinearLayout.LayoutParams eyebrowParams = matchWrap();
+        eyebrowParams.bottomMargin = 8;
+        content.addView(eyebrow, 0, eyebrowParams);
 
         Button dashboardButton = new Button(this);
         dashboardButton.setText("Open server dashboard");
@@ -889,8 +920,36 @@ public class MainActivity extends Activity {
         settings.setDomStorageEnabled(true);
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setAllowFileAccess(false);
+        settings.setAllowContentAccess(true);
+        settings.setSupportZoom(false);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            settings.setSafeBrowsingEnabled(true);
+        }
         webView.setBackgroundColor(backgroundColor);
         webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                if (pageError != null) pageError.setVisibility(View.GONE);
+                if (pageProgress != null) {
+                    pageProgress.setProgress(0);
+                    pageProgress.setVisibility(View.VISIBLE);
+                }
+            }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                if (pageProgress != null) pageProgress.setVisibility(View.GONE);
+            }
+
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request,
+                                        WebResourceError error) {
+                if (request.isForMainFrame() && pageError != null) {
+                    pageError.setText("Dashboard unavailable\nCheck your server connection and tap to retry.");
+                    pageError.setVisibility(View.VISIBLE);
+                }
+            }
+
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri uri = request.getUrl();
@@ -903,6 +962,13 @@ public class MainActivity extends Activity {
             }
         });
         webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public void onProgressChanged(WebView view, int progress) {
+                if (pageProgress == null) return;
+                pageProgress.setProgress(progress);
+                pageProgress.setVisibility(progress >= 100 ? View.GONE : View.VISIBLE);
+            }
+
             @Override
             public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback,
                                              FileChooserParams params) {
@@ -944,30 +1010,39 @@ public class MainActivity extends Activity {
     }
 
     private void showSetup() {
+        dashboardShowing = false;
+        showLocalSurface();
         content.removeAllViews();
-        content.setPadding(24, 32, 24, 24);
+        content.setPadding(24, 32, 24, 32);
+
+        TextView eyebrow = new TextView(this);
+        eyebrow.setText("DESTINY TG  /  CONNECT");
+        eyebrow.setTextColor(accentColor);
+        eyebrow.setTextSize(11);
+        content.addView(eyebrow, matchWrap());
 
         TextView title = new TextView(this);
-        title.setText("Connect to Destiny TG");
+        title.setText("Your dashboard,\non every screen.");
         title.setTextColor(foregroundColor);
-        title.setTextSize(24);
+        title.setTextSize(30);
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         title.setGravity(Gravity.CENTER_VERTICAL);
-        content.addView(title, matchWrap());
+        LinearLayout.LayoutParams titleParams = matchWrap();
+        titleParams.topMargin = 12;
+        content.addView(title, titleParams);
 
         TextView description = new TextView(this);
-        description.setText(isLocalMode()
-                ? "Local mode: connect to your LAN server or auto-detect it on your local network."
-                : "Web mode: connect to a public or private web deployment.");
-        description.setTextColor(Color.LTGRAY);
-        description.setTextSize(16);
+        description.setText("Connect to your Destiny server to open the complete interactive dashboard. Your device library and media tools remain available offline.");
+        description.setTextColor(Color.rgb(154, 174, 170));
+        description.setTextSize(15);
         LinearLayout.LayoutParams descriptionParams = matchWrap();
-        descriptionParams.topMargin = 16;
+        descriptionParams.topMargin = 10;
         content.addView(description, descriptionParams);
 
         LinearLayout modeRow = new LinearLayout(this);
         modeRow.setOrientation(LinearLayout.HORIZONTAL);
         Button localButton = new Button(this);
-        localButton.setText("Local");
+        localButton.setText("Local network");
         localButton.setEnabled(!isLocalMode());
         localButton.setOnClickListener(view -> {
             appMode = MODE_LOCAL;
@@ -975,7 +1050,7 @@ public class MainActivity extends Activity {
             showSetup();
         });
         Button webButton = new Button(this);
-        webButton.setText("Web");
+        webButton.setText("Public server");
         webButton.setEnabled(isLocalMode());
         webButton.setOnClickListener(view -> {
             appMode = MODE_WEB;
@@ -988,6 +1063,8 @@ public class MainActivity extends Activity {
 
         EditText addressInput = new EditText(this);
         addressInput.setSingleLine(true);
+        addressInput.setTextColor(foregroundColor);
+        addressInput.setHintTextColor(Color.rgb(119, 143, 138));
         addressInput.setHint(isLocalMode() ? "http://192.168.1.20:8080" : "https://your-server.example");
         addressInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT
                 | android.text.InputType.TYPE_TEXT_VARIATION_URI);
@@ -1141,32 +1218,111 @@ public class MainActivity extends Activity {
     }
 
     private void showDashboard() {
-        content.removeAllViews();
-        content.setPadding(0, 0, 0, 0);
+        dashboardShowing = true;
+        root.removeAllViews();
 
         LinearLayout toolbar = new LinearLayout(this);
         toolbar.setGravity(Gravity.CENTER_VERTICAL);
-        toolbar.setPadding(8, 4, 8, 4);
-        Button server = new Button(this);
-        server.setText("Server");
-        server.setOnClickListener(view -> showSetup());
-        Button reload = new Button(this);
-        reload.setText("Reload");
-        reload.setOnClickListener(view -> webView.reload());
-        Button library = new Button(this);
-        library.setText("Device library");
-        library.setOnClickListener(view -> showLocalLibrary());
-        toolbar.addView(server, new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        toolbar.addView(library, new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        toolbar.addView(reload, new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        content.addView(toolbar, matchWrap());
-        if (webView.getParent() != null) ((ViewGroup) webView.getParent()).removeView(webView);
-        content.addView(webView, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        toolbar.setPadding(18, 6, 14, 6);
+        toolbar.setBackgroundColor(backgroundColor);
+
+        LinearLayout identity = new LinearLayout(this);
+        identity.setOrientation(LinearLayout.VERTICAL);
+        TextView brand = new TextView(this);
+        brand.setText("DESTINY");
+        brand.setTextColor(foregroundColor);
+        brand.setTextSize(16);
+        brand.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        TextView connection = new TextView(this);
+        connection.setText(Uri.parse(serverAddress).getHost());
+        connection.setTextColor(Color.rgb(154, 174, 170));
+        connection.setTextSize(11);
+        connection.setMaxLines(1);
+        connection.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        identity.addView(brand, matchWrap());
+        identity.addView(connection, matchWrap());
+        toolbar.addView(identity, new LinearLayout.LayoutParams(0,
+            ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        toolbar.addView(createToolbarAction("Library", view -> showLocalLibrary()),
+            toolbarActionParams());
+        toolbar.addView(createToolbarAction("Server", view -> showSetup()),
+            toolbarActionParams());
+        root.addView(toolbar, matchWrap());
+
+        pageProgress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        pageProgress.setMax(100);
+        pageProgress.setProgressTintList(android.content.res.ColorStateList.valueOf(accentColor));
+        pageProgress.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(surfaceColor));
+        pageProgress.setVisibility(View.VISIBLE);
+        root.addView(pageProgress, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(2)));
+
+        FrameLayout dashboardFrame = new FrameLayout(this);
+        dashboardFrame.setBackgroundColor(Color.BLACK);
+        if (webView.getParent() != null) {
+            ((ViewGroup) webView.getParent()).removeView(webView);
+        }
+        dashboardFrame.addView(webView, new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        pageError = new TextView(this);
+        pageError.setTextColor(foregroundColor);
+        pageError.setTextSize(16);
+        pageError.setGravity(Gravity.CENTER);
+        pageError.setPadding(dp(32), dp(24), dp(32), dp(24));
+        pageError.setBackgroundColor(backgroundColor);
+        pageError.setVisibility(View.GONE);
+        pageError.setFocusable(true);
+        pageError.setClickable(true);
+        pageError.setOnClickListener(view -> webView.reload());
+        dashboardFrame.addView(pageError, new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        root.addView(dashboardFrame, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
         webView.loadUrl(serverAddress);
+    }
+
+    private void showLocalSurface() {
+        if (localScrollView.getParent() == root) return;
+        root.removeAllViews();
+        if (localScrollView.getParent() != null) {
+            ((ViewGroup) localScrollView.getParent()).removeView(localScrollView);
+        }
+        root.addView(localScrollView, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+    }
+
+    private Button createToolbarAction(String label, View.OnClickListener listener) {
+        Button button = new Button(this);
+        button.setText(label);
+        button.setTextSize(12);
+        button.setTextColor(accentColor);
+        button.setAllCaps(false);
+        button.setMinHeight(dp(40));
+        button.setMinimumHeight(dp(40));
+        button.setPadding(dp(12), 0, dp(12), 0);
+        button.setBackground(new RippleDrawable(
+                android.content.res.ColorStateList.valueOf(Color.rgb(43, 68, 72)),
+                createRoundedBackground(surfaceColor, dp(10)), null));
+        button.setOnClickListener(listener);
+        return button;
+    }
+
+    private LinearLayout.LayoutParams toolbarActionParams() {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(42));
+        params.leftMargin = dp(8);
+        return params;
+    }
+
+    private GradientDrawable createRoundedBackground(int color, int radius) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(color);
+        drawable.setCornerRadius(radius);
+        return drawable;
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
     private LinearLayout.LayoutParams matchWrap() {
@@ -1211,7 +1367,7 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        if (webView != null && webView.canGoBack()) {
+        if (dashboardShowing && webView != null && webView.canGoBack()) {
             webView.goBack();
         } else {
             super.onBackPressed();
