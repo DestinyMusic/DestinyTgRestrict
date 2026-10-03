@@ -1,6 +1,8 @@
 plugins {
     id 'com.android.application'
     id 'com.chaquo.python'
+    id 'org.jetbrains.kotlin.android'
+    id 'org.jetbrains.kotlin.plugin.compose'
 }
 
 android {
@@ -66,6 +68,19 @@ android {
 
     sourceSets.main.python.srcDirs = ['src/main/python']
 
+    buildFeatures {
+        compose true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
     testOptions {
         unitTests.returnDefaultValues = true
     }
@@ -77,5 +92,11 @@ android {
 }
 
 dependencies {
+    implementation platform('androidx.compose:compose-bom:2025.01.00')
+    implementation 'androidx.activity:activity-compose:1.10.0'
+    implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.compose.material:material-icons-extended'
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.ui:ui-tooling-preview'
     testImplementation 'junit:junit:4.13.2'
 }

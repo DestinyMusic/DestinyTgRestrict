@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <meta name="color-scheme" content="dark">
+    <title>Destiny Local Theater</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            --ink: #091114;
+            --glass: rgba(26, 42, 45, .78);
+            --line: rgba(116, 158, 154, .34);
+            --text: #f0f6f3;
+            --muted: #a1b2ae;
+            --mint: #6be0cc;
+            --coral: #ff987f;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100dvh;
+            color: var(--text);
+            background: linear-gradient(145deg, #162b2d, var(--ink) 52%, #211a19);
+            font: 14px system-ui, sans-serif;
+        }
+        .shell { min-height: 100dvh; display: flex; flex-direction: column; gap: 12px; padding: 14px; }
+        header { display: flex; align-items: center; gap: 12px; min-width: 0; }
+        .mark { color: var(--mint); font-size: 10px; font-weight: 800; letter-spacing: 1.2px; }
+        h1 { margin: 3px 0 0; font-size: 17px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .source { margin-left: auto; color: var(--muted); font-size: 10px; white-space: nowrap; }
+        .stage {
+            position: relative;
+            flex: 1 1 auto;
+            min-height: 180px;
+            display: grid;
+            place-items: center;
+            overflow: hidden;
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            background: #030607;
+            box-shadow: 0 18px 48px rgba(0, 0, 0, .32);
+        }
+        video, canvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        video { z-index: 2; background: #030607; }
+        canvas { z-index: 3; display: none; }
+        #subtitle {
+            position: absolute;
+            z-index: 4;
+            left: 5%;
+            right: 5%;
+            bottom: 8%;
+            text-align: center;
+            font-size: 18px;
+            font-weight: 650;
+            line-height: 1.35;
+            color: white;
+            text-shadow: 0 2px 4px #000, 0 0 10px #000;
+            pointer-events: none;
+        }
+        .notice { position: absolute; z-index: 5; inset: auto 12px 12px; text-align: center; color: var(--coral); font-size: 12px; pointer-events: none; }
+        .glass {
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            background: var(--glass);
+            box-shadow: 0 12px 32px rgba(0, 0, 0, .16);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+        }
+        .transport { padding: 10px 12px; display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 10px; }
+        button, select, input {
+            min-height: 42px;
+            color: var(--text);
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            background: rgba(11, 22, 24, .84);
+            font: inherit;
+        }
+        button { padding: 0 13px; color: var(--mint); font-weight: 650; }
+        button:active { background: rgba(107, 224, 204, .2); }
+        #play { min-width: 50px; color: var(--ink); border-color: transparent; background: var(--mint); font-size: 17px; }
+        #seek { width: 100%; accent-color: var(--mint); }
+        .settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 12px; }
+        label { display: grid; gap: 5px; color: var(--muted); font-size: 10px; font-weight: 700; }
+        select { width: 100%; padding: 0 9px; }
+        .subrow { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+        input { width: 100%; padding: 0 10px; }
+        .hint { grid-column: 1 / -1; color: var(--muted); font-size: 11px; line-height: 1.4; }
+        @media (min-width: 760px) {
+            .shell { max-width: 1120px; width: 100%; margin: auto; padding: 22px; }
+            .stage { min-height: 300px; }
+            .settings { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        }
+    </style>
+</head>
+<body>
+<div class="shell">
+    <header>
+        <div>
+            <div class="mark">DESTINY / LOCAL THEATER</div>
+            <h1 id="title">Opening media</h1>
+        </div>
+        <div id="source-kind" class="source">DEVICE</div>
+        <button id="back-to-player" aria-label="Return to standard player">Player</button>
+    </header>
+    <main class="stage" id="stage">
+        <video id="video" playsinline webkit-playsinline preload="metadata"></video>
+        <canvas id="gl-canvas"></canvas>
+        <div id="subtitle"></div>
+        <div id="notice" class="notice"></div>
+    </main>
+    <section class="transport glass">
+        <button id="play" aria-label="Play or pause">Play</button>
+        <input id="seek" type="range" min="0" max="1000" value="0" aria-label="Seek">
+        <span id="clock" class="source">00:00 / 00:00</span>
+        <select id="speed" aria-label="Playback speed">
+            <option value="0.5">0.5x</option><option value="0.75">0.75x</option>
+            <option value="1" selected>1.0x</option><option value="1.25">1.25x</option>
+            <option value="1.5">1.5x</option><option value="2">2.0x</option>
+        </select>
+    </section>
+    <section class="settings glass">
+        <label>3D INPUT
+            <select id="input-mode">
+                <option value="none">2D / None</option>
+                <option value="lr">Left / Right</option>
+                <option value="tb">Top / Bottom</option>
+                <option value="ci">Column Interleaved</option>
+                <option value="ri">Row Interleaved</option>
+            </select>
+        </label>
+        <label>3D OUTPUT
+            <select id="output-mode">
+                <option value="rc" selected>Red / Cyan</option>
+                <option value="gm">Green / Magenta</option>
+                <option value="ba">Blue / Amber</option>
+                <option value="vr">VR Side-by-Side</option>
+                <option value="2d">2D</option>
+            </select>
+        </label>
+        <label>STEREO ORDER
+            <select id="eye-order">
+                <option value="left">Left eye first</option>
+                <option value="right">Right eye first</option>
+            </select>
+        </label>
+        <label>SUBTITLE SIZE
+            <select id="subtitle-size">
+                <option value="16">Small</option><option value="18" selected>Medium</option>
+                <option value="23">Large</option><option value="28">Extra large</option>
+            </select>
+        </label>
+        <div class="subrow">
+            <input id="subtitle-url" type="url" placeholder="Optional WebVTT subtitle URL">
+            <button id="load-subtitle">Load subtitles</button>
+        </div>
+        <div class="hint">Playback, subtitle rendering, and 3D conversion run on this device. Media is served to the player through a private loopback stream.</div>
+    </section>
+</div>
+<script>
+(() => {
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('gl-canvas');
+    const stage = document.getElementById('stage');
+    const notice = document.getElementById('notice');
+    const subtitle = document.getElementById('subtitle');
+    const inputSelect = document.getElementById('input-mode');
+    const outputSelect = document.getElementById('output-mode');
+    let sourceUrl = '';
+    let inputMode = 'none';
+    let outputMode = 'rc';
+    let rightFirst = false;
+    let gl = null;
+    let program = null;
+    let texture = null;
+    let subtitleCues = [];
+
+    const vertexSource = `
+        attribute vec2 a_position;
+        varying vec2 v_uv;
+        void main() {
+            v_uv = (a_position + 1.0) * 0.5;
+            v_uv.y = 1.0 - v_uv.y;
+            gl_Position = vec4(a_position, 0.0, 1.0);
+        }
+    `;
+    const fragmentSource = `
+        precision mediump float;
+        uniform sampler2D u_image;
+        uniform int u_input;
+        uniform int u_output;
+        uniform bool u_swap;
+        varying vec2 v_uv;
+        void main() {
+            vec2 base_uv = v_uv;
+            bool left_eye = true;
+            if (u_output == 3) {
+                if (v_uv.x < 0.5) {
+                    base_uv = vec2(v_uv.x * 2.0, v_uv.y);
+                    left_eye = true;
+                } else {
+                    base_uv = vec2((v_uv.x - 0.5) * 2.0, v_uv.y);
+                    left_eye = false;
+                }
+            }
+            vec2 uv_left = base_uv;
+            vec2 uv_right = base_uv;
+            if (u_input == 1) {
+                uv_left = vec2(base_uv.x * 0.5, base_uv.y);
+                uv_right = vec2(0.5 + base_uv.x * 0.5, base_uv.y);
+            } else if (u_input == 2) {
+                uv_left = vec2(base_uv.x, base_uv.y * 0.5);
+                uv_right = vec2(base_uv.x, 0.5 + base_uv.y * 0.5);
+            } else if (u_input == 3) {
+                if (mod(gl_FragCoord.x, 2.0) > 0.5) uv_left = uv_right;
+                else uv_right = uv_left;
+            } else if (u_input == 4) {
+                if (mod(gl_FragCoord.y, 2.0) > 0.5) uv_left = uv_right;
+                else uv_right = uv_left;
+            }
+            if (u_swap) {
+                vec2 swap_uv = uv_left;
+                uv_left = uv_right;
+                uv_right = swap_uv;
+            }
+            vec4 left_color = texture2D(u_image, uv_left);
+            vec4 right_color = texture2D(u_image, uv_right);
+            if (u_input == 0 || u_output == 4) gl_FragColor = left_color;
+            else if (u_output == 3) gl_FragColor = left_eye ? left_color : right_color;
+            else if (u_output == 0) gl_FragColor = vec4(left_color.r, right_color.g, right_color.b, 1.0);
+            else if (u_output == 1) gl_FragColor = vec4(right_color.r, left_color.g, right_color.b, 1.0);
+            else gl_FragColor = vec4(right_color.r, right_color.g, left_color.b, 1.0);
+        }
+    `;
+
+    function compile(type, source) {
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            throw new Error(gl.getShaderInfoLog(shader) || 'Shader compilation failed');
+        }
+        return shader;
+    }
+
+    function initGl() {
+        gl = canvas.getContext('webgl', { alpha: false, antialias: true });
+        if (!gl) throw new Error('WebGL is unavailable on this device');
+        program = gl.createProgram();
+        gl.attachShader(program, compile(gl.VERTEX_SHADER, vertexSource));
+        gl.attachShader(program, compile(gl.FRAGMENT_SHADER, fragmentSource));
+        gl.linkProgram(program);
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+            throw new Error(gl.getProgramInfoLog(program) || '3D pipeline could not start');
+        }
+        gl.useProgram(program);
+        const buffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+            -1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1
+        ]), gl.STATIC_DRAW);
+        const position = gl.getAttribLocation(program, 'a_position');
+        gl.enableVertexAttribArray(position);
+        gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+        texture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        requestAnimationFrame(renderFrame);
+    }
+
+    function renderFrame() {
+        if (gl && program && texture && inputMode !== 'none'
+            && video.readyState >= video.HAVE_CURRENT_DATA) {
+            const ratio = window.devicePixelRatio || 1;
+            const width = Math.max(1, Math.floor(stage.clientWidth * ratio));
+            const height = Math.max(1, Math.floor(stage.clientHeight * ratio));
+            if (canvas.width !== width || canvas.height !== height) {
+                canvas.width = width;
+                canvas.height = height;
+            }
+            gl.viewport(0, 0, width, height);
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            try {
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA,
+                    gl.UNSIGNED_BYTE, video);
+                gl.uniform1i(gl.getUniformLocation(program, 'u_input'),
+                    ({ none: 0, lr: 1, tb: 2, ci: 3, ri: 4 })[inputMode]);
+                gl.uniform1i(gl.getUniformLocation(program, 'u_output'),
+                    ({ rc: 0, gm: 1, ba: 2, vr: 3, '2d': 4 })[outputMode]);
+                gl.uniform1i(gl.getUniformLocation(program, 'u_swap'), rightFirst ? 1 : 0);
+                gl.drawArrays(gl.TRIANGLES, 0, 6);
+            } catch (error) {
+                notice.textContent = 'This source blocks local 3D texture access. 2D playback is still available.';
+                setInputMode('none');
+            }
+        }
+        requestAnimationFrame(renderFrame);
+    }
+
+    function setInputMode(value) {
+        inputMode = value;
+        video.style.opacity = value === 'none' ? '1' : '0.01';
+        canvas.style.display = value === 'none' ? 'none' : 'block';
+        if (value !== 'none' && !gl) {
+            try { initGl(); }
+            catch (error) {
+                notice.textContent = error.message;
+                inputMode = 'none';
+                inputSelect.value = 'none';
+                video.style.opacity = '1';
+                canvas.style.display = 'none';
+            }
+        }
+    }
+
+    function formatTime(seconds) {
+        if (!Number.isFinite(seconds)) return '00:00';
+        const minutes = Math.floor(seconds / 60);
+        const remainder = Math.floor(seconds % 60);
+        return `${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`;
+    }
+
+    function renderSubtitle() {
+        const time = video.currentTime || 0;
+        const cue = subtitleCues.find(item => time >= item.start && time <= item.end);
+        subtitle.textContent = cue ? cue.text : '';
+    }
+
+    window.loadMedia = (url, title, sourceKind) => {
+        sourceUrl = url;
+        document.getElementById('title').textContent = title || 'Now playing';
+        document.getElementById('source-kind').textContent = sourceKind || 'DEVICE';
+        video.crossOrigin = 'anonymous';
+        video.src = url;
+        video.load();
+        video.play().catch(() => {});
+    };
+
+    inputSelect.addEventListener('change', () => setInputMode(inputSelect.value));
+    outputSelect.addEventListener('change', () => { outputMode = outputSelect.value; });
+    document.getElementById('eye-order').addEventListener('change', event => {
+        rightFirst = event.target.value === 'right';
+    });
+    document.getElementById('subtitle-size').addEventListener('change', event => {
+        subtitle.style.fontSize = `${event.target.value}px`;
+    });
+    document.getElementById('play').addEventListener('click', () => {
+        if (video.paused) video.play().catch(() => {});
+        else video.pause();
+    });
+    document.getElementById('back-to-player').addEventListener('click', () => {
+        if (window.Android && typeof Android.backToPlayer === 'function') Android.backToPlayer();
+    });
+    document.getElementById('speed').addEventListener('change', event => {
+        video.playbackRate = Number(event.target.value) || 1;
+    });
+    document.getElementById('seek').addEventListener('input', event => {
+        if (Number.isFinite(video.duration)) {
+            video.currentTime = (Number(event.target.value) / 1000) * video.duration;
+        }
+    });
+    video.addEventListener('timeupdate', () => {
+        if (Number.isFinite(video.duration)) {
+            document.getElementById('seek').value = String(video.currentTime / video.duration * 1000);
+        }
+        document.getElementById('clock').textContent =
+            `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
+        renderSubtitle();
+    });
+    video.addEventListener('play', () => { document.getElementById('play').textContent = 'Pause'; });
+    video.addEventListener('pause', () => { document.getElementById('play').textContent = 'Play'; });
+    video.addEventListener('error', () => {
+        notice.textContent = 'This media URL could not be played by the device decoder.';
+    });
+    document.getElementById('load-subtitle').addEventListener('click', async () => {
+        const url = document.getElementById('subtitle-url').value.trim();
+        if (!url) return;
+        try {
+            const text = await fetch(url).then(response => {
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                return response.text();
+            });
+            subtitleCues = [...text.matchAll(/(\d{2}):(\d{2}):(\d{2})[.,](\d{3})\s+-->\s+(\d{2}):(\d{2}):(\d{2})[.,](\d{3})\s*\n([\s\S]*?)(?=\n\s*\n|$)/g)]
+                .map(match => ({
+                    start: (+match[1] * 3600) + (+match[2] * 60) + (+match[3]) + (+match[4] / 1000),
+                    end: (+match[5] * 3600) + (+match[6] * 60) + (+match[7]) + (+match[8] / 1000),
+                    text: match[9].replace(/<[^>]*>/g, '').trim()
+                }));
+            notice.textContent = `Loaded ${subtitleCues.length} subtitle cues`;
+        } catch (error) {
+            notice.textContent = `Subtitle load failed: ${error.message}`;
+        }
+    });
+})();
+</script>
+</body>
+</html>
