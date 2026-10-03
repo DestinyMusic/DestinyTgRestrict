@@ -121,6 +121,7 @@ public class MainActivity extends Activity {
         } else {
             showDashboard();
         }
+        if (isLocalMode()) resumeInterruptedDownloads();
     }
 
     private void showLocalHome() {
@@ -413,6 +414,72 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams serverParams = matchWrap();
         serverParams.topMargin = dp(14);
         content.addView(server, serverParams);
+
+        addSectionTitle("Worker bot pools", content);
+        content.addView(localLabel("Use separate Telegram bots for media streams and task uploads. "
+                + "Tokens are encrypted in this app and are never sent to a Destiny server.",
+                mutedColor), matchWrap());
+        EditText streamTokens = new EditText(this);
+        streamTokens.setHint("Stream/editor bot tokens, one per line");
+        streamTokens.setMinLines(2);
+        streamTokens.setGravity(Gravity.TOP | Gravity.START);
+        streamTokens.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        streamTokens.setText(secretsStore.get("stream_worker_tokens"));
+        styleInput(streamTokens);
+        LinearLayout.LayoutParams streamTokenParams = matchWrap();
+        streamTokenParams.topMargin = dp(10);
+        content.addView(streamTokens, streamTokenParams);
+
+        EditText taskTokens = new EditText(this);
+        taskTokens.setHint("Task/watcher bot tokens, one per line");
+        taskTokens.setMinLines(2);
+        taskTokens.setGravity(Gravity.TOP | Gravity.START);
+        taskTokens.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        taskTokens.setText(secretsStore.get("task_worker_tokens"));
+        styleInput(taskTokens);
+        LinearLayout.LayoutParams taskTokenParams = matchWrap();
+        taskTokenParams.topMargin = dp(8);
+        content.addView(taskTokens, taskTokenParams);
+
+        TextView workerStatus = localLabel("Worker pools are managed by this device.", mutedColor);
+        LinearLayout.LayoutParams workerStatusParams = matchWrap();
+        workerStatusParams.topMargin = dp(8);
+        content.addView(workerStatus, workerStatusParams);
+        Button saveWorkers = new Button(this);
+        saveWorkers.setText("Save and connect worker bots");
+        stylePrimaryButton(saveWorkers);
+        saveWorkers.setOnClickListener(view -> {
+            String apiId = secretsStore.get("telegram_api_id");
+            String apiHash = secretsStore.get("telegram_api_hash");
+            if (apiId == null || apiHash == null) {
+                workerStatus.setText("Connect Telegram before configuring worker bots.");
+                return;
+            }
+            String streamValues = streamTokens.getText().toString().trim();
+            String taskValues = taskTokens.getText().toString().trim();
+            secretsStore.put("stream_worker_tokens", streamValues);
+            secretsStore.put("task_worker_tokens", taskValues);
+            workerStatus.setText("Connecting worker bots…");
+            new Thread(() -> {
+                String result;
+                try {
+                    result = Python.getInstance().getModule("destiny_runtime")
+                            .callAttr("configure_worker_pools", apiId, apiHash,
+                                    streamValues, taskValues).toString();
+                } catch (Exception exception) {
+                    result = "Worker setup failed: " + exception.getMessage();
+                }
+                String workerResult = result;
+                new Handler(Looper.getMainLooper()).post(() -> workerStatus.setText(workerResult));
+            }, "destiny-configure-workers").start();
+        });
+        LinearLayout.LayoutParams saveWorkersParams = matchWrap();
+        saveWorkersParams.topMargin = dp(8);
+        content.addView(saveWorkers, saveWorkersParams);
     }
 
         private void showLocalTools() {
@@ -778,6 +845,16 @@ public class MainActivity extends Activity {
                         // The atomic progress snapshot may be replaced during this read.
                     }
                 }
+                File checkpointFile = new File(new File(getFilesDir(), "tasks"),
+                        activeTaskId[0] + ".checkpoint");
+                if (checkpointFile.isFile()) {
+                    try (BufferedReader reader = new BufferedReader(new FileReader(checkpointFile))) {
+                        localLibrary.updateTaskCheckpoint(activeTaskId[0],
+                                Long.parseLong(reader.readLine()));
+                    } catch (Exception ignored) {
+                        // The checkpoint is replaced atomically after each completed message.
+                    }
+                }
                 consumeTaskEvents(activeTaskId[0], taskEventOffset);
                 progressHandler.postDelayed(this, 750);
             }
@@ -839,8 +916,18 @@ public class MainActivity extends Activity {
                 return;
             }
             String label = messageLink + (first.isEmpty() ? "" : "  IDs " + first + "-"
-                    + (last.isEmpty() ? first : last));
-                long taskId = localLibrary.addTask("DOWNLOAD", label);
+                + (last.isEmpty() ? first : last));
+            String[] downloadArgs = new String[]{apiId, apiHash, session, messageLink,
+                first, last, target.isEmpty() ? "me" : target,
+                mediaTypes.getText().toString().trim(),
+                includeKeywords.getText().toString().trim(),
+                excludeKeywords.getText().toString().trim(), String.valueOf(delaySeconds),
+                String.valueOf(sourceThreadId), String.valueOf(destinationThreadId),
+                cleanupKeywords.getText().toString().trim(), "", ""};
+            JSONArray savedRequest = new JSONArray();
+            for (int index = 3; index <= 13; index++) savedRequest.put(downloadArgs[index]);
+            long taskId = localLibrary.addTask("DOWNLOAD", label, savedRequest.toString());
+            downloadArgs[14] = String.valueOf(taskId);
             activeTaskId[0] = taskId;
             taskEventOffset[0] = 0L;
             taskFinished[0] = false;
@@ -848,13 +935,7 @@ public class MainActivity extends Activity {
             start.setEnabled(false);
             cancelTask.setEnabled(true);
             progressHandler.post(progressPoll);
-            runPython("download_messages", new String[]{apiId, apiHash, session, messageLink,
-                    first, last, target.isEmpty() ? "me" : target,
-                    mediaTypes.getText().toString().trim(),
-                    includeKeywords.getText().toString().trim(),
-                    excludeKeywords.getText().toString().trim(), String.valueOf(delaySeconds),
-                    String.valueOf(sourceThreadId), String.valueOf(destinationThreadId),
-                    cleanupKeywords.getText().toString().trim(), String.valueOf(taskId)},
+                runPython("download_messages", downloadArgs,
                     status, "Download task finished.", taskId, () -> {
                         consumeTaskEvents(taskId, taskEventOffset);
                         taskFinished[0] = true;
@@ -1228,6 +1309,105 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void resumeInterruptedDownloads() {
+        String apiId = secretsStore.get("telegram_api_id");
+        String apiHash = secretsStore.get("telegram_api_hash");
+        String session = secretsStore.get("telegram_session");
+        if (apiId == null || apiHash == null || session == null || !embeddedRuntimeReady) return;
+
+        ArrayList<String[]> pending = new ArrayList<>();
+        Cursor tasks = localLibrary.getInterruptedDownloads();
+        try {
+            while (tasks.moveToNext()) {
+                try {
+                    JSONArray request = new JSONArray(tasks.getString(1));
+                    if (request.length() != 11) continue;
+                    long taskId = tasks.getLong(0);
+                    String[] args = new String[16];
+                    args[0] = apiId;
+                    args[1] = apiHash;
+                    args[2] = session;
+                    for (int index = 0; index < request.length(); index++) {
+                        args[index + 3] = request.getString(index);
+                    }
+                    args[14] = String.valueOf(taskId);
+                    long checkpoint = tasks.getLong(2);
+                    File checkpointFile = new File(new File(getFilesDir(), "tasks"),
+                            taskId + ".checkpoint");
+                    if (checkpointFile.isFile()) {
+                        try (BufferedReader reader = new BufferedReader(
+                                new FileReader(checkpointFile))) {
+                            checkpoint = Math.max(checkpoint, Long.parseLong(reader.readLine()));
+                        } catch (Exception ignored) {
+                            // Keep the last checkpoint committed to SQLite.
+                        }
+                    }
+                    args[15] = String.valueOf(checkpoint);
+                    pending.add(args);
+                    localLibrary.updateTask(taskId, "RUNNING", "Resuming after interruption");
+                } catch (Exception invalidTask) {
+                    localLibrary.updateTask(tasks.getLong(0), "FAILED",
+                            "Saved task settings could not be restored");
+                }
+            }
+        } finally {
+            tasks.close();
+        }
+        if (pending.isEmpty()) return;
+
+        new Thread(() -> {
+            for (String[] args : pending) {
+                long taskId = Long.parseLong(args[14]);
+                try {
+                    String response = Python.getInstance().getModule("destiny_runtime")
+                            .callAttr("download_messages", (Object[]) args).toString();
+                    if (!response.contains("TASK_SUMMARY|")) {
+                        localLibrary.updateTask(taskId, "INTERRUPTED", response);
+                        continue;
+                    }
+                    consumeTaskEvents(taskId, new long[]{Long.MAX_VALUE});
+                    localLibrary.updateTask(taskId, taskSummaryState(response),
+                            response.substring(response.indexOf("TASK_SUMMARY|")
+                                    + "TASK_SUMMARY|".length()));
+                    deleteTaskProgressFiles(taskId);
+                } catch (Exception exception) {
+                    localLibrary.updateTask(taskId, "INTERRUPTED",
+                            "Will retry when the app is opened: " + exception.getMessage());
+                }
+            }
+        }, "destiny-resume-downloads").start();
+    }
+
+    private String taskSummaryState(String response) {
+        String summary = response.substring(response.indexOf("TASK_SUMMARY|")
+                + "TASK_SUMMARY|".length());
+        long downloaded = 0;
+        long failed = 0;
+        boolean cancelled = false;
+        for (String value : summary.split(",")) {
+            String[] pair = value.split("=", 2);
+            if (pair.length != 2) continue;
+            try {
+                if ("downloaded".equals(pair[0])) downloaded = Long.parseLong(pair[1]);
+                if ("failed".equals(pair[0])) failed = Long.parseLong(pair[1]);
+                if ("cancelled".equals(pair[0])) cancelled = "1".equals(pair[1]);
+            } catch (NumberFormatException ignored) {
+                // Keep the summary state conservative if its counters are malformed.
+            }
+        }
+        if (cancelled) return "CANCELLED";
+        if (failed > 0) return downloaded > 0 ? "PARTIAL" : "FAILED";
+        return "COMPLETE";
+    }
+
+    private void deleteTaskProgressFiles(long taskId) {
+        File taskDirectory = new File(getFilesDir(), "tasks");
+        new File(taskDirectory, taskId + ".txt").delete();
+        new File(taskDirectory, taskId + ".checkpoint").delete();
+        new File(taskDirectory, taskId + ".checkpoint.tmp").delete();
+        new File(taskDirectory, taskId + ".jsonl").delete();
+    }
+
     private void runPython(String function, String[] args, TextView status, String successMessage,
                            long taskId) {
         runPython(function, args, status, successMessage, taskId, null);
@@ -1268,6 +1448,7 @@ public class MainActivity extends Activity {
                         consumeTaskEvents(taskId, new long[]{Long.MAX_VALUE});
                         localLibrary.updateTask(taskId, taskState, summary);
                         new File(new File(getFilesDir(), "tasks"), taskId + ".txt").delete();
+                        new File(new File(getFilesDir(), "tasks"), taskId + ".checkpoint").delete();
                         new File(new File(getFilesDir(), "tasks"), taskId + ".jsonl").delete();
                     }
                     status.setText(summary);
@@ -1303,8 +1484,7 @@ public class MainActivity extends Activity {
                     return;
                 }
                 if (taskId > 0) {
-                    localLibrary.updateTask(taskId, "FAILED", response);
-                    new File(new File(getFilesDir(), "tasks"), taskId + ".txt").delete();
+                    localLibrary.updateTask(taskId, "INTERRUPTED", response);
                 }
                 status.setText(response);
                 if (completion != null) completion.run();

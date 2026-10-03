@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.destinytg.device.LocalServerDiscoveryTest" tests="2" skipped="0" failures="0" errors="0" timestamp="2026-10-02T10:44:43" hostname="codespaces-45ec9c" time="0.069">
+<testsuite name="com.destinytg.device.LocalServerDiscoveryTest" tests="2" skipped="0" failures="0" errors="0" timestamp="2026-10-02T16:42:35" hostname="codespaces-5e363b" time="0.076">
   <properties/>
-  <testcase name="buildCandidateAddressesIncludesLocalFallbacks" classname="com.destinytg.device.LocalServerDiscoveryTest" time="0.043"/>
-  <testcase name="buildCandidateAddressesAcceptsPlainHostValue" classname="com.destinytg.device.LocalServerDiscoveryTest" time="0.013"/>
+  <testcase name="buildCandidateAddressesIncludesLocalFallbacks" classname="com.destinytg.device.LocalServerDiscoveryTest" time="0.062"/>
+  <testcase name="buildCandidateAddressesAcceptsPlainHostValue" classname="com.destinytg.device.LocalServerDiscoveryTest" time="0.006"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

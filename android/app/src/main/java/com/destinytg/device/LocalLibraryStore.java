@@ -8,7 +8,7 @@ import android.database.sqlite.SQLiteOpenHelper;
 
 final class LocalLibraryStore extends SQLiteOpenHelper {
     private static final String DATABASE_NAME = "destiny-local.db";
-    private static final int DATABASE_VERSION = 6;
+    private static final int DATABASE_VERSION = 7;
     private static final String TABLE_FILES = "local_files";
     private static final String TABLE_WATCHERS = "local_watchers";
     private static final String TABLE_TASKS = "local_tasks";
@@ -56,6 +56,8 @@ final class LocalLibraryStore extends SQLiteOpenHelper {
                 + "label TEXT NOT NULL, "
                 + "state TEXT NOT NULL, "
                 + "detail TEXT NOT NULL, "
+                + "request_json TEXT NOT NULL DEFAULT '', "
+                + "last_message_id INTEGER NOT NULL DEFAULT 0, "
                 + "created_at INTEGER NOT NULL)");
     }
 
@@ -89,6 +91,12 @@ final class LocalLibraryStore extends SQLiteOpenHelper {
         if (oldVersion == 5) {
             database.execSQL("ALTER TABLE " + TABLE_WATCHERS
                 + " ADD COLUMN stats_json TEXT NOT NULL DEFAULT '{}'");
+        }
+        if (oldVersion >= 3 && oldVersion < 7) {
+            database.execSQL("ALTER TABLE " + TABLE_TASKS
+                + " ADD COLUMN request_json TEXT NOT NULL DEFAULT ''");
+            database.execSQL("ALTER TABLE " + TABLE_TASKS
+                + " ADD COLUMN last_message_id INTEGER NOT NULL DEFAULT 0");
         }
     }
 
@@ -186,11 +194,16 @@ final class LocalLibraryStore extends SQLiteOpenHelper {
     }
 
     long addTask(String kind, String label) {
+        return addTask(kind, label, "");
+    }
+
+    long addTask(String kind, String label, String requestJson) {
         ContentValues values = new ContentValues();
         values.put("kind", kind);
         values.put("label", label);
         values.put("state", "RUNNING");
         values.put("detail", "Task started on this device");
+        values.put("request_json", requestJson);
         values.put("created_at", System.currentTimeMillis());
         return getWritableDatabase().insert(TABLE_TASKS, null, values);
     }
@@ -203,17 +216,35 @@ final class LocalLibraryStore extends SQLiteOpenHelper {
                 new String[]{String.valueOf(id)});
     }
 
+    void updateTaskCheckpoint(long id, long messageId) {
+        ContentValues values = new ContentValues();
+        values.put("last_message_id", messageId);
+        getWritableDatabase().update(TABLE_TASKS, values, "id = ?",
+                new String[]{String.valueOf(id)});
+    }
+
     void markInterruptedTasks() {
         ContentValues values = new ContentValues();
         values.put("state", "INTERRUPTED");
         values.put("detail", "App stopped before this task completed");
         getWritableDatabase().update(TABLE_TASKS, values, "state IN (?, ?)",
-                new String[]{"RUNNING", "CANCEL_REQUESTED"});
+            new String[]{"RUNNING", "INTERRUPTED"});
+        values.put("state", "CANCELLED");
+        values.put("detail", "Task was cancelled before the app stopped");
+        getWritableDatabase().update(TABLE_TASKS, values, "state = ?",
+            new String[]{"CANCEL_REQUESTED"});
     }
 
     Cursor getTasks() {
         return getReadableDatabase().query(TABLE_TASKS,
                 new String[]{"id", "kind", "label", "state", "detail", "created_at"},
                 null, null, null, null, "created_at DESC", "20");
+    }
+
+    Cursor getInterruptedDownloads() {
+        return getReadableDatabase().query(TABLE_TASKS,
+                new String[]{"id", "request_json", "last_message_id"},
+                "kind = ? AND state = ? AND request_json != ''",
+                new String[]{"DOWNLOAD", "INTERRUPTED"}, null, null, "created_at ASC");
     }
 }
