@@ -56,6 +56,18 @@ public final class LocalWatcherService extends Service {
             Python runtime = Python.getInstance();
             runtime.getModule("destiny_runtime").callAttr("set_storage_directory",
                     getFilesDir().getAbsolutePath());
+            String streamTokens = secrets.get("stream_worker_tokens");
+            String taskTokens = secrets.get("task_worker_tokens");
+            if ((streamTokens != null && !streamTokens.trim().isEmpty())
+                    || (taskTokens != null && !taskTokens.trim().isEmpty())) {
+                try {
+                    runtime.getModule("destiny_runtime").callAttr("configure_worker_pools",
+                            apiId, apiHash, streamTokens == null ? "" : streamTokens,
+                            taskTokens == null ? "" : taskTokens);
+                } catch (Exception ignored) {
+                    // Watchers can fall back to the authenticated user session.
+                }
+            }
             LocalLibraryStore store = new LocalLibraryStore(this);
             Cursor watchers = store.getWatchers();
             int restored = 0;
@@ -66,7 +78,7 @@ public final class LocalWatcherService extends Service {
                             watchers.getString(4), watchers.getString(5),
                             String.valueOf(watchers.getInt(6)), String.valueOf(watchers.getLong(8)),
                             String.valueOf(watchers.getLong(9)), watchers.getString(7),
-                            String.valueOf(watchers.getLong(10))).toString();
+                            String.valueOf(watchers.getLong(10)), watchers.getString(12)).toString();
                     if (result.startsWith("WATCHING|")) {
                         long checkpoint = Long.parseLong(result.substring("WATCHING|".length()));
                         store.updateWatcherCheckpoint(watchers.getLong(0), checkpoint);

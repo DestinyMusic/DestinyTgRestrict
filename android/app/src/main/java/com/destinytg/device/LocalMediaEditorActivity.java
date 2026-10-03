@@ -55,12 +55,23 @@ public final class LocalMediaEditorActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(20), dp(20), dp(20), dp(24));
         root.setGravity(Gravity.TOP);
-        root.setBackgroundColor(Color.rgb(7, 9, 13));
+        root.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+            new int[]{Color.rgb(20, 43, 43), Color.rgb(8, 15, 18), Color.rgb(30, 24, 22)}));
+
+        TextView eyebrow = new TextView(this);
+        eyebrow.setText("DESTINY  /  EDITOR");
+        eyebrow.setTextColor(Color.rgb(107, 224, 204));
+        eyebrow.setTextSize(10);
+        eyebrow.setTypeface(android.graphics.Typeface.DEFAULT,
+            android.graphics.Typeface.BOLD);
+        root.addView(eyebrow, matchWrap());
 
         TextView title = new TextView(this);
         title.setText("Media editor");
-        title.setTextSize(26);
-        title.setTextColor(Color.rgb(56, 189, 248));
+        title.setTextSize(23);
+        title.setTextColor(Color.rgb(241, 246, 244));
+        title.setTypeface(android.graphics.Typeface.DEFAULT,
+            android.graphics.Typeface.BOLD);
         title.setGravity(Gravity.CENTER_VERTICAL);
         root.addView(title, matchWrap());
 
@@ -69,14 +80,16 @@ public final class LocalMediaEditorActivity extends Activity {
         info.setTextColor(Color.rgb(241, 245, 249));
         info.setTextSize(14);
         info.setPadding(dp(14), dp(12), dp(14), dp(12));
-        info.setBackground(createRoundedBackground(Color.rgb(17, 24, 39), dp(6)));
+        GradientDrawable infoSurface = createRoundedBackground(Color.rgb(31, 47, 49), dp(12));
+        infoSurface.setStroke(dp(1), Color.rgb(68, 99, 97));
+        info.setBackground(infoSurface);
         LinearLayout.LayoutParams infoParams = matchWrap();
         infoParams.topMargin = dp(14);
         root.addView(info, infoParams);
 
         TextView trimLabel = new TextView(this);
-        trimLabel.setText("TRIM RANGE");
-        trimLabel.setTextColor(Color.rgb(56, 189, 248));
+        trimLabel.setText("TRIM AND EXPORT");
+        trimLabel.setTextColor(Color.rgb(107, 224, 204));
         trimLabel.setTextSize(10);
         trimLabel.setTypeface(android.graphics.Typeface.DEFAULT,
             android.graphics.Typeface.BOLD);
@@ -105,22 +118,19 @@ public final class LocalMediaEditorActivity extends Activity {
         root.addView(trimEnd, trimEndParams);
 
         TextView editStatus = new TextView(this);
-        editStatus.setTextColor(Color.rgb(148, 163, 184));
+        editStatus.setText("Choose a start and end time to create a trimmed copy.");
+        editStatus.setTextColor(Color.rgb(157, 174, 171));
         editStatus.setPadding(dp(12), dp(10), dp(12), dp(10));
-        editStatus.setBackground(createRoundedBackground(Color.rgb(17, 24, 39), dp(6)));
+        GradientDrawable statusSurface = createRoundedBackground(Color.rgb(25, 38, 40), dp(10));
+        statusSurface.setStroke(dp(1), Color.rgb(56, 78, 78));
+        editStatus.setBackground(statusSurface);
         LinearLayout.LayoutParams statusParams = matchWrap();
         statusParams.topMargin = dp(8);
         root.addView(editStatus, statusParams);
 
         Button trim = new Button(this);
         trim.setText("Trim and export MP4");
-        trim.setTextColor(Color.rgb(7, 9, 13));
-        trim.setTypeface(android.graphics.Typeface.DEFAULT,
-            android.graphics.Typeface.BOLD);
-        trim.setMinHeight(dp(48));
-        trim.setBackground(new RippleDrawable(
-            android.content.res.ColorStateList.valueOf(Color.rgb(125, 211, 252)),
-            createRoundedBackground(Color.rgb(56, 189, 248), dp(6)), null));
+        styleEditorButton(trim, true);
         trim.setOnClickListener(view -> {
             try {
                 double startSeconds = Double.parseDouble(trimStart.getText().toString().trim());
@@ -137,27 +147,31 @@ public final class LocalMediaEditorActivity extends Activity {
 
         Button theater = new Button(this);
         theater.setText("Open in theater");
+        styleEditorButton(theater, false);
         theater.setOnClickListener(view -> openInTheater());
         root.addView(theater, matchWrap());
 
         Button export = new Button(this);
-        export.setText("Duplicate to local editor export");
+        export.setText("Save a local copy");
+        styleEditorButton(export, false);
         export.setOnClickListener(view -> duplicateCurrentFile());
         root.addView(export, matchWrap());
 
         Button rename = new Button(this);
-        rename.setText("Rename export");
+        rename.setText("Save a renamed copy");
+        styleEditorButton(rename, false);
         rename.setOnClickListener(view -> renameCurrentFile());
         root.addView(rename, matchWrap());
 
         Button back = new Button(this);
         back.setText("Back to library");
+        styleEditorButton(back, false);
         back.setOnClickListener(view -> finish());
         root.addView(back, matchWrap());
 
         ScrollView scrollView = new ScrollView(this);
         scrollView.setFillViewport(true);
-        scrollView.setBackgroundColor(Color.rgb(7, 9, 13));
+        scrollView.setBackgroundColor(Color.rgb(8, 15, 18));
         scrollView.addView(root, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         setContentView(scrollView);
@@ -176,9 +190,24 @@ public final class LocalMediaEditorActivity extends Activity {
         input.setTextSize(14);
         input.setPadding(dp(14), dp(12), dp(14), dp(12));
         input.setMinHeight(dp(50));
-        GradientDrawable field = createRoundedBackground(Color.rgb(17, 24, 39), dp(6));
-        field.setStroke(dp(1), Color.rgb(39, 51, 68));
+        GradientDrawable field = createRoundedBackground(Color.rgb(20, 32, 34), dp(10));
+        field.setStroke(dp(1), Color.rgb(68, 99, 97));
         input.setBackground(field);
+    }
+
+    private void styleEditorButton(Button button, boolean primary) {
+        int fill = primary ? Color.rgb(107, 224, 204) : Color.rgb(28, 43, 45);
+        int foreground = primary ? Color.rgb(7, 16, 17) : Color.rgb(224, 236, 233);
+        button.setTextColor(foreground);
+        button.setTextSize(14);
+        button.setTypeface(android.graphics.Typeface.DEFAULT,
+                android.graphics.Typeface.BOLD);
+        button.setMinHeight(dp(48));
+        GradientDrawable surface = createRoundedBackground(fill, dp(10));
+        surface.setStroke(dp(1), primary ? Color.rgb(107, 224, 204) : Color.rgb(68, 99, 97));
+        button.setBackground(new RippleDrawable(
+                android.content.res.ColorStateList.valueOf(Color.rgb(157, 208, 197)),
+                surface, null));
     }
 
     private int dp(int value) {

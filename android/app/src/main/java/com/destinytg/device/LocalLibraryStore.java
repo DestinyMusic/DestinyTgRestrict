@@ -8,7 +8,7 @@ import android.database.sqlite.SQLiteOpenHelper;
 
 final class LocalLibraryStore extends SQLiteOpenHelper {
     private static final String DATABASE_NAME = "destiny-local.db";
-    private static final int DATABASE_VERSION = 7;
+    private static final int DATABASE_VERSION = 8;
     private static final String TABLE_FILES = "local_files";
     private static final String TABLE_WATCHERS = "local_watchers";
     private static final String TABLE_TASKS = "local_tasks";
@@ -46,6 +46,7 @@ final class LocalLibraryStore extends SQLiteOpenHelper {
                 + "destination_thread_id INTEGER NOT NULL DEFAULT 0, "
                 + "last_message_id INTEGER NOT NULL DEFAULT 0, "
                 + "stats_json TEXT NOT NULL DEFAULT '{}', "
+                + "transfer_mode TEXT NOT NULL DEFAULT 'AUTO', "
                 + "UNIQUE(source, destination, source_thread_id, destination_thread_id))");
     }
 
@@ -98,6 +99,10 @@ final class LocalLibraryStore extends SQLiteOpenHelper {
             database.execSQL("ALTER TABLE " + TABLE_TASKS
                 + " ADD COLUMN last_message_id INTEGER NOT NULL DEFAULT 0");
         }
+            if (oldVersion >= 2 && oldVersion < 8) {
+                database.execSQL("ALTER TABLE " + TABLE_WATCHERS
+                + " ADD COLUMN transfer_mode TEXT NOT NULL DEFAULT 'AUTO'");
+            }
     }
 
                 private void rebuildWatchersTable(SQLiteDatabase database) {
@@ -147,7 +152,8 @@ final class LocalLibraryStore extends SQLiteOpenHelper {
 
         void addWatcher(String source, String destination, String mediaTypes,
                         String includeKeywords, String excludeKeywords, String cleanupKeywords,
-                        int delaySeconds, long sourceThreadId, long destinationThreadId) {
+                        int delaySeconds, long sourceThreadId, long destinationThreadId,
+                        String transferMode) {
         ContentValues values = new ContentValues();
         values.put("source", source);
         values.put("destination", destination);
@@ -158,6 +164,7 @@ final class LocalLibraryStore extends SQLiteOpenHelper {
         values.put("delay_seconds", delaySeconds);
         values.put("source_thread_id", sourceThreadId);
         values.put("destination_thread_id", destinationThreadId);
+        values.put("transfer_mode", transferMode);
         getWritableDatabase().insertWithOnConflict(TABLE_WATCHERS, null, values,
                 SQLiteDatabase.CONFLICT_REPLACE);
     }
@@ -166,7 +173,7 @@ final class LocalLibraryStore extends SQLiteOpenHelper {
         return getReadableDatabase().query(TABLE_WATCHERS,
             new String[]{"id", "source", "destination", "media_types", "include_keywords",
                 "exclude_keywords", "delay_seconds", "cleanup_keywords", "source_thread_id",
-                        "destination_thread_id", "last_message_id", "stats_json"},
+                    "destination_thread_id", "last_message_id", "stats_json", "transfer_mode"},
             null, null, null, null, "id ASC");
     }
 
@@ -244,7 +251,8 @@ final class LocalLibraryStore extends SQLiteOpenHelper {
     Cursor getInterruptedDownloads() {
         return getReadableDatabase().query(TABLE_TASKS,
                 new String[]{"id", "request_json", "last_message_id"},
-                "kind = ? AND state = ? AND request_json != ''",
-                new String[]{"DOWNLOAD", "INTERRUPTED"}, null, null, "created_at ASC");
+                "kind IN (?, ?) AND state = ? AND request_json != ''",
+                new String[]{"DOWNLOAD", "FORWARD", "INTERRUPTED"},
+                null, null, "created_at ASC");
     }
 }

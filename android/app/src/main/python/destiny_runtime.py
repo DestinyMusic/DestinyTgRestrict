@@ -12,7 +12,7 @@ from pyrogram.handlers import MessageHandler
 from task_filters import (
     clean_keyword_tags,
     is_protected,
-    copy_or_fallback,
+    deliver_task_message,
     iter_message_ids,
     matches_message_filters,
     message_category,
@@ -36,6 +36,7 @@ _stream_workers = []
 _task_workers = []
 _worker_positions = {"stream": 0, "task": 0}
 _worker_lock = threading.Lock()
+_worker_config_lock = threading.Lock()
 _stream_loop = None
 _stream_thread = None
 _stream_client = None
@@ -77,7 +78,6 @@ def configure_worker_pools(api_id, api_hash, stream_tokens, task_tokens):
     global _stream_workers, _task_workers
     if _storage_directory is None:
         raise RuntimeError("Local storage is not initialized")
-    _ensure_worker_loop()
     streams = [token.strip() for token in str(stream_tokens or "").splitlines()
                if ":" in token]
     tasks = [token.strip() for token in str(task_tokens or "").splitlines()
@@ -113,8 +113,10 @@ def configure_worker_pools(api_id, api_hash, stream_tokens, task_tokens):
             _task_workers, tasks, "destiny-task-worker-")
         return new_streams, new_tasks, stream_errors + task_errors
 
-    future = asyncio.run_coroutine_threadsafe(configure(), _worker_loop)
-    _stream_workers, _task_workers, errors = future.result(timeout=180)
+    with _worker_config_lock:
+        _ensure_worker_loop()
+        future = asyncio.run_coroutine_threadsafe(configure(), _worker_loop)
+        _stream_workers, _task_workers, errors = future.result(timeout=180)
     return json.dumps({"stream_workers": len(_stream_workers),
                        "task_workers": len(_task_workers), "errors": errors})
 
@@ -505,6 +507,86 @@ async def _download_and_forward_message(client, message, category, destination,
                 pass
 
 
+def download_media_for_editing(api_id, api_hash, session_string, link):
+    if _storage_directory is None:
+        raise RuntimeError("Local storage is not initialized")
+    chat_id, message_id = parse_message_link(link)
+    client = Client(
+        "destiny-device-editor-task",
+        api_id=int(api_id),
+        api_hash=api_hash,
+        session_string=session_string,
+        no_updates=True,
+        workers=1,
+        workdir=_storage_directory,
+    )
+
+    async def stage_media():
+        await client.start()
+        try:
+            message = None
+            source_client = client
+            for worker in list(_stream_workers):
+                if not getattr(worker, "is_connected", False):
+                    continue
+                try:
+                    candidate = await _invoke_worker(
+                        worker, "get_messages", chat_id, message_id)
+                    if candidate is not None and not candidate.empty:
+                        message = candidate
+                        source_client = worker
+                        break
+                except Exception:
+                    continue
+            if message is None:
+                message = await client.get_messages(chat_id, message_id)
+            if message is None or message.empty:
+                raise ValueError("Telegram media message was not found or is inaccessible")
+            if is_protected(message):
+                raise ValueError("This Telegram message is protected")
+            category = message_category(message)
+            media = getattr(message, category, None) if category else None
+            if media is None:
+                raise ValueError("The Telegram message does not contain editable media")
+            import_directory = os.path.join(_storage_directory, "editor_imports")
+            os.makedirs(import_directory, exist_ok=True)
+            try:
+                if source_client is client:
+                    local_path = await client.download_media(
+                        message, file_name=import_directory + os.sep)
+                else:
+                    local_path = await _invoke_worker(
+                        source_client, "download_media", message,
+                        file_name=import_directory + os.sep)
+            except Exception:
+                if source_client is client:
+                    raise
+                message = await client.get_messages(chat_id, message_id)
+                if message is None or message.empty or is_protected(message):
+                    raise
+                local_path = await client.download_media(
+                    message, file_name=import_directory + os.sep)
+            if not local_path:
+                raise RuntimeError("Telegram did not provide a downloadable file")
+            mime_type = getattr(media, "mime_type", None) or {
+                "video": "video/mp4",
+                "audio": "audio/mpeg",
+                "voice": "audio/ogg",
+                "photo": "image/jpeg",
+                "animation": "video/mp4",
+                "sticker": "image/webp",
+            }.get(category, "application/octet-stream")
+            return json.dumps({
+                "path": local_path,
+                "file_name": os.path.basename(local_path),
+                "mime_type": mime_type,
+            })
+        finally:
+            await client.stop()
+
+    return client.loop.run_until_complete(stage_media())
+
+
 def download_message(api_id, api_hash, session_string, link, destination="me"):
     if _storage_directory is None:
         raise RuntimeError("Local storage is not initialized")
@@ -567,7 +649,8 @@ def download_messages(api_id, api_hash, session_string, link, start_id="", end_i
                       destination="me", media_types="video,audio,photo,document,animation,voice,sticker,text",
                       include_keywords="", exclude_keywords="", delay_seconds="3",
                       source_thread_id="0", destination_thread_id="0",
-                      cleanup_keywords="", task_id="", resume_from_id=""):
+                      cleanup_keywords="", task_id="", resume_from_id="",
+                      transfer_mode="AUTO"):
     if _storage_directory is None:
         raise RuntimeError("Local storage is not initialized")
     try:
@@ -593,6 +676,9 @@ def download_messages(api_id, api_hash, session_string, link, start_id="", end_i
     include = split_filter_values(include_keywords)
     exclude = split_filter_values(exclude_keywords)
     cleanup = [value.strip() for value in (cleanup_keywords or "").split(",") if value.strip()]
+    transfer_mode = str(transfer_mode or "AUTO").strip().upper()
+    if transfer_mode not in {"FORWARD", "DOWNLOAD", "AUTO"}:
+        raise ValueError("Transfer mode must be FORWARD, DOWNLOAD, or AUTO")
     destination = destination or "me"
     task_key = str(task_id or "")
     cancellation = threading.Event()
@@ -737,6 +823,35 @@ def download_messages(api_id, api_hash, session_string, link, start_id="", end_i
                                         chat_id=destination, from_chat_id=chat_id,
                                         message_id=current_id, **thread_argument))
 
+                            async def forward_media():
+                                message_ids = [current_id]
+                                if media_group_id is not None:
+                                    try:
+                                        group_messages = await client.get_media_group(
+                                            chat_id, current_id)
+                                        message_ids = [int(member.id)
+                                                       for member in group_messages]
+                                    except Exception:
+                                        pass
+                                if uploader is not None:
+                                    try:
+                                        forwarded = await _retry_task_operation(lambda:
+                                            _invoke_worker(
+                                                uploader, "forward_messages", destination,
+                                                chat_id, message_ids, **thread_argument))
+                                        if forwarded:
+                                            processed_album_ids.update(message_ids)
+                                            return forwarded
+                                    except Exception:
+                                        pass
+                                forwarded = await _retry_task_operation(lambda:
+                                    client.forward_messages(
+                                        destination, chat_id, message_ids,
+                                        **thread_argument))
+                                if forwarded:
+                                    processed_album_ids.update(message_ids)
+                                return forwarded
+
                             async def download_and_forward():
                                 local_path, mime_type = await _download_and_forward_message(
                                     client, message, category, destination,
@@ -750,9 +865,10 @@ def download_messages(api_id, api_hash, session_string, link, start_id="", end_i
                                 })
                                 return True
 
-                            await copy_or_fallback(
-                                message, copy_media, download_and_forward,
-                                force_fallback=bool(cleanup))
+                            await deliver_task_message(
+                                transfer_mode, message, forward_media, download_and_forward,
+                                force_fallback=bool(cleanup) and transfer_mode == "AUTO",
+                                copy_operation=copy_media)
                             downloaded += 1
                         else:
                             skipped += 1
@@ -839,12 +955,16 @@ def start_watcher(api_id, api_hash, session_string, source_link, destination="me
                   media_types="video,audio,photo,document,animation,voice,sticker,text",
                   include_keywords="", exclude_keywords="", delay_seconds="0",
                   source_thread_id="0", destination_thread_id="0",
-                  cleanup_keywords="", checkpoint_message_id="0"):
+                  cleanup_keywords="", checkpoint_message_id="0",
+                  transfer_mode="AUTO"):
     global _watch_loop, _watch_thread, _watch_client
     source_chat = _parse_source_chat(source_link)
     destination = destination or "me"
     source_thread_id = int(source_thread_id or 0)
     destination_thread_id = int(destination_thread_id or 0)
+    transfer_mode = str(transfer_mode or "AUTO").strip().upper()
+    if transfer_mode not in {"FORWARD", "DOWNLOAD", "AUTO"}:
+        raise ValueError("Transfer mode must be FORWARD, DOWNLOAD, or AUTO")
     watcher_key = (str(source_chat), destination, source_thread_id, destination_thread_id)
     if watcher_key in _watchers:
         return "WATCHING|{}".format(_watchers[watcher_key]["last_message_id"])
@@ -984,6 +1104,21 @@ def start_watcher(api_id, api_hash, session_string, source_link, destination="me
                         chat_id=destination, from_chat_id=message.chat.id,
                         message_id=message_id, **thread_arguments))
 
+            async def forward_media():
+                if uploader is not None:
+                    try:
+                        forwarded = await _retry_task_operation(lambda:
+                            _invoke_worker(
+                                uploader, "forward_messages", destination,
+                                message.chat.id, message_id, **thread_arguments))
+                        if forwarded:
+                            return forwarded
+                    except Exception:
+                        pass
+                return await _retry_task_operation(lambda:
+                    _watch_client.forward_messages(
+                        destination, message.chat.id, message_id, **thread_arguments))
+
             async def download_and_forward():
                 await _download_and_forward_message(
                     _watch_client, message, media_category, destination,
@@ -993,9 +1128,10 @@ def start_watcher(api_id, api_hash, session_string, source_link, destination="me
                 return True
 
             try:
-                await copy_or_fallback(
-                    message, copy_media, download_and_forward,
-                    force_fallback=bool(cleanup))
+                await deliver_task_message(
+                    transfer_mode, message, forward_media, download_and_forward,
+                    force_fallback=bool(cleanup) and transfer_mode == "AUTO",
+                    copy_operation=copy_media)
                 state["stats"]["success"] += 1
             except Exception:
                 state["stats"]["failed"] += 1

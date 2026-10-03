@@ -29,6 +29,24 @@ async def copy_or_fallback(message, copy_operation, fallback_operation,
     return copied
 
 
+async def deliver_task_message(mode, message, forward_operation,
+                               download_operation, force_fallback=False,
+                               copy_operation=None):
+    selected_mode = (mode or "AUTO").strip().upper()
+    if selected_mode == "FORWARD":
+        forwarded = await forward_operation()
+        if not forwarded:
+            raise RuntimeError("Telegram forward operation returned no result")
+        return forwarded
+    if selected_mode == "DOWNLOAD":
+        return await download_operation()
+    if selected_mode == "AUTO":
+        return await copy_or_fallback(
+            message, copy_operation or forward_operation,
+            download_operation, force_fallback)
+    raise ValueError("Transfer mode must be FORWARD, DOWNLOAD, or AUTO")
+
+
 def message_category(message):
     if message.text:
         return "text"

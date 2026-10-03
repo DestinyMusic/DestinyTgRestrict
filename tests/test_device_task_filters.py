@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "android/app/src/ma
 from task_filters import (
     clean_keyword_tags,
     copy_or_fallback,
+    deliver_task_message,
     is_protected,
     iter_message_ids,
     matches_message_filters,
@@ -158,6 +159,83 @@ class CopyFallbackTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(RuntimeError, "NETWORK_TIMEOUT"):
             await copy_or_fallback(message(), copy_operation, fallback_operation)
         self.assertEqual(calls, [])
+
+
+class TransferModeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_forward_mode_never_downloads(self):
+        calls = []
+
+        async def forward():
+            calls.append("forward")
+            return "forwarded"
+
+        async def download():
+            calls.append("download")
+            return "downloaded"
+
+        result = await deliver_task_message("FORWARD", message(), forward, download)
+
+        self.assertEqual(result, "forwarded")
+        self.assertEqual(calls, ["forward"])
+
+    async def test_download_mode_never_forwards(self):
+        calls = []
+
+        async def forward():
+            calls.append("forward")
+            return "forwarded"
+
+        async def download():
+            calls.append("download")
+            return "downloaded"
+
+        result = await deliver_task_message("DOWNLOAD", message(), forward, download)
+
+        self.assertEqual(result, "downloaded")
+        self.assertEqual(calls, ["download"])
+
+    async def test_unknown_transfer_mode_is_rejected(self):
+        async def unused():
+            self.fail("No operation should run for an unknown mode")
+
+        with self.assertRaisesRegex(ValueError, "Transfer mode"):
+            await deliver_task_message("SOMETHING_ELSE", message(), unused, unused)
+
+    async def test_auto_mode_keeps_copy_then_fallback_behavior(self):
+        calls = []
+
+        async def forward():
+            calls.append("forward")
+            return "forwarded"
+
+        async def copy():
+            calls.append("copy")
+            raise RuntimeError("CHAT_FORWARDS_RESTRICTED")
+
+        async def download():
+            calls.append("download")
+            return "downloaded"
+
+        result = await deliver_task_message(
+            "AUTO", message(), forward, download, copy_operation=copy)
+
+        self.assertEqual(result, "downloaded")
+        self.assertEqual(calls, ["copy", "download"])
+
+    async def test_forward_mode_does_not_fall_back_to_download(self):
+        calls = []
+
+        async def forward():
+            calls.append("forward")
+            raise RuntimeError("CHAT_FORWARDS_RESTRICTED")
+
+        async def download():
+            calls.append("download")
+            return "downloaded"
+
+        with self.assertRaisesRegex(RuntimeError, "CHAT_FORWARDS_RESTRICTED"):
+            await deliver_task_message("FORWARD", message(), forward, download)
+        self.assertEqual(calls, ["forward"])
 
     async def test_false_copy_result_is_not_reported_as_success(self):
         async def copy_operation():

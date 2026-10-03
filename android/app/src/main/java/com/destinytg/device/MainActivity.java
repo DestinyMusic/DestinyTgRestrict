@@ -1,6 +1,7 @@
 package com.destinytg.device;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -30,6 +31,8 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -99,6 +102,7 @@ public class MainActivity extends Activity {
         } catch (RuntimeException exception) {
             embeddedRuntimeReady = false;
         }
+        if (embeddedRuntimeReady) restoreWorkerPools();
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(backgroundColor);
@@ -114,14 +118,59 @@ public class MainActivity extends Activity {
 
         webView = new WebView(this);
         configureWebView();
+        String localDestination = getIntent().getStringExtra("destiny_local_destination");
+        String editMediaLink = getIntent().getStringExtra("destiny_edit_media_link");
+        String playMediaLink = getIntent().getStringExtra("destiny_play_media_link");
+        if (localDestination != null || editMediaLink != null || playMediaLink != null) {
+            appMode = MODE_LOCAL;
+            preferences.edit().putString(PREF_APP_MODE, appMode).apply();
+        }
         if (isLocalMode()) {
-            showLocalHome();
+            if (editMediaLink != null) {
+                showLocalHome();
+                openMediaLink(editMediaLink, true);
+            } else if (playMediaLink != null) {
+                showLocalHome();
+                openMediaLink(playMediaLink, false);
+            } else if ("download".equals(localDestination)) {
+                showTelegramDownload();
+            } else if ("watch".equals(localDestination)) {
+                showTelegramWatcherSetup();
+            } else if ("tasks".equals(localDestination)) {
+                showLocalTasks();
+            } else if ("library".equals(localDestination)) {
+                showLocalLibrary();
+            } else if ("account".equals(localDestination)) {
+                showLocalAccount();
+            } else {
+                showLocalHome();
+            }
         } else if (serverAddress.isEmpty()) {
             showSetup();
         } else {
             showDashboard();
         }
         if (isLocalMode()) resumeInterruptedDownloads();
+    }
+
+    private void restoreWorkerPools() {
+        String streamTokens = secretsStore.get("stream_worker_tokens");
+        String taskTokens = secretsStore.get("task_worker_tokens");
+        if ((streamTokens == null || streamTokens.trim().isEmpty())
+                && (taskTokens == null || taskTokens.trim().isEmpty())) return;
+        String apiId = secretsStore.get("telegram_api_id");
+        String apiHash = secretsStore.get("telegram_api_hash");
+        if (apiId == null || apiHash == null) return;
+        new Thread(() -> {
+            try {
+                Python.getInstance().getModule("destiny_runtime")
+                        .callAttr("configure_worker_pools", apiId, apiHash,
+                                streamTokens == null ? "" : streamTokens,
+                                taskTokens == null ? "" : taskTokens);
+            } catch (Exception ignored) {
+                // User-session operations remain available if a worker bot is offline.
+            }
+        }, "destiny-restore-worker-pools").start();
     }
 
     private void showLocalHome() {
@@ -277,10 +326,10 @@ public class MainActivity extends Activity {
         showLocalSurface();
         content.removeAllViews();
         content.setPadding(dp(20), dp(20), dp(20), dp(24));
-        addPageHeading("Tasks", "Downloads and Telegram watches running on this device.");
+        addPageHeading("Tasks", "Forward messages, download media, and manage Telegram watches.");
 
         Button download = new Button(this);
-        download.setText("New Telegram download");
+        download.setText("New Telegram task");
         stylePrimaryButton(download);
         download.setOnClickListener(view -> {
             if (secretsStore.get("telegram_session") == null) showTelegramSetup();
@@ -315,7 +364,8 @@ public class MainActivity extends Activity {
                 row.setPadding(dp(12), dp(10), dp(8), dp(10));
                 row.setBackground(createRoundedBackground(surfaceColor, dp(6)));
                 TextView label = new TextView(this);
-                label.setText(source + "\n→ " + destination + " · " + watchers.getString(3));
+                label.setText(source + "\n→ " + destination + " · " + watchers.getString(3)
+                    + " · " + watchers.getString(12));
                 label.setTextColor(foregroundColor);
                 label.setTextSize(13);
                 label.setMaxLines(3);
@@ -352,7 +402,7 @@ public class MainActivity extends Activity {
         }
         watchers.close();
 
-        addSectionTitle("Recent downloads", content);
+        addSectionTitle("Recent tasks", content);
         Cursor tasks = localLibrary.getTasks();
         if (tasks.getCount() == 0) {
             content.addView(localLabel("Your recent task history will appear here.",
@@ -643,6 +693,13 @@ public class MainActivity extends Activity {
         importParams.topMargin = dp(8);
         content.addView(importButton, importParams);
 
+        Button openLink = new Button(this);
+        openLink.setText("Open direct or Telegram link");
+        openLink.setOnClickListener(view -> showMediaLinkDialog());
+        LinearLayout.LayoutParams openLinkParams = matchWrap();
+        openLinkParams.topMargin = dp(8);
+        content.addView(openLink, openLinkParams);
+
         Cursor files = localLibrary.getFiles();
         if (files.getCount() == 0) {
             TextView empty = new TextView(this);
@@ -782,7 +839,31 @@ public class MainActivity extends Activity {
         showLocalSurface();
         content.removeAllViews();
         content.setPadding(dp(18), dp(18), dp(18), dp(24));
-        addPageHeading("Telegram download", "Choose a message range, destination, and filters.");
+        addPageHeading("Telegram task", "Choose how matching Telegram messages reach the destination.");
+
+        addSectionTitle("Transfer mode", content);
+        RadioGroup transferMode = new RadioGroup(this);
+        transferMode.setOrientation(RadioGroup.HORIZONTAL);
+        RadioButton forwardMode = new RadioButton(this);
+        forwardMode.setText("Forward");
+        forwardMode.setTextColor(foregroundColor);
+        forwardMode.setId(View.generateViewId());
+        RadioButton downloadMode = new RadioButton(this);
+        downloadMode.setText("Download + re-upload");
+        downloadMode.setTextColor(foregroundColor);
+        downloadMode.setId(View.generateViewId());
+        transferMode.addView(forwardMode, new RadioGroup.LayoutParams(0,
+            ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        transferMode.addView(downloadMode, new RadioGroup.LayoutParams(0,
+            ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        transferMode.check(forwardMode.getId());
+        if ("DOWNLOAD".equalsIgnoreCase(
+                getIntent().getStringExtra("destiny_transfer_mode"))) {
+            transferMode.check(downloadMode.getId());
+        }
+        LinearLayout.LayoutParams transferModeParams = matchWrap();
+        transferModeParams.bottomMargin = dp(10);
+        content.addView(transferMode, transferModeParams);
 
         EditText link = addAccountInput("https://t.me/channel/123", null);
         link.setInputType(android.text.InputType.TYPE_CLASS_TEXT
@@ -877,11 +958,11 @@ public class MainActivity extends Activity {
         });
 
         Button start = new Button(this);
-        start.setText("Start download");
+        start.setText("Start task");
         stylePrimaryButton(start);
         start.setOnClickListener(view -> {
             if (activeTaskId[0] > 0 && !taskFinished[0]) {
-                status.setText("A download task is already active on this screen.");
+            status.setText("A Telegram task is already active on this screen.");
                 return;
             }
             String apiId = secretsStore.get("telegram_api_id");
@@ -889,12 +970,19 @@ public class MainActivity extends Activity {
             String session = secretsStore.get("telegram_session");
             String messageLink = link.getText().toString().trim();
             String target = destination.getText().toString().trim();
+                String selectedTransferMode = transferMode.getCheckedRadioButtonId()
+                    == downloadMode.getId() ? "DOWNLOAD" : "FORWARD";
             if (apiId == null || apiHash == null || session == null) {
                 status.setText("Connect a Telegram account first.");
                 return;
             }
             if (messageLink.isEmpty()) {
                 status.setText("Enter a Telegram message link.");
+                return;
+            }
+            if ("FORWARD".equals(selectedTransferMode)
+                    && !cleanupKeywords.getText().toString().trim().isEmpty()) {
+                status.setText("Cleanup tags require Download + save copy mode.");
                 return;
             }
             String first = startId.getText().toString().trim();
@@ -923,10 +1011,12 @@ public class MainActivity extends Activity {
                 includeKeywords.getText().toString().trim(),
                 excludeKeywords.getText().toString().trim(), String.valueOf(delaySeconds),
                 String.valueOf(sourceThreadId), String.valueOf(destinationThreadId),
-                cleanupKeywords.getText().toString().trim(), "", ""};
+                cleanupKeywords.getText().toString().trim(), "", "", selectedTransferMode};
             JSONArray savedRequest = new JSONArray();
             for (int index = 3; index <= 13; index++) savedRequest.put(downloadArgs[index]);
-            long taskId = localLibrary.addTask("DOWNLOAD", label, savedRequest.toString());
+            savedRequest.put(selectedTransferMode);
+            long taskId = localLibrary.addTask(selectedTransferMode, label,
+                    savedRequest.toString());
             downloadArgs[14] = String.valueOf(taskId);
             activeTaskId[0] = taskId;
             taskEventOffset[0] = 0L;
@@ -1052,6 +1142,28 @@ public class MainActivity extends Activity {
         content.setPadding(dp(18), dp(18), dp(18), dp(24));
         addPageHeading("Create watcher", "Forward new matching posts from a Telegram source.");
 
+        addSectionTitle("Transfer mode", content);
+        RadioGroup transferMode = new RadioGroup(this);
+        transferMode.setOrientation(RadioGroup.HORIZONTAL);
+        RadioButton forwardMode = new RadioButton(this);
+        forwardMode.setText("Forward");
+        forwardMode.setTextColor(foregroundColor);
+        forwardMode.setId(View.generateViewId());
+        RadioButton downloadMode = new RadioButton(this);
+        downloadMode.setText("Download + save copy");
+        downloadMode.setTextColor(foregroundColor);
+        downloadMode.setId(View.generateViewId());
+        transferMode.addView(forwardMode, new RadioGroup.LayoutParams(0,
+            ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        transferMode.addView(downloadMode, new RadioGroup.LayoutParams(0,
+            ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        transferMode.check(forwardMode.getId());
+        if ("DOWNLOAD".equalsIgnoreCase(
+                getIntent().getStringExtra("destiny_transfer_mode"))) {
+            transferMode.check(downloadMode.getId());
+        }
+        content.addView(transferMode, matchWrap());
+
         EditText source = addAccountInput("Source channel/chat link", null);
         source.setInputType(android.text.InputType.TYPE_CLASS_TEXT
                 | android.text.InputType.TYPE_TEXT_VARIATION_URI);
@@ -1092,6 +1204,12 @@ public class MainActivity extends Activity {
             String includeFilter = includeKeywords.getText().toString().trim();
             String excludeFilter = excludeKeywords.getText().toString().trim();
             String cleanupFilter = cleanupKeywords.getText().toString().trim();
+            String selectedTransferMode = transferMode.getCheckedRadioButtonId()
+                    == downloadMode.getId() ? "DOWNLOAD" : "FORWARD";
+            if ("FORWARD".equals(selectedTransferMode) && !cleanupFilter.isEmpty()) {
+                status.setText("Cleanup tags require Download + re-upload mode.");
+                return;
+            }
             String delayValue = delay.getText().toString().trim();
             int delaySeconds;
             long sourceThreadId;
@@ -1116,14 +1234,16 @@ public class MainActivity extends Activity {
             }
             String destinationChat = target.isEmpty() ? "me" : target;
             localLibrary.addWatcher(sourceLink, destinationChat, mediaFilter, includeFilter,
-                    excludeFilter, cleanupFilter, delaySeconds, sourceThreadId, destinationThreadId);
+                    excludeFilter, cleanupFilter, delaySeconds, sourceThreadId,
+                    destinationThreadId, selectedTransferMode);
             Intent service = new Intent(this, LocalWatcherService.class);
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                 startForegroundService(service);
             } else {
                 startService(service);
             }
-            status.setText("Filtered Watch task saved. It runs while the foreground service is active.");
+                status.setText("Watch task saved in " + selectedTransferMode.toLowerCase(
+                    java.util.Locale.ROOT) + " mode. It runs while the foreground service is active.");
         });
         content.addView(start, matchWrap());
 
@@ -1321,15 +1441,17 @@ public class MainActivity extends Activity {
             while (tasks.moveToNext()) {
                 try {
                     JSONArray request = new JSONArray(tasks.getString(1));
-                    if (request.length() != 11) continue;
+                    if (request.length() != 11 && request.length() != 12) continue;
                     long taskId = tasks.getLong(0);
-                    String[] args = new String[16];
+                    String[] args = new String[17];
                     args[0] = apiId;
                     args[1] = apiHash;
                     args[2] = session;
-                    for (int index = 0; index < request.length(); index++) {
+                    for (int index = 0; index < Math.min(request.length(), 11); index++) {
                         args[index + 3] = request.getString(index);
                     }
+                    args[16] = request.length() == 12
+                            ? request.getString(11) : "AUTO";
                     args[14] = String.valueOf(taskId);
                     long checkpoint = tasks.getLong(2);
                     File checkpointFile = new File(new File(getFilesDir(), "tasks"),
@@ -1512,6 +1634,147 @@ public class MainActivity extends Activity {
         } catch (ActivityNotFoundException exception) {
             Toast.makeText(this, "No app can open this file", Toast.LENGTH_SHORT).show();
         }
+    }
+
+    private void showMediaLinkDialog() {
+        EditText source = new EditText(this);
+        source.setSingleLine(true);
+        source.setHint("https://example.com/video.mp4 or https://t.me/channel/123");
+        source.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        styleInput(source);
+        new AlertDialog.Builder(this)
+                .setTitle("Media link")
+                .setView(source)
+                .setPositiveButton("Play", (dialog, which) -> openMediaLink(
+                        source.getText().toString().trim(), false))
+                .setNeutralButton("Edit", (dialog, which) -> openMediaLink(
+                        source.getText().toString().trim(), true))
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void openMediaLink(String source, boolean edit) {
+        final Uri uri;
+        try {
+            uri = Uri.parse(source);
+            String scheme = uri.getScheme();
+            if (uri.getHost() == null || !("http".equalsIgnoreCase(scheme)
+                    || "https".equalsIgnoreCase(scheme))) {
+                throw new IllegalArgumentException();
+            }
+        } catch (Exception exception) {
+            Toast.makeText(this, "Enter a valid HTTP(S) media link", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        String host = uri.getHost().toLowerCase(java.util.Locale.ROOT);
+        boolean telegram = host.equals("t.me") || host.equals("www.t.me")
+                || host.equals("telegram.me") || host.equals("www.telegram.me");
+        String mimeType = guessMediaMimeType(uri);
+        String displayName = uri.getLastPathSegment();
+        if (displayName == null || displayName.isEmpty()) displayName = "Online media";
+        if (!edit) {
+            Intent theater = new Intent(this, LocalTheaterActivity.class);
+            theater.setDataAndType(uri, mimeType);
+            if (telegram) theater.putExtra("telegramLink", source);
+            else theater.putExtra("displayName", displayName);
+            startActivity(theater);
+            if (getIntent().hasExtra("destiny_play_media_link")) finish();
+            return;
+        }
+        if (telegram && (secretsStore.get("telegram_api_id") == null
+                || secretsStore.get("telegram_api_hash") == null
+                || secretsStore.get("telegram_session") == null)) {
+            showTelegramSetup();
+            return;
+        }
+        stageMediaForEditor(source, telegram, displayName, mimeType);
+    }
+
+    private void stageMediaForEditor(String source, boolean telegram,
+                                     String displayName, String fallbackMimeType) {
+        Toast.makeText(this, "Preparing a local copy for editing…", Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            HttpURLConnection connection = null;
+            File stagedFile = null;
+            String mimeType = fallbackMimeType;
+            String resolvedName = displayName;
+            try {
+                File directory = new File(getFilesDir(), "editor_imports");
+                if (!directory.exists() && !directory.mkdirs()) {
+                    throw new IOException("Cannot create editor import folder");
+                }
+                if (telegram) {
+                    String response = Python.getInstance().getModule("destiny_runtime")
+                            .callAttr("download_media_for_editing",
+                                    secretsStore.get("telegram_api_id"),
+                                    secretsStore.get("telegram_api_hash"),
+                                    secretsStore.get("telegram_session"), source).toString();
+                    JSONObject result = new JSONObject(response);
+                    stagedFile = new File(result.getString("path"));
+                    resolvedName = result.optString("file_name", resolvedName);
+                    mimeType = result.optString("mime_type", fallbackMimeType);
+                } else {
+                    URI address = new URI(source);
+                    connection = (HttpURLConnection) address.toURL().openConnection();
+                    connection.setConnectTimeout(15000);
+                    connection.setReadTimeout(30000);
+                    connection.setInstanceFollowRedirects(true);
+                    int responseCode = connection.getResponseCode();
+                    if (responseCode < 200 || responseCode >= 300) {
+                        throw new IOException("Server returned HTTP " + responseCode);
+                    }
+                    String contentType = connection.getContentType();
+                    if (contentType != null && !contentType.isEmpty()) {
+                        mimeType = contentType.split(";", 2)[0].trim();
+                    }
+                    String safeName = displayName.replaceAll("[^A-Za-z0-9._-]", "_");
+                    if (safeName.isEmpty()) safeName = "online-media";
+                    stagedFile = new File(directory,
+                            System.currentTimeMillis() + "-" + safeName);
+                    try (InputStream input = connection.getInputStream();
+                         FileOutputStream output = new FileOutputStream(stagedFile)) {
+                        byte[] buffer = new byte[16384];
+                        int count;
+                        while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+                    }
+                }
+                if (!stagedFile.isFile()) throw new IOException("Media download did not complete");
+                File readyFile = stagedFile;
+                String readyName = resolvedName == null || resolvedName.isEmpty()
+                    ? readyFile.getName() : resolvedName;
+                String readyMimeType = mimeType == null || mimeType.isEmpty()
+                        ? "application/octet-stream" : mimeType;
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    String fileUri = Uri.fromFile(readyFile).toString();
+                    localLibrary.addFile(readyName, fileUri, readyMimeType);
+                    openLocalEditor(readyName, fileUri, readyMimeType);
+                    if (getIntent().hasExtra("destiny_edit_media_link")) finish();
+                });
+            } catch (Exception exception) {
+                if (stagedFile != null && stagedFile.exists()) stagedFile.delete();
+                String message = exception.getMessage() == null
+                        ? "Unable to prepare media" : exception.getMessage();
+                new Handler(Looper.getMainLooper()).post(() -> Toast.makeText(this,
+                        "Unable to edit media: " + message, Toast.LENGTH_LONG).show());
+            } finally {
+                if (connection != null) connection.disconnect();
+            }
+        }, "destiny-stage-media-editor").start();
+    }
+
+    private String guessMediaMimeType(Uri uri) {
+        String path = uri.getLastPathSegment();
+        if (path != null) {
+            int dot = path.lastIndexOf('.');
+            if (dot >= 0 && dot < path.length() - 1) {
+                String mimeType = android.webkit.MimeTypeMap.getSingleton()
+                        .getMimeTypeFromExtension(path.substring(dot + 1).toLowerCase(
+                                java.util.Locale.ROOT));
+                if (mimeType != null) return mimeType;
+            }
+        }
+        return "application/octet-stream";
     }
 
     private void openLocalEditor(String name, String uriValue, String mimeType) {

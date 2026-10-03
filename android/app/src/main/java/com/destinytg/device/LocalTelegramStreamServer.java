@@ -83,7 +83,8 @@ final class LocalTelegramStreamServer implements AutoCloseable {
                 return;
             }
             boolean headRequest = "HEAD".equalsIgnoreCase(requestParts[0]);
-            if (!headRequest && !"GET".equalsIgnoreCase(requestParts[0])) {
+            boolean optionsRequest = "OPTIONS".equalsIgnoreCase(requestParts[0]);
+            if (!headRequest && !optionsRequest && !"GET".equalsIgnoreCase(requestParts[0])) {
                 writeError(output, 405, "Method Not Allowed");
                 return;
             }
@@ -100,6 +101,18 @@ final class LocalTelegramStreamServer implements AutoCloseable {
                 if (separator > 0 && "range".equalsIgnoreCase(header.substring(0, separator).trim())) {
                     rangeHeader = header.substring(separator + 1).trim();
                 }
+            }
+            if (optionsRequest) {
+                output.write(("HTTP/1.1 204 No Content\r\n"
+                        + "Access-Control-Allow-Origin: *\r\n"
+                        + "Access-Control-Allow-Methods: GET, HEAD, OPTIONS\r\n"
+                        + "Access-Control-Allow-Headers: Range\r\n"
+                        + "Access-Control-Allow-Private-Network: true\r\n"
+                        + "Access-Control-Max-Age: 600\r\n"
+                        + "Content-Length: 0\r\nConnection: close\r\n\r\n")
+                        .getBytes(StandardCharsets.US_ASCII));
+                output.flush();
+                return;
             }
 
             long start = 0;
@@ -127,6 +140,11 @@ final class LocalTelegramStreamServer implements AutoCloseable {
             String status = partial ? "206 Partial Content" : "200 OK";
             StringBuilder responseHeaders = new StringBuilder()
                     .append("HTTP/1.1 ").append(status).append("\r\n")
+                    .append("Access-Control-Allow-Origin: *\r\n")
+                    .append("Access-Control-Allow-Methods: GET, HEAD, OPTIONS\r\n")
+                    .append("Access-Control-Allow-Headers: Range\r\n")
+                    .append("Access-Control-Allow-Private-Network: true\r\n")
+                    .append("Access-Control-Expose-Headers: Accept-Ranges, Content-Range, Content-Length\r\n")
                     .append("Accept-Ranges: bytes\r\n")
                     .append("Content-Type: ").append(mimeType).append("\r\n")
                     .append("Content-Length: ").append(length).append("\r\n")
