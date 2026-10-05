@@ -279,9 +279,15 @@ BOT_START_TIME = time.time()
 WATCHER_LAST_RUN = {} # Tracks strict delays between live watcher messages
 ACTIVE_PROCESSES = defaultdict(dict)  
 CANCEL_FLAGS = {} 
+ACTIVE_TASK_OBJECTS = {} # 🟢 Holds real asyncio.Task objects for hard cancellation
 
 def cleanup_task_memory(user_id, task_uuid):
     CANCEL_FLAGS.pop(task_uuid, None)
+    task_obj = ACTIVE_TASK_OBJECTS.pop(task_uuid, None)
+    if task_obj and not task_obj.done():
+        task_obj.cancel()
+    PROGRESS.pop(f"{task_uuid}:down", None)
+    PROGRESS.pop(f"{task_uuid}:up", None)
     if user_id in ACTIVE_PROCESSES:
         ACTIVE_PROCESSES[user_id].pop(task_uuid, None)
         if not ACTIVE_PROCESSES[user_id]:
