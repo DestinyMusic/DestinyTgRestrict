@@ -559,7 +559,58 @@ def _split_file_smart(file_path, chunk_size):
             part_num += 1
             
     return parts
+
+async def resolve_task_clients(user_id, source_link, dest_chat_id, needs_reupload=False):
+    """
+    Accurately identifies In (fetcher) and Out (forwarder/uploader) without 
+    triggering failing API attempts or breaking delays.
+    """
+    user_client = USER_CLIENTS.get(user_id)
+    worker_bots = USER_TASK_BOTS.get(user_id, [])
+    parsed = _parse_source_link(source_link)
     
+    is_private_src = parsed.get("kind") in ["private_c", "private"] or (isinstance(parsed.get("chat_id"), int) and parsed.get("chat_id") > 0)
+    
+    # 1. Resolve Fetcher (In)
+    fetcher = user_client if (is_private_src and user_client) else app
+    
+    # 2. Resolve Forwarder/Uploader (Out)
+    # If content needs physical re-upload (restricted / custom thumb / cleanup keywords):
+    if needs_reupload:
+        uploader = user_client or app
+        for wb in worker_bots:
+            try:
+                if not getattr(wb, "is_connected", False): await wb.connect()
+                mb = await wb.get_chat_member(dest_chat_id, "me")
+                if mb.status in [enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER]:
+                    uploader = wb
+                    break
+            except Exception: pass
+        return fetcher, uploader
+
+    # 3. Direct Fast Forwarding (Unrestricted & No Metadata Cleaning):
+    # The client MUST have access to BOTH source and destination!
+    forwarder = None
+    
+    # Check if a Worker Bot can access BOTH Source AND Destination
+    if not is_private_src and worker_bots:
+        for wb in worker_bots:
+            try:
+                if not getattr(wb, "is_connected", False): await wb.connect()
+                dest_mb = await wb.get_chat_member(dest_chat_id, "me")
+                if dest_mb.status in [enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER]:
+                    # Test source access
+                    await wb.get_chat(parsed.get("chat_id") or parsed.get("join_target"))
+                    forwarder = wb
+                    break
+            except Exception: pass
+            
+    # If source is private OR worker bots cannot access source: MUST use User Session!
+    if not forwarder:
+        forwarder = user_client if user_client else app
+        
+    return forwarder, forwarder
+        
 def progress(current, total, typ, task_uuid=None):
     if task_uuid and CANCEL_FLAGS.get(task_uuid):
         raise Exception("CANCELLED_BY_USER")
