@@ -967,7 +967,7 @@
 
                 <!-- 🇮🇳 DEV NOTE & TRIBUTE TO GREAT INDIA -->
                 <div class="card" id="india-tribute-card" style="margin-top: 25px; border-color: rgba(245, 158, 11, 0.4); background: color-mix(in srgb, var(--card) var(--glass-bg, 85%), transparent); position: relative; overflow: hidden;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; border-bottom: 1px solid var(--card-border); padding-bottom: 14px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; border-bottom: 1px solid var(--card-border); padding-bottom: 14px;">
                         <div style="display: flex; align-items: center; gap: 10px;">
                             <span style="font-size: 26px;">🇮🇳</span>
                             <div>
@@ -1009,8 +1009,8 @@
                         </div>
                     </div>
 
-                    <!-- Dynamic Body Content -->
-                    <div id="india-content" style="line-height: 1.7; font-size: clamp(12.5px, 1.1vw, 14.5px); color: var(--subtext); transition: opacity 0.25s ease;">
+                    <!-- 🟢 Scrollable Body Box (Compact & Mobile-Optimized) -->
+                    <div id="india-content" style="line-height: 1.7; font-size: clamp(12.5px, 1.1vw, 14.5px); color: var(--subtext); max-height: 380px; overflow-y: auto; overflow-x: hidden; padding-right: 8px; scrollbar-width: thin; scrollbar-color: var(--accent) transparent; transition: opacity 0.25s ease;">
                         <!-- Content rendered dynamically via JS -->
                     </div>
                 </div>
@@ -2855,16 +2855,17 @@
                     let speedStr = t.speed > 0 ? formatBytesTask(t.speed) + '/s' : '';
                     let etaStr = t.eta > 0 ? 'ETA: ' + formatTimeTask(t.eta) : '';
                     let fileProgStr = t.file_total > 0 ? `${formatBytesTask(t.file_current)} / ${formatBytesTask(t.file_total)}` : '';
-                    let batchStr = t.batch_total > 0 ? `Item ${t.batch_current} of ${t.batch_total}` : '';
+                    let batchBadge = t.batch_total > 0 ? `<div style="font-size: 11px; color: #fbbf24; font-weight: 800; margin-top: 2px;">📦 Item ${t.batch_current} of ${t.batch_total}</div>` : '';
                     
-                    let bottomRow = `<span>${fileProgStr}</span><span>${speedStr} ${etaStr ? '| ' + etaStr : ''}</span>`;
-                    if (t.phase === 'Processing' && t.batch_total > 0) {
-                        bottomRow = `<span>${batchStr}</span><span></span>`;
+                    let rightStatus = `${speedStr} ${etaStr ? '| ' + etaStr : ''}`.trim();
+                    if (t.phase.includes('Finalizing')) {
+                        rightStatus = `<span style="color: #38bdf8; font-weight: bold;">⏳ Finalizing on Telegram...</span>`;
                     }
                     
-                    let fileNameStr = t.current_file ? `<div style="font-size: 11px; color: #38bdf8; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">📄 <b>${t.current_file}</b></div>` : '';
+                    let bottomRow = `<span>${fileProgStr || (t.phase === 'Processing' ? 'Scanning items...' : '')}</span><span>${rightStatus}</span>`;
                     
-                    // 🟢 Inject dynamic Fetcher/Uploader labels here
+                    let fileNameStr = t.current_file ? `<div style="font-size: 11px; color: #38bdf8; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">📄 <b>${t.current_file}</b></div>` : '';
+                    
                     let clientsRow = `<div style="display: flex; gap: 12px; margin-top: 4px; font-size: 10px; color: #94a3b8; font-weight: 600;">
                         <span>📥 In: <span style="color: #a78bfa;">${t.fetcher}</span></span>
                         <span>📤 Out: <span style="color: #34d399;">${t.uploader}</span></span>
@@ -2877,17 +2878,18 @@
                     </div>`;
 
                     newDlHtml += `
-                        <div class="task-row" style="flex-direction: column; align-items: stretch; gap: 10px; padding: 20px;">
+                        <div class="task-row" style="flex-direction: column; align-items: stretch; gap: 8px; padding: 18px;">
                             <div style="display: flex; justify-content: space-between; align-items: center;">
                                 <div style="font-weight: 700; color: #fff; font-size: 14px; word-break: break-all;">${t.name}</div>
                                 <button class="task-kill" onclick="cancelTask('${t.id}')">CANCEL</button>
                             </div>
-                            <div style="font-size: 11px; color: var(--accent); margin-bottom: 2px;">
+                            <div style="font-size: 11px; color: var(--accent);">
                                 ${t.phase} ➔ ${t.dest}
                             </div>
                             ${clientsRow}
+                            ${batchBadge}
                             ${fileNameStr}
-                            <div style="background: rgba(255,255,255,0.1); border-radius: 8px; width: 100%; height: 16px; overflow: hidden; position: relative; margin-top: 6px;">
+                            <div style="background: rgba(255,255,255,0.1); border-radius: 8px; width: 100%; height: 16px; overflow: hidden; position: relative; margin-top: 4px;">
                                 <div style="background: linear-gradient(90deg, var(--accent), #38bdf8); height: 100%; width: ${t.percent || 0}%; transition: width 0.5s ease;"></div>
                             </div>
                             <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--subtext); font-family: monospace;">
