@@ -518,20 +518,36 @@ async def _api_stats_handler(request):
         file_total = 0
         percent = 0.0
 
-        if prog_up and prog_up["current"] > 0 and prog_up["current"] < prog_up["total"]:
-            phase = "Uploading"
-            speed = prog_up["speed"]
-            eta = prog_up["eta"]
-            file_current = prog_up["current"]
-            file_total = prog_up["total"]
-            percent = prog_up.get("percent", 0.0)
-        elif prog_down and prog_down["current"] > 0 and prog_down["current"] < prog_down["total"]:
-            phase = "Downloading"
-            speed = prog_down["speed"]
-            eta = prog_down["eta"]
-            file_current = prog_down["current"]
-            file_total = prog_down["total"]
-            percent = prog_down.get("percent", 0.0)
+        if prog_up and prog_up["current"] > 0:
+            if prog_up["total"] > 0 and prog_up["current"] >= prog_up["total"]:
+                phase = "Finalizing on Telegram..."
+                speed = 0
+                eta = 0
+                file_current = prog_up["total"]
+                file_total = prog_up["total"]
+                percent = 100.0
+            else:
+                phase = "Uploading"
+                speed = prog_up["speed"]
+                eta = prog_up["eta"]
+                file_current = prog_up["current"]
+                file_total = prog_up["total"]
+                percent = prog_up.get("percent", 0.0)
+        elif prog_down and prog_down["current"] > 0:
+            if prog_down["total"] > 0 and prog_down["current"] >= prog_down["total"]:
+                phase = "Finalizing Download..."
+                speed = 0
+                eta = 0
+                file_current = prog_down["total"]
+                file_total = prog_down["total"]
+                percent = 100.0
+            else:
+                phase = "Downloading"
+                speed = prog_down["speed"]
+                eta = prog_down["eta"]
+                file_current = prog_down["current"]
+                file_total = prog_down["total"]
+                percent = prog_down.get("percent", 0.0)
         else:
             if tot > 0:
                 percent = (curr / tot * 100)
@@ -664,6 +680,18 @@ async def _api_add_task(request):
         batch_temp.ACTIVE_TASKS[user_id] += 1
         batch_temp.IS_BATCH[user_id] = False
 
+        # 🟢 Pre-resolve In & Out clients
+        needs_reupload = bool(is_restricted or thumb_b64 or cleanup_keywords)
+        client_in, client_out = await resolve_task_clients(user_id, link, dest_chat_id, needs_reupload=needs_reupload)
+
+        def _get_lbl(c):
+            if not c: return "Unknown"
+            nm = getattr(c, "name", "Unknown")
+            if "User_" in nm: return "👤 User Session"
+            if "task_bot_" in nm: return f"🤖 {nm}"
+            if nm == "RestrictedBot": return "🤖 Main Bot"
+            return f"🤖 {nm}"
+
         if user_id not in ACTIVE_PROCESSES: ACTIVE_PROCESSES[user_id] = {}
         ACTIVE_PROCESSES[user_id][task_uuid] = {
             "user": f"WebUI({user_id})",
@@ -675,9 +703,11 @@ async def _api_add_task(request):
             "include_keywords": include_keywords,
             "exclude_keywords": exclude_keywords,
             "thumb_b64": thumb_b64,
+            "fetcher": _get_lbl(client_in),   # 🟢 Displays In client immediately
+            "uploader": _get_lbl(client_out), # 🟢 Displays Out client immediately
         }
 
-        asyncio.create_task(
+        task_coro = asyncio.create_task(
             process_links_logic(
                 client=app,
                 message=None,
@@ -696,6 +726,7 @@ async def _api_add_task(request):
                 thumb_b64=thumb_b64,
             )
         )
+        ACTIVE_TASK_OBJECTS[task_uuid] = task_coro # 🟢 Save task handle for hard cancel
         return web.json_response({"status": "success"})
     except Exception as e:
         return web.json_response({"status": "error", "message": str(e)}, status=500)
@@ -707,6 +738,10 @@ async def _api_cancel_task(request):
         user_id = request["authenticated_user_id"]
         if task_id and task_id in ACTIVE_PROCESSES.get(user_id, {}):
             CANCEL_FLAGS[task_id] = True
+            task_obj = ACTIVE_TASK_OBJECTS.pop(task_id, None)
+            if task_obj and not task_obj.done():
+                task_obj.cancel() # 🟢 Kill socket/task immediately
+            cleanup_task_memory(user_id, task_id) # 🟢 Instant memory cleanup
             try: await db.remove_active_task(task_id)
             except: pass
             return web.json_response({"status": "success"})
