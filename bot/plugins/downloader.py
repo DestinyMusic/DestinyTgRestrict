@@ -274,7 +274,12 @@ async def cancel_callback(client: Client, query):
             return
             
         CANCEL_FLAGS[task_uuid] = True
+        task_obj = ACTIVE_TASK_OBJECTS.pop(task_uuid, None)
+        if task_obj and not task_obj.done():
+            task_obj.cancel() # 🟢 Hard cancel the running task
+            
         task_name = user_tasks[task_uuid].get('item','Unknown Task')
+        cleanup_task_memory(user_id, task_uuid) # 🟢 Purge immediately from memory & UI
         
         # 🟢 [DB WIPE] Failsafe: instantly remove this specific task from DB
         try: await db.remove_active_task(task_uuid)
