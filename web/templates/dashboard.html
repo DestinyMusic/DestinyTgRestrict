@@ -964,6 +964,42 @@
                         <div class="card-stat" id="tg-status" style="font-size: 15px; margin-top: 6px;">Checking...</div>
                     </div>
                 </div>
+
+                <!-- 🇮🇳 DEV NOTE & TRIBUTE TO GREAT INDIA -->
+                <div class="card" id="india-tribute-card" style="margin-top: 25px; border-color: rgba(245, 158, 11, 0.4); background: color-mix(in srgb, var(--card) var(--glass-bg, 85%), transparent); position: relative; overflow: hidden;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; border-bottom: 1px solid var(--card-border); padding-bottom: 14px;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="font-size: 26px;">🇮🇳</span>
+                            <div>
+                                <h3 id="india-title" style="margin: 0; color: #fff; font-size: clamp(16px, 1.4vw, 20px); font-weight: 800; letter-spacing: 0.5px;">A Tribute to Bharat (India) • Dev Note</h3>
+                                <span id="india-subtitle" style="font-size: 11px; color: var(--accent); font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Crafted with pride by an Indian Noob Developer</span>
+                            </div>
+                        </div>
+
+                        <!-- Language Selector -->
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <label for="india-lang-select" style="font-size: 11px; color: var(--subtext); font-weight: 700; text-transform: uppercase;">🌐 Language:</label>
+                            <select id="india-lang-select" onchange="switchIndiaLanguage(this.value)" style="padding: 8px 14px; border-radius: 12px; border: 1px solid var(--card-border); background: var(--bg); color: var(--text); font-size: 12px; font-weight: 700; outline: none; cursor: pointer;">
+                                <option value="en" selected>English (English)</option>
+                                <option value="te">తెలుగు (Telugu)</option>
+                                <option value="hi">हिन्दी (Hindi)</option>
+                                <option value="ta">தமிழ் (Tamil)</option>
+                                <option value="bn">বাংলা (Bengali)</option>
+                                <option value="es">Español (Spanish)</option>
+                                <option value="fr">Français (French)</option>
+                                <option value="ru">Русский (Russian)</option>
+                                <option value="ar">العربية (Arabic)</option>
+                                <option value="ja">日本語 (Japanese)</option>
+                                <option value="de">Deutsch (German)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Dynamic Body Content -->
+                    <div id="india-content" style="line-height: 1.7; font-size: clamp(12.5px, 1.1vw, 14.5px); color: var(--subtext); transition: opacity 0.25s ease;">
+                        <!-- Content rendered dynamically via JS -->
+                    </div>
+                </div>
             </div>
 
             <!-- ========================================== -->
@@ -5911,6 +5947,235 @@
         }
 
         setTimeout(initAmbientEngine, 300);
+
+        // ======================================================================
+        // 🇮🇳 TRIBUTE TO INDIA — MULTILINGUAL ENGINE (HISTORY & RESILIENCE)
+        // ======================================================================
+        const indiaTranslations = {
+            en: {
+                title: "A Tribute to Bharat (India) • Dev Note",
+                subtitle: "Crafted with pride by an Indian Noob Developer",
+                intro: "Namaste! I am just a humble, self-taught Indian developer tinkering with servers, code, and algorithms. This project is built with reverence from the soil of <b>Bharat (India)</b>. For thousands of years, India was a beacon of wealth, philosophy, and mathematics. Despite facing catastrophic colonial de-industrialization and systemic plunder, India has risen from the ashes through sheer resilience to lead the 21st-century technological landscape.",
+                loot_title: "💸 From 27% Global GDP to 3%: The Great Colonial Drain",
+                loot_body: "Historical economic analyses (such as Angus Maddison's records) reveal that for over 1,500 years, India produced <b>25% to 33% of the world's total GDP</b>. When British rule began, India was the world's manufacturing titan in textiles and steel. Through deceptive taxation, de-industrialization, and resource exploitation, an estimated <b>$45 Trillion</b> was drained out of India. When the colonizers departed in 1947, our global GDP share was reduced to below <b>3%</b>, our life expectancy was a grim <b>32 years</b>, and repeated engineered famines had claimed tens of millions of innocent lives.",
+                literacy_title: "📖 The 11% Literacy Struggle & Rebuilding a Ruined Nation",
+                literacy_body: "In 1947, British colonizers left behind a shattered nation where barely <b>11% to 12% of Indians could read or write</b>, with female literacy at an abysmal 8%. From begging for food aid (PL-480) to initiating the <b>Green Revolution</b> and <b>White Revolution</b>, India transformed into a self-sufficient global breadbasket. Today, national literacy exceeds <b>77%+</b>, life expectancy has doubled past <b>70+ years</b>, and millions have been lifted out of multidimensional poverty.",
+                history_title: "📜 Ancient Science, Ayurveda & The Gift of Zero",
+                history_body: "Long before colonization, Aryabhata gifted the cosmos <b>Zero (Shūnya)</b>, without which modern binary coding, algebra, and computer science cannot exist. Sushruta pioneered plastic and cataract surgery, Charaka codified Ayurveda, and centers like <b>Nalanda and Takshashila</b> hosted thousands of global scholars when most of the world had no structured universities.",
+                democracy_title: "🏛️ The World's Largest Living Constitutional Democracy",
+                democracy_body: "Defying Western predictions that a diverse, impoverished nation would fragment, India adopted the world's most comprehensive and egalitarian Constitution drafted under the visionary leadership of <b>Dr. B.R. Ambedkar</b>. Today, over 950 million voters exercise universal suffrage in the largest democratic exercise on Earth with peaceful, lawful power transitions.",
+                tech_title: "🚀 Reborn Superpower: ISRO, UPI & Global IT Dominance",
+                tech_body: "The nation left with broken looms is now the world's <b>5th largest economy</b> rapidly marching to 3rd. ISRO landed <b>Chandrayaan-3</b> at the Moon's South Pole at a fraction of Hollywood movie budgets. India's digital public infrastructure — <b>UPI (Unified Payments Interface)</b> — processes nearly <b>46% of all global real-time digital transactions</b>. Indian minds helm world technology giants, and this dashboard is a humble homage to that indomitable civilizational spirit."
+            },
+            te: {
+                title: "భరతమాతకు నివాళి • డెవలపర్ మాట",
+                subtitle: "ఒక భారతీయ అనుభవశూన్య డెవలపర్ సగర్వంగా సమర్పిస్తున్నది",
+                intro: "నమస్కారం! నేను కోడింగ్ నేర్చుకుంటూ, సర్వర్లతో ప్రయోగాలు చేస్తున్న ఒక సాధారణ భారతీయ డెవలపర్‌ని. వేల సంవత్సరాల పాటు ప్రపంచానికే జ్ఞానాన్ని, సంపదను పంచిన మన <b>భారతదేశ (భారత్)</b> పవిత్ర భూమి నుంచే ఈ ప్రాజెక్ట్ రూపుదిద్దుకుంది. పరాయి పాలనలో దోపిడీకి గురై, కునారిల్లిపోయిన స్థితి నుండి నేడు ప్రపంచాన్ని నడిపించే స్థాయికి భారత్ ఎలా ఎదిగిందో గుర్తుచేసే చిన్న ప్రయత్నం ఇది.",
+                loot_title: "💸 27% ప్రపంచ జీడీపీ నుండి 3% కి: బ్రిటిష్ మహా దోపిడీ",
+                loot_body: "చరిత్రకారుడు అంగస్ మ్యాడిసన్ రికార్డుల ప్రకారం, దాదాపు 1,500 ఏళ్ల పాటు ప్రపంచ సంపదలో (GDP) భారతదేశ వాటా <b>25% నుండి 33%</b> గా ఉండేది. ప్రపంచ వస్త్ర, ఉక్కు వాణిజ్యాన్ని శాసించిన మన దేశాన్ని బ్రిటిష్ పాలకులు నిలువునా దోచేశారు. ప్రముఖ ఆర్థికవేత్తల అంచనా ప్రకారం భారత్ నుండి సుమారు <b>$45 లక్షల కోట్లు (45 Trillion Dollars)</b> తరలించారు. 1947 లో వారు వెళ్లేసరికి ప్రపంచ జీడీపీలో మన వాటా కేవలం <b>3%</b> కి పడిపోయింది, సగటు ఆయుర్దాయం కేవలం <b>32 ఏళ్లు</b> మాత్రమే మిగిలింది.",
+                literacy_title: "📖 11% అక్షరాస్యత నుండి ఆత్మనిర్భర్ భారత్ వైపు",
+                literacy_body: "స్వాతంత్ర్యం వచ్చిన నాటికి దేశంలో అక్షరాస్యత కేవలం <b>11% నుండి 12%</b> మాత్రమే (మహిళల అక్షరాస్యత కేవలం 8%). తిండిగింజల కోసం విదేశాల వైపు చూసిన స్థాయి నుండి <b>హరిత విప్లవం</b>, <b>శ్వేత విప్లవం</b> ద్వారా స్వయంసమృద్ధి సాధించి ప్రపంచానికే ఆహారం ఎగుమతి చేసే అన్నపూర్ణగా మారింది. నేడు అక్షరాస్యత <b>77% పైగా</b> చేరింది, సగటు ఆయుర్దాయం <b>70 ఏళ్లకు</b> పెరిగింది.",
+                history_title: "📜 ప్రాచీన విజ్ఞానం, ఆయుర్వేదం & సున్నా ఆవిష్కరణ",
+                history_body: "ఆర్యభట్టు ప్రపంచానికి <b>సున్నా (0)</b> అందించకపోతే నేటి కంప్యూటర్లు, కోడింగ్ సాధ్యమయ్యేవి కావు. వేల ఏళ్ల క్రితమే సుశ్రుతుడు శస్త్రచికిత్సను, చరకుడు ఆయుర్వేదాన్ని అందించారు. <b>నాలంద, తక్షశిల</b> వంటి విశ్వవిద్యాలయాలు ప్రపంచ విద్యార్థులకు జ్ఞానభిక్ష పెట్టాయి.",
+                democracy_title: "🏛️ ప్రపంచంలోనే అతిపెద్ద ప్రజాస్వామ్యం",
+                democracy_body: "బాబాసాహెబ్ <b>డాక్టర్ బి.ఆర్. అంబేద్కర్</b> గారి నాయకత్వంలో రూపుదిద్దుకున్న మహా రాజ్యాంగం ద్వారా భారత్ ఒక్కటిగా నిలిచింది. వందలాది భాషలు, విభిన్న సంస్కృతులు ఉన్నప్పటికీ 95 కోట్ల మంది ఓటర్లతో ప్రపంచంలోనే అతిపెద్ద ప్రజాస్వామ్య వ్యవస్థగా శాంతియుతంగా ముందుకు సాగుతోంది.",
+                tech_title: "🚀 ఇస్రో అద్భుతాలు, UPI & గ్లోబల్ టెక్నాలజీ లీడర్",
+                tech_body: "ఒకప్పుడు అన్నీ కోల్పోయిన భారత్ నేడు ప్రపంచంలో <b>5వ అతిపెద్ద ఆర్థిక వ్యవస్థగా</b> నిలిచి 3వ స్థానం వైపు దూసుకుపోతోంది. చంద్రుడి దక్షిణ ధ్రువంపై కాలుమోపిన <b>చంద్రయాన్-3</b> తో ఇస్రో చరిత్ర సృష్టించింది. ప్రపంచంలో జరిగే మొత్తం రియల్-టైమ్ డిజిటల్ చెల్లింపుల్లో దాదాపు <b>46% వాటా UPI</b> దే! సిలికాన్ వ్యాలీని నడిపిస్తున్న ఆ భారతీయ ప్రతిభకు సలాం కొడుతూ రూపొందించిన చిరు ప్రయత్నమే ఈ డ్యాష్‌బోర్డ్."
+            },
+            hi: {
+                title: "भारत माता को नमन • डेवलपर का संदेश",
+                subtitle: "एक भारतीय नौसिखिया डेवलपर द्वारा गर्व से निर्मित",
+                intro: "नमस्ते! मैं कोडिंग और ओपन-सोर्स की दुनिया में सीखता हुआ एक साधारण भारतीय डेवलपर हूँ। यह प्रोजेक्ट <b>भारत भूमि</b> की पावन मिट्टी से बनाया गया है। हजारों वर्षों तक दुनिया का आर्थिक और आध्यात्मिक केंद्र रहा भारत, 200 वर्षों की औपनिवेशिक लूट और विनाश को झेलने के बाद भी अपनी अटूट इच्छाशक्ति के बल पर पुनः विश्व मंच पर अग्रणी बनकर उभरा है।",
+                loot_title: "💸 27% वैश्विक GDP से 3% तक: औपनिवेशिक महा-लूट",
+                loot_body: "ऐतिहासिक अर्थशास्त्री एंगस मैडिसन के आंकड़ों के अनुसार, ईसा पश्चात 1,500 से अधिक वर्षों तक दुनिया की कुल जीडीपी में भारत की हिस्सेदारी <b>25% से 33%</b> थी। ब्रिटिश राज ने भारत के कपड़ा, इस्पात और कृषि उद्योगों को नष्ट कर अनुमानित <b>$45 ट्रिलियन (लगभग 3,700 लाख करोड़ रुपये)</b> की अकूत संपदा लूटी। 1947 में जब वे गए, तो भारत की वैश्विक जीडीपी हिस्सेदारी घटकर मात्र <b>3% से भी कम</b> रह गई थी, और औसत आयु केवल <b>32 वर्ष</b> थी।",
+                literacy_title: "📖 11% साक्षरता से आत्मनिर्भरता की महागाथा",
+                literacy_body: "1947 में आज़ादी के समय भारत में साक्षरता दर केवल <b>11% से 12%</b> थी (महिलाओं में मात्र 8%)। अकाल और भुखमरी से जूझते देश ने <b>हरित क्रांति</b> और <b>श्वेत क्रांति</b> के दम पर न केवल खुद का पेट भरा, बल्कि दुनिया का अन्नदाता बना। आज भारत की साक्षरता दर <b>77% से अधिक</b> है और जीवन प्रत्याशा बढ़कर <b>70+ वर्ष</b> हो चुकी है।",
+                history_title: "📜 शून्य का वरदान, आयुर्वेद और प्राचीन विज्ञान",
+                history_body: "महान गणितज्ञ आर्यभट्ट द्वारा दिए गए <b>शून्य (0)</b> और दशमलव प्रणाली के बिना आज का कंप्यूटर विज्ञान और बाइनरी कोड असंभव था। सुश्रुत ने शल्य चिकित्सा (सर्जरी) की नींव रखी, चरक ने आयुर्वेद दिया, और <b>नालंदा व तक्षशिला</b> जैसे प्राचीन विश्वविद्यालयों ने उस युग में ज्ञान की अलख जगाई जब आधुनिक दुनिया में विश्वविद्यालय की कल्पना भी नहीं थी।",
+                democracy_title: "🏛️ विश्व का सबसे विशाल और सशक्त लोकतंत्र",
+                democracy_body: "बाबासाहेब <b>डॉ. भीमराव आंबेडकर</b> द्वारा निर्मित दुनिया के सबसे विस्तृत और प्रगतिशील संविधान के बल पर भारत ने पश्चिमी भविष्यवाणियों को गलत साबित करते हुए अपनी एकता को अक्षुण्ण रखा। आज 95 करोड़ से अधिक मतदाता विश्व के सबसे बड़े लोकतांत्रिक उत्सव में भाग लेते हैं।",
+                tech_title: "🚀 अंतरिक्ष में तिरंगा (ISRO), UPI और वैश्विक तकनीकी शक्ति",
+                tech_body: "आज भारत दुनिया की <b>5वीं सबसे बड़ी अर्थव्यवस्था</b> है और तेजी से तीसरे स्थान की ओर बढ़ रहा है। हॉलीवुड फिल्मों से भी कम बजट में <b>चंद्रयान-3</b> को चंद्रमा के दक्षिणी ध्रुव पर उतारने वाले इसरो से लेकर, दुनिया के कुल रियल-टाइम डिजिटल भुगतानों का <b>46% संचालित करने वाले UPI</b> तक — भारत भविष्य को आकार दे रहा है।"
+            },
+            ta: {
+                title: "பாரதத்திற்கு சமர்ப்பணம் • உருவாக்குநர் குறிப்பு",
+                subtitle: "ஒரு இந்திய நவீனர் பெருமையுடன் உருவாக்கியது",
+                intro: "வணக்கம்! நான் கணினி நிரலாக்கத்தை ஆர்வத்துடன் கற்கும் ஒரு எளிய இந்திய மென்பொருள் உருவாக்குநர். <b>பாரத மண்ணிலிருந்து</b> உருவான இத்தளம், ஆங்கிலேயர் ஆட்சியில் சூறையாடப்பட்டு 11% எழுத்தறிவுடன் விடப்பட்ட ஒரு தேசம், இன்று உலக வல்லரசாக மீண்டெழுந்த வரலாற்றைப் போற்றுகிறது.",
+                loot_title: "💸 27% உலக ஜிடிபியிலிருந்து 3%: பிரிட்டிஷ் சுரண்டல்",
+                loot_body: "வரலாற்றுப் பொருளாதார ஆய்வுகளின்படி, 1,500 ஆண்டுகளுக்கும் மேலாக உலக உற்பத்தியில் இந்தியாவின் பங்கு <b>25% முதல் 33%</b> வரை இருந்தது. பிரிட்டிஷ் ஆட்சியாளர்கள் சுமார் <b>$45 டிரில்லியன் டாலர்</b> செல்வத்தை இந்தியாவிலிருந்து கொள்ளையடித்துச் சென்றனர். 1947-ல் அவர்கள் வெளியேறியபோது நமது உலகப் பொருளாதாரப் பங்கு வெறும் <b>3% க்கும் கீழ்</b> சரிந்தது; மக்களின் சராசரி ஆயுட்காலம் வெறும் <b>32 ஆண்டுகளாக</b> இருந்தது.",
+                literacy_title: "📖 11% எழுத்தறிவிலிருந்து நவீன மறுமலர்ச்சி",
+                literacy_body: "சுதந்திரத்தின் போது இந்தியாவில் எழுத்தறிவு வெறும் <b>11% முதல் 12%</b> மட்டுமே. பஞ்சங்களையும் உணவுத் தட்டுப்பாட்டையும் எதிர்கொண்ட இந்தியா, பசுமைப் புரட்சி மற்றும் வெண்மைப் புரட்சி மூலம் உணவு உற்பத்தியில் தன்னிறைவு பெற்றது. இன்று எழுத்தறிவு <b>77% க்கும் மேல்</b> உயர்ந்துள்ளது.",
+                history_title: "📜 பூஜ்ஜியத்தின் கொடை மற்றும் பழம்பெரும் அறிவியல்",
+                history_body: "ஆரியபட்டர் உலகுக்கு வழங்கிய <b>பூஜ்ஜியம் (0)</b> இன்றி இன்றைய கணினி நிரலாக்கமே சாத்தியமில்லை. சுஸ்ருதர் அறுவை சிகிச்சையையும், சித்த மற்றும் ஆயுர்வேத மருத்துவத்தையும், நாலந்தா பல்கலைக்கழகம் உலகளாவிய அறிவையும் வழங்கின.",
+                democracy_title: "🏛️ உலகின் மிகப்பெரிய மக்களாட்சி",
+                democracy_body: "டாக்டர் <b>பி.ஆர். அம்பேத்கர்</b> வகுத்தளித்த மகத்தான அரசியலமைப்பின் கீழ் இயங்கும் உலகின் மாபெரும் ஜனநாயக நாடு பாரதம். 95 கோடிக்கும் அதிகமான வாக்காளர்கள் அமைதியான முறையில் தங்கள் உரிமையைப் பயன்படுத்துகின்றனர்.",
+                tech_title: "🚀 இஸ்ரோ, UPI மற்றும் உலகத் தொழில்நுட்ப ஆற்றல்",
+                tech_body: "நிலவின் தென் துருவத்தில் தடம் பதித்த <b>சந்திரயான்-3</b>, உலகளாவிய நிகழ்நேர டிஜிட்டல் பணப்பரிவர்த்தனைகளில் <b>46% கையாளும் UPI</b>, உலகின் 5வது பெரிய பொருளாதாரம் என இந்தியா உலகைத் தலைமை தாங்குகிறது."
+            },
+            bn: {
+                title: "ভারত বন্দনা • ডেভেলপারের বার্তা",
+                subtitle: "একজন ভারতীয় শিক্ষানবিস ডেভেলপারের গর্বের নিবেদন",
+                intro: "নমস্কার! আমি প্রযুক্তি ও কোডিং অনুরাগী একজন সাধারণ ভারতীয় ডেভেলপার। প্রাচীন সমৃদ্ধি, ঔপনিবেশিক লুণ্ঠন এবং সেখান থেকে ঘুরে দাঁড়িয়ে আজকের আধুনিক প্রযুক্তি পরাশক্তি হয়ে ওঠার ভারতীয় চেতনাকে এই প্রজেক্টের মাধ্যমে শ্রদ্ধা জানাই।",
+                loot_title: "💸 ২৭% বৈশ্বিক জিডিপি থেকে ৩%: ঔপনিবেশিক লুণ্ঠন",
+                loot_body: "ইতিহাসবিদ অ্যাঙ্গাস ম্যাডিসনের তথ্যমতে, প্রায় দেড় হাজার বছর ধরে বিশ্বের মোট অর্থনীতির <b>২৫% থেকে ৩৩%</b> ছিল ভারতের দখলে। ব্রিটিশ ঔপনিবেশিক শাসনামলে পরিকল্পিতভাবে প্রায় <b>$৪৫ ট্রিলিয়ন ডলার</b> সম্পদ লুট করা হয়। ১৯৪৭ সালে তারা যখন দেশত্যাগ করে, তখন ভারতের বৈশ্বিক অংশ নেমে আসে মাত্র <b>৩% এর নিচে</b> এবং মানুষের গড় আয়ু ছিল মাত্র <b>৩২ বছর</b>।",
+                literacy_title: "📖 ১১% সাক্ষরতা থেকে পুনর্গঠনের মহাকাব্য",
+                literacy_body: "১৯৪৭ সালে ব্রিটিশরা যখন ভারত ছাড়ে, তখন দেশের সাক্ষরতার হার ছিল মাত্র <b>১১% থেকে ১২%</b>। চরম খাদ্য সংকট ও দারিদ্র্য কাটিয়ে সবুজ বিপ্লবের মাধ্যমে ভারত আজ খাদ্যে স্বয়ংসম্পূর্ণ। বর্তমানে সাক্ষরতার হার <b>৭৭%+</b> ছাড়িয়েছে এবং গড় আয়ু ৭০ বছরের বেশি হয়েছে।",
+                history_title: "📜 আর্যভট্টের শূন্য ও প্রাচীন জ্ঞানভাণ্ডার",
+                history_body: "আর্যভট্টের <b>শূন্য (০)</b> আবিষ্কার ছাড়া আজকের বাইনারি কোড ও কম্পিউটার বিপ্লব অসম্ভব ছিল। সুশ্রুতের শল্যচিকিৎসা এবং নালন্দা-তক্ষশীলার মতো প্রাচীন বিদ্যাপীঠ ছিল সমগ্র বিশ্বের জ্ঞানের বাতিঘর।",
+                democracy_title: "🏛️ বিশ্বের বৃহত্তম প্রাণবন্ত গণতন্ত্র",
+                democracy_body: "ড. বি. আর. আম্বেদকরের নেতৃত্বে রচিত দূরদর্শী সংবিধানের ওপর দাঁড়িয়ে ভারত বিশ্বের সর্ববৃহৎ গণতান্ত্রিক রাষ্ট্র হিসেবে অটল রয়েছে, যেখানে ৯৫ কোটিরও বেশি মানুষ ভোটাধিকার প্রয়োগ করেন।",
+                tech_title: "🚀 ইসরো (ISRO), ইউপিআই ও বিশ্বমঞ্চে ভারতের জয়যাত্রা",
+                tech_body: "আজ ভারত বিশ্বের <b>৫ম বৃহত্তম অর্থনীতি</b>। চাঁদের দক্ষিণ মেরুতে <b>চন্দ্রযান-৩</b> এর অবতরণ থেকে শুরু করে বিশ্বের মোট ডিজিটাল লেনদেনের <b>৪৬% পরিচালনাকারী UPI</b>—ভারত আজ বিশ্ব প্রযুক্তির অন্যতম শীর্ষ চালিকাশক্তি।"
+            },
+            es: {
+                title: "Homenaje a Bharat (India) • Nota del Desarrollador",
+                subtitle: "Creado con orgullo por un desarrollador indio aprendiz",
+                intro: "¡Namaste! Soy un humilde desarrollador autodidacta de la <b>India (Bharat)</b>. Esta tierra, que durante milenios representó la mayor economía del planeta, sobrevivió al despojo colonial y al abandono con solo un 11% de alfabetización, renaciendo hoy como una superpotencia científica y digital.",
+                loot_title: "💸 Del 27% del PIB mundial al 3%: El Saqueo Colonial",
+                loot_body: "Estudios históricos demuestran que durante más de 1.500 años la India generó entre el <b>25% y el 33% del PIB mundial</b>. El dominio colonial británico desmanteló su industria y drenó un estimado de <b>$45 billones de dólares ($45 Trillion)</b>. En 1947, dejaron a la India con menos del <b>3%</b> del PIB global y una esperanza de vida de apenas <b>32 años</b>.",
+                literacy_title: "📖 El reto del 11% de alfabetización y la Reconstrucción",
+                literacy_body: "Al partir los colonizadores, apenas el <b>11%-12% de la población sabía leer y escribir</b>. Pese a las hambrunas heredadas, la India impulsó la Revolución Verde hasta convertirse en autosuficiente. Hoy la alfabetización supera el <b>77%</b> y la esperanza de vida se ha duplicado a más de <b>70 años</b>.",
+                history_title: "📜 El Cero Matemático, Cirugía y Medicina Ancestral",
+                history_body: "Aryabhata legó al mundo el <b>Cero (Shūnya)</b>, cimiento del código binario y la informática. Sushruta fue pionero de la cirugía reconstructiva y universidades como Nalanda educaban a sabios de Asia cuando casi no existían centros académicos en Occidente.",
+                democracy_title: "🏛️ La Mayor Democracia Constitucional del Mundo",
+                democracy_body: "Guiada por la magnífica constitución redactada bajo el liderazgo del <b>Dr. B.R. Ambedkar</b>, la India alberga el mayor ejercicio democrático de la humanidad con más de 950 millones de electores en paz y estabilidad cívica.",
+                tech_title: "🚀 Resurgimiento Global: ISRO, UPI y Liderazgo Digital",
+                tech_body: "Hoy la India es la <b>5ª economía mundial</b>. La agencia ISRO alunizó con éxito el <b>Chandrayaan-3</b> en el polo sur lunar con presupuestos mínimos, mientras que la plataforma <b>UPI</b> procesa casi el <b>46% de todas las transacciones digitales en tiempo real del planeta</b>."
+            },
+            fr: {
+                title: "Hommage à Bharat (Inde) • Note du Développeur",
+                subtitle: "Conçu avec fierté par un jeune développeur indien",
+                intro: "Namasté ! Je suis un développeur indien autodidacte. Ce projet rend hommage à <b>Bharat (l'Inde)</b>, une civilisation millénaire qui représentait un tiers de la richesse mondiale, qui a survécu à un pillage colonial massif la laissant exsangue à 11% d'alphabétisation, et qui est aujourd'hui redevenue un géant technologique mondial.",
+                loot_title: "💸 De 27% du PIB mondial à 3%: Le Pillage Colonial",
+                loot_body: "Selon les travaux de l'économiste Angus Maddison, l'Inde a produit entre <b>25% et 33% du PIB mondial</b> pendant plus de 15 siècles. La colonisation britannique a désindustrialisé le pays et drainé une somme estimée à <b>45 000 milliards de dollars</b>. En 1947, la part de l'Inde était tombée à moins de <b>3%</b>, avec une espérance de vie de seulement <b>32 ans</b>.",
+                literacy_title: "📖 Le défi des 11% d'alphabétisation et la Renaissance",
+                literacy_body: "En 1947, à peine <b>11% à 12% des Indiens savaient lire et écrire</b>. En surmontant des famines répétées grâce à la Révolution Verte, l'Inde est devenue un grenier nourricier autonome. Aujourd'hui, le taux d'alphabétisation dépasse <b>77%</b> et l'espérance de vie s'est élevée à plus de <b>70 ans</b>.",
+                history_title: "📜 Le Zéro, la Chirurgie Antique et le Savoir Védique",
+                history_body: "Aryabhata a offert à l'humanité le <b>Zéro</b>, sans lequel l'informatique moderne et le binaire n'existeraient pas. Sushruta a codifié la chirurgie plastique bien avant notre ère, et l'université de Nalanda brillait comme un phare intellectuel mondial.",
+                democracy_title: "🏛️ La Plus Grande Démocratie Vivante",
+                democracy_body: "Fondée sur la constitution rédigée sous la direction éclairée du <b>Dr B.R. Ambedkar</b>, l'Inde fait voter plus de 950 millions de citoyens dans le respect des libertés et des alternances pacifiques.",
+                tech_title: "🚀 Puissance Retrouvée: ISRO, UPI et Génie Informatique",
+                tech_body: "L'Inde est aujourd'hui la <b>5e puissance économique mondiale</b>. D'un atterrissage historique sur le pôle Sud de la Lune avec <b>Chandrayaan-3</b> au système <b>UPI</b> qui traite près de <b>46% des paiements instantanés mondiaux</b>, l'ingénierie indienne propulse le monde moderne."
+            },
+            ru: {
+                title: "Дань уважения Индии (Бхарат) • Заметка разработчика",
+                subtitle: "Создано с гордостью индийским начинающим разработчиком",
+                intro: "Намасте! Я индийский разработчик-самоучка. Этот проект посвящен великой <b>Индии (Бхарат)</b>. На протяжении тысячелетий производившая треть мирового богатства, страна пережила колониальное опустошение, оставшись в 1947 году с 11% грамотности, но возродилась и стала лидером цифровой эпохи.",
+                loot_title: "💸 С 27% мирового ВВП до 3%: Колониальный грабеж",
+                loot_body: "Исторические данные Ангуса Мэддисона подтверждают, что Индия производила <b>от 25% до 33% мирового ВВП</b> более полутора тысяч лет. Британское владычество выкачало из страны около <b>45 триллионов долларов</b>. К 1947 году доля Индии в мировой экономике упала ниже <b>3%</b>, а средняя продолжительность жизни составляла всего <b>32 года</b>.",
+                literacy_title: "📖 11% грамотности и подвиг возрождения нации",
+                literacy_body: "В 1947 году колонизаторы оставили страну, где лишь <b>11–12% населения умели читать и писать</b>. Преодолев голод благодаря Зеленой революции, Индия обеспечила себя продовольствием. Сегодня уровень грамотности превышает <b>77%</b>, а средняя продолжительность жизни достигла <b>70+ лет</b>.",
+                history_title: "📜 Дар Нуля, древняя хирургия и университеты",
+                history_body: "Арьябхата подарил миру <b>Ноль (Шунья)</b>, без которого не существовало бы программирования и двоичного кода. Сушрута заложил основы хирургии, а университет Наланда обучал тысячи студентов со всего мира задолго до появления европейских академий.",
+                democracy_title: "🏛️ Крупнейшая демократия на планете",
+                democracy_body: "Благодаря фундаментальной Конституции доктора <b>Б. Р. Амбедкара</b>, Индия опровергла прогнозы о распаде. Более 950 миллионов избирателей участвуют в величайшем демократическом процессе на Земле.",
+                tech_title: "🚀 Прорыв в будущее: ISRO, система UPI и IT-лидерство",
+                tech_body: "Индия стала <b>5-й экономикой мира</b>. Миссия <b>Чандраян-3</b> первой в истории села на южном полюсе Луны, а система <b>UPI</b> обрабатывает около <b>46% всех мировых цифровых платежей</b> реального времени."
+            },
+            ar: {
+                title: "تحية إلى بهارات (الهند) • رسالة المطور",
+                subtitle: "صُنع بكل فخر بواسطة مطور هندي مبتدئ",
+                intro: "نمستي! أنا مطور برمجيات هندي متواضع. هذا المشروع تحية لأرض <b>الهند (بهارات)</b> التي قادت اقتصاد العالم لقرون، ثم واجهت نهباً استعمارياً تركها بنسبة أمية بلغت 89%، قبل أن تنهض كقوة عظمى في الفضاء والتقنية الحديثة.",
+                loot_title: "💸 من 27% من اقتصاد العالم إلى 3%: الاستنزاف الاستعماري",
+                loot_body: "تؤكد الدراسات الاقتصادية التاريخية أن الهند كانت تشكل <b>25% إلى 33% من الناتج المحلي العالمي</b> لأكثر من 1500 عام. وخلال الحقبة الاستعمارية البريطانية، نُهب ما يقدر بنحو <b>45 تريليون دولار</b>. وعند رحيلهم عام 1947، انخفضت حصة الهند العالمية إلى أقل من <b>3%</b>، وبلغ متوسط العمر <b>32 عاماً</b> فقط.",
+                literacy_title: "📖 كفاح 11% نسبة تعليم وإعادة بناء الأمة",
+                literacy_body: "في عام 1947، لم يتجاوز معدل القراءة والكتابة في الهند <b>11% إلى 12%</b>. ومن مجاعات قاسية إلى إطلاق الثورة الخضراء، حققت الهند أمنها الغذائي وأصبحت سلة غذاء عالمية. واليوم تتجاوز نسبة التعليم <b>77%</b> وارتفع متوسط العمر فوق <b>70 عاماً</b>.",
+                history_title: "📜 إهداء الصفر للكون، والجراحة القديمة",
+                history_body: "أهدى العالم أريابهاتا البشرية مفهوم <b>الصفر (0)</b> الذي لولاه لما وُجدت لغات البرمجة الحديثة. وأسس سوسروتا علوم الجراحة، وكانت جامعة نالاندا منارة للعلم والعلماء من جميع أصقاع الأرض.",
+                democracy_title: "🏛️ أكبر ديمقراطية دستورية نابضة بالحياة",
+                democracy_body: "بفضل الدستور العظيم الذي صاغه الدكتور <b>ب. ر. أمبيدكار</b>، تقف الهند كأكبر ديمقراطية في التاريخ، حيث يمارس أكثر من 950 مليون ناخب حقهم الدستوري بسلام ونظام تام.",
+                tech_title: "🚀 عصر الريادة: الفضاء (ISRO)، الدفع الرقمي UPI وعلوم الحاسوب",
+                tech_body: "الهند اليوم هي <b>خامس أكبر اقتصاد عالمي</b>. هبطت مركبة <b>تشاندرايان-3</b> على القطب الجنوبي للقمر بأقل التكاليف، بينما تعالج شبكة <b>UPI</b> الهندية قرابة <b>46% من إجمالي المدفوعات الرقمية الفورية في العالم</b>."
+            },
+            ja: {
+                title: "インド（バーラト）への賛辞 • 開発者の言葉",
+                subtitle: "誇り高きインドの初心者エンジニアによる制作",
+                intro: "ナマステ！私は独学でコーディングを学ぶ一人のインド人開発者です。世界の富の3分の1を誇りながら植民地支配により識字率11%まで搾取され、そこから不屈の精神で世界のITと宇宙開発を牽引するまでに復活した母国<b>インド（バーラト）</b>に敬意を表します。",
+                loot_title: "💸 世界GDPの27%から3%へ：植民地支配による巨大な略奪",
+                loot_body: "歴史経済学者アンガス・マディソンの記録によると、インドは1500年以上にわたり<b>世界全体のGDPの25%〜33%</b>を占めていました。しかし英国の植民地支配により約<b>45兆ドル（約6700兆円）</b>に及ぶ富が収奪されました。1947年の独立時、インドの世界シェアは<b>3%未満</b>に激減し、平均寿命はわずか<b>32歳</b>でした。",
+                literacy_title: "📖 識字率11%からの再建と食糧自給の軌跡",
+                literacy_body: "独立時の識字率はわずか<b>11%〜12%</b>（女性は8%）でした。飢餓の危機を「緑の革命」によって克服し、食糧輸入国から世界有数の輸出国へと成長しました。現在、識字率は<b>77%以上</b>に達し、平均寿命は<b>70歳超</b>へと倍増しました。",
+                history_title: "📜 「ゼロ」の発見、古代医学とナーランダ大学",
+                history_body: "古代インドの数学者アーリヤバタが発見した<b>「0（ゼロ）」</b>がなければ、現代のコンピュータやバイナリコードは存在しませんでした。スシュルタは外科手術の祖であり、古代ナーランダ大学は世界中から知識人を集めた学問の最高峰でした。",
+                democracy_title: "🏛️ 世界最大の活気ある立憲民主主義国",
+                democracy_body: "<b>B.R.アンベードカル博士</b>が起草した世界で最も包括的な憲法のもと、多民族・多言語国家でありながら9億5000万人以上の有権者が平和的に一票を行使する世界最大の民主主義を守り抜いています。",
+                tech_title: "🚀 蘇る超大国：ISROの宇宙開発、UPI決済、そして世界を牽引するIT",
+                tech_body: "現在、インドは<b>世界第5位の経済大国</b>へと躍進しました。月面南極への着陸を成し遂げた<b>チャンドラヤーン3号</b>や、世界全体のリアルタイムデジタル決済の約<b>46%を占めるUPIシステム</b>など、インドの頭脳は世界の未来を創り出しています。"
+            },
+            de: {
+                title: "Hommage an Bharat (Indien) • Entwickler-Notiz",
+                subtitle: "Mit Stolz entwickelt von einem indischen Noob-Entwickler",
+                intro: "Namaste! Ich bin ein autodidaktischer indischer Entwickler. Dieses Projekt ehrt die Erde von <b>Bharat (Indien)</b> – ein Land, das über Jahrtausende ein Drittel der globalen Wirtschaftskraft trug, durch koloniale Ausbeutung auf 11% Alphabetisierung dezimiert wurde und heute als globale Tech- und Raumfahrtmacht wiederauferstanden ist.",
+                loot_title: "💸 Von 27% des Welt-BIP auf 3%: Der koloniale Raubbau",
+                loot_body: "Wirtschaftshistorische Daten (u. a. von Angus Maddison) belegen, dass Indien über 1.500 Jahre hinweg <b>25% bis 33% des globalen BIP</b> erwirtschaftete. Durch die britische Kolonialherrschaft wurden geschätzte <b>45 Billionen US-Dollar (45 Trillion USD)</b> entzogen. Bei der Unabhängigkeit 1947 war Indiens Anteil auf unter <b>3%</b> gefallen, und die Lebenserwartung betrug verheerende <b>32 Jahre</b>.",
+                literacy_title: "📖 Der Kampf ab 11% Alphabetisierung und der Wiederaufbau",
+                literacy_body: "1947 lag die Alphabetisierungsrate bei desolaten <b>11% bis 12%</b>. Trotz verheerender Hungersnöte sicherte sich Indien durch die Grüne und Weiße Revolution die Nahrungsmittelsouveränität. Heute liegt die Alphabetisierungsrate bei über <b>77%</b> und die Lebenserwartung hat sich auf über <b>70 Jahre</b> verdoppelt.",
+                history_title: "📜 Die Gabe der Null, Chirurgie und antike Gelehrte",
+                history_body: "Aryabhata schenkte der Welt die <b>Null (0)</b>, ohne die moderne Programmierung und Algebra unmöglich wären. Sushruta begründete die plastische Chirurgie, und die Universität Nalanda bildete weltweite Denker aus, als es im Westen noch keine Universitäten gab.",
+                democracy_title: "🏛️ Die größte lebendige Demokratie der Erde",
+                democracy_body: "Unter Führung von <b>Dr. B.R. Ambedkar</b> schuf Indien eine visionäre Verfassung. Heute nehmen über 950 Millionen registrierte Wähler am größten demokratischen Prozess der Menschheitsgeschichte in geordneter Freiheit teil.",
+                tech_title: "🚀 Wiedergeborene Supermacht: ISRO, UPI und globale IT-Führung",
+                tech_body: "Indien ist heute die <b>fünftgrößte Volkswirtschaft der Welt</b>. Von der Landung am Südpol des Mondes mit <b>Chandrayaan-3</b> bis zum Bezahlsystem <b>UPI</b>, das fast <b>46% aller globalen Echtzeit-Zahlungen</b> abwickelt, treibt indische Innovationskraft die Welt an."
+            }
+        };
+
+        function switchIndiaLanguage(langCode) {
+            const data = indiaTranslations[langCode] || indiaTranslations.en;
+            const contentEl = document.getElementById('india-content');
+            const titleEl = document.getElementById('india-title');
+            const subtitleEl = document.getElementById('india-subtitle');
+
+            if (!contentEl) return;
+            localStorage.setItem('india_note_lang', langCode);
+
+            contentEl.style.opacity = '0';
+            setTimeout(() => {
+                if (titleEl) titleEl.innerText = data.title;
+                if (subtitleEl) subtitleEl.innerText = data.subtitle;
+
+                contentEl.innerHTML = `
+                    <div style="background: rgba(0,0,0,0.3); border-left: 4px solid var(--accent); padding: 16px; border-radius: 12px; margin-bottom: 20px; color: #fff;">
+                        ${data.intro}
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px;">
+                        <div style="background: rgba(0,0,0,0.25); border: 1px solid rgba(239, 68, 68, 0.4); padding: 16px; border-radius: 14px;">
+                            <div style="font-weight: 800; color: #f87171; margin-bottom: 8px; font-size: 13px;">${data.loot_title}</div>
+                            <div style="line-height: 1.6;">${data.loot_body}</div>
+                        </div>
+
+                        <div style="background: rgba(0,0,0,0.25); border: 1px solid rgba(245, 158, 11, 0.4); padding: 16px; border-radius: 14px;">
+                            <div style="font-weight: 800; color: #fbbf24; margin-bottom: 8px; font-size: 13px;">${data.literacy_title}</div>
+                            <div style="line-height: 1.6;">${data.literacy_body}</div>
+                        </div>
+
+                        <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--card-border); padding: 16px; border-radius: 14px;">
+                            <div style="font-weight: 800; color: #a78bfa; margin-bottom: 8px; font-size: 13px;">${data.history_title}</div>
+                            <div style="line-height: 1.6;">${data.history_body}</div>
+                        </div>
+
+                        <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--card-border); padding: 16px; border-radius: 14px;">
+                            <div style="font-weight: 800; color: #38bdf8; margin-bottom: 8px; font-size: 13px;">${data.democracy_title}</div>
+                            <div style="line-height: 1.6;">${data.democracy_body}</div>
+                        </div>
+
+                        <div style="background: rgba(0,0,0,0.25); border: 1px solid rgba(16, 185, 129, 0.4); padding: 16px; border-radius: 14px; grid-column: 1 / -1;">
+                            <div style="font-weight: 800; color: #34d399; margin-bottom: 8px; font-size: 13px;">${data.tech_title}</div>
+                            <div style="line-height: 1.6;">${data.tech_body}</div>
+                        </div>
+                    </div>
+                `;
+                contentEl.style.opacity = '1';
+            }, 150);
+        }
+
+        // Initialize saved or default language on startup
+        setTimeout(() => {
+            const savedLang = localStorage.getItem('india_note_lang') || 'en';
+            const selectEl = document.getElementById('india-lang-select');
+            if (selectEl) selectEl.value = savedLang;
+            switchIndiaLanguage(savedLang);
+        }, 200);
 
         // 🟢 FIX: Dynamic WebGL Resizer
         function resizeGlobeEngine() {
