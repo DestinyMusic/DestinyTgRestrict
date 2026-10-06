@@ -2357,12 +2357,24 @@ async def _api_edit_media_handler(request):
                 extract_dir = temp_dir / "extracted_media"
                 extract_dir.mkdir(parents=True, exist_ok=True)
                 
-                def unpack_archive():
-                    import zipfile
-                    with zipfile.ZipFile(input_file, 'r') as zf:
-                        zf.extractall(extract_dir)
+                async def unpack_archive():
+                    # 🟢 FIX: Use robust 7-Zip engine to handle RAR, 7Z, and heavy Split-ZIPs seamlessly
+                    cmd = ["7z", "x", str(input_file), f"-o{extract_dir}", "-y"]
+                    proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                    await proc.communicate()
+                    
+                    if proc.returncode != 0:
+                        # Fallback to Python's native zip extractor
+                        def fallback_unzip():
+                            import zipfile
+                            with zipfile.ZipFile(input_file, 'r') as zf:
+                                zf.extractall(extract_dir)
+                        await asyncio.to_thread(fallback_unzip)
                 
-                await asyncio.to_thread(unpack_archive)
+                try:
+                    await unpack_archive()
+                except Exception as e:
+                    raise Exception(f"Failed to extract archive. Corrupt or unsupported format: {e}")
                 
                 # 🟢 Gather media and document tracks
                 audio_exts = ('.flac', '.mp3', '.m4a', '.wav', '.aac', '.opus', '.ogg', '.alac', '.mka', '.dsf', '.dff', '.ac3', '.eac3', '.dts')
