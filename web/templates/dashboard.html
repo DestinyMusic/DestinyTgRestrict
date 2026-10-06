@@ -335,6 +335,45 @@
                 width: 95vw !important; right: 2.5vw !important; bottom: 85px !important;
             }
         }
+
+        /* 📺 TV, IPAD & ULTRA-WIDE RESPONSIVENESS (Floating Island UI) */
+        @media (min-width: 1024px) {
+            /* Transform the Navbar into a centered floating island so it's easy to reach */
+            .navbar {
+                width: var(--liquid-width);
+                margin: 20px auto;
+                border-radius: 20px;
+                border: 1px solid color-mix(in srgb, var(--card-border) var(--glass-border, 100%), transparent);
+                top: 20px;
+                box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+                transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            }
+            /* Align the profile menu precisely under the new island navbar */
+            .profile-menu {
+                right: calc(50vw - (var(--liquid-width) / 2));
+                top: 100px;
+            }
+            .container { padding-top: 3vh; }
+            
+            /* Scale up popups dynamically for massive screens */
+            .modal-content { max-width: clamp(460px, 35vw, 800px); }
+            .login-card { max-width: clamp(420px, 25vw, 600px); }
+            .profile-menu { width: clamp(260px, 20vw, 400px); }
+        }
+
+        @media (min-width: 1920px) {
+            .navbar { margin: 40px auto; top: 40px; border-radius: 28px; padding: 25px 50px; }
+            .profile-menu { top: 140px; }
+            .container { padding-top: 5vh; }
+            
+            /* TV Remote / D-Pad Enhancement - Makes focused items pop out massively */
+            *:focus-visible { 
+                transform: scale(1.03); 
+                outline: 5px solid var(--accent) !important; 
+                outline-offset: 8px !important;
+                z-index: 50;
+            }
+        }
         
         /* Anime Glass Card */
         .card { 
