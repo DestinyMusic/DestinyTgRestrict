@@ -2190,13 +2190,17 @@
         function applyLiquidGlass(val) {
             document.getElementById('glass-val').innerText = val;
             
-            const blurPx = (val / 100) * 28; 
-            // 🟢 FIX: Scale properly from 100% (Solid) down to 15% (Highly Transparent Glass)
-            const bgAlpha = 100 - (val * 0.85);       
+            // 🟢 FIX: 100% Intensity now means "100% Transparent Crystal Glass"
+            // At 100%, background color drops to 5% making it completely see-through
+            const bgAlpha = 100 - (val * 0.95);       
             const borderAlpha = 100 - (val * 0.60);   
             
-            const blobOpacity = (val / 100) * 0.25;       
-            const shadowAlpha = (val / 100) * 0.6;        
+            // The base blur is 16px. Subtracting up to 14px removes the heavy frosted effect, 
+            // leaving a crystal-clear 2px blur at 100% so you can see the theme perfectly.
+            const blurPx = -((val / 100) * 14);       
+            
+            const blobOpacity = (val / 100) * 0.4;       
+            const shadowAlpha = 0.2 + ((val / 100) * 0.4);        
 
             document.documentElement.style.setProperty('--glass-blur', blurPx + 'px');
             document.documentElement.style.setProperty('--glass-bg', bgAlpha + '%');
