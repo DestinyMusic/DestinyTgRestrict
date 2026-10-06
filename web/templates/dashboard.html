@@ -64,6 +64,36 @@
         [data-theme="krishna"] { --bg: #140704; --card: rgba(24, 9, 6, 0.78); --card-border: rgba(245, 158, 11, 0.5); --text: #fff7ed; --subtext: #fed7aa; --accent: #f59e0b; --glow: rgba(245, 158, 11, 0.7); --sidebar: rgba(18, 6, 4, 0.9); --anime-bg: linear-gradient(rgba(0, 0, 0, 0.25), rgba(0, 0, 0, 0.7)), url('https://files.catbox.moe/ccq8md.jpg'); }
         [data-theme="hanuman"] { --bg: #160404; --card: rgba(28, 8, 8, 0.8); --card-border: rgba(249, 115, 22, 0.5); --text: #fff5f5; --subtext: #fecaca; --accent: #f97316; --glow: rgba(249, 115, 22, 0.7); --sidebar: rgba(22, 6, 6, 0.92); --anime-bg: linear-gradient(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.65)), url('https://files.catbox.moe/2cwxet.jpg'); }
         [data-theme="shiva"] { --bg: #0e0503; --card: rgba(22, 10, 7, 0.8); --card-border: rgba(251, 191, 36, 0.5); --text: #fffbeb; --subtext: #fde68a; --accent: #fbbf24; --glow: rgba(251, 191, 36, 0.75); --sidebar: rgba(16, 7, 5, 0.92); --anime-bg: linear-gradient(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.65)), url('https://files.catbox.moe/5rg9ga.jpg'); }
+        [data-theme="goku-animated"] { --bg: #070913; --card: rgba(11, 15, 30, 0.75); --card-border: rgba(249, 115, 22, 0.45); --text: #f8fafc; --subtext: #fdba74; --accent: #f97316; --glow: rgba(249, 115, 22, 0.65); --sidebar: rgba(7, 9, 19, 0.92); --anime-bg: none; }
+
+        /* 🎥 Animated Video Wallpaper Background */
+        #theme-video-bg-container {
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            z-index: 0;
+            pointer-events: none;
+            display: none;
+        }
+        #theme-video-bg {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        #theme-video-bg-container::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(rgba(0, 0, 0, 0.25), rgba(0, 0, 0, 0.65));
+        }
+        [data-theme="goku-animated"] #theme-video-bg-container {
+            display: block;
+        }
+        body.fast-mode #theme-video-bg-container {
+            display: none !important;
+        }
 
         [data-theme="graphite"] { --bg: #141416; --card: #1c1c20; --card-border: #2e2e36; --text: #f3f4f6; --subtext: #9ca3af; --accent: #f59e0b; --glow: rgba(245, 158, 11, 0.4); --sidebar: #0e0e10; --anime-bg: none; }
         [data-theme="obsidian"] { --bg: #090e17; --card: #111827; --card-border: #1e293b; --text: #f1f5f9; --subtext: #94a3b8; --accent: #10b981; --glow: rgba(16, 185, 129, 0.4); --sidebar: #070a12; --anime-bg: none; }
@@ -764,6 +794,13 @@
     <!-- 🌦️ Background Atmospheric Effects Canvas -->
     <canvas id="ambient-canvas"></canvas>
 
+    <!-- 🎥 Live Animated Video Wallpaper Element -->
+    <div id="theme-video-bg-container">
+        <video id="theme-video-bg" autoplay loop muted playsinline preload="auto">
+            <source src="https://files.catbox.moe/j87bs8.mp4" type="video/mp4">
+        </video>
+    </div>
+
     <div id="login-view">
         <div class="login-card">
             <div class="login-logo">▶</div>
@@ -884,6 +921,10 @@
                 <div class="theme-pill" style="background: linear-gradient(135deg, #1f0c05, #5e1c07); color: #fff; border-color: #fbbf24;" onclick="setTheme('shiva', this)">
                     <div class="dots-group"><span class="dot" style="background:#fbbf24; color:#fbbf24;"></span><span class="dot" style="background:#ea580c; color:#ea580c;"></span></div>
                     <span class="pill-label">Shiva</span>
+                </div>
+                <div class="theme-pill" style="background: linear-gradient(135deg, #0b112c, #7c2d12); color: #fff; border-color: #f97316;" onclick="setTheme('goku-animated', this)">
+                    <div class="dots-group"><span class="dot" style="background:#f97316; color:#f97316;"></span><span class="dot" style="background:#38bdf8; color:#38bdf8;"></span></div>
+                    <span class="pill-label">Goku (Live)</span>
                 </div>
 
                 <!-- 🌑 STANDARD DARK THEMES -->
@@ -2400,6 +2441,16 @@
             el.classList.add('active');
             el.insertAdjacentHTML('beforeend', '<span class="check">✓</span>');
             localStorage.setItem('app_theme', themeName);
+
+            // 🟢 Handle Background Video Playback Lifecycle
+            const vid = document.getElementById('theme-video-bg');
+            if (vid) {
+                if (themeName === 'goku-animated') {
+                    vid.play().catch(() => {});
+                } else {
+                    vid.pause();
+                }
+            }
         }
 
         function setStyle(styleName) {
@@ -2433,6 +2484,12 @@
                 b.classList.remove('active');
             }
         });
+
+        // 🟢 Autoplay saved video wallpaper on initial page load
+        if (savedTheme === 'goku-animated') {
+            const initialVid = document.getElementById('theme-video-bg');
+            if (initialVid) initialVid.play().catch(() => {});
+        }
 
         const savedStyle = localStorage.getItem('app_style') || 'default';
         setStyle(savedStyle);
