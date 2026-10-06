@@ -341,19 +341,19 @@
             /* Transform the Navbar into a centered floating island so it's easy to reach */
             .navbar {
                 width: var(--liquid-width);
-                margin: 20px auto;
+                margin: 45px auto 20px auto; /* 🟢 FIX: Lowered to clear iPad Status Bar */
                 border-radius: 20px;
                 border: 1px solid color-mix(in srgb, var(--card-border) var(--glass-border, 100%), transparent);
-                top: 20px;
+                top: 45px; /* 🟢 FIX: Matches margin to stick correctly */
                 box-shadow: 0 20px 50px rgba(0,0,0,0.5);
                 transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             }
             /* Align the profile menu precisely under the new island navbar */
             .profile-menu {
                 right: calc(50vw - (var(--liquid-width) / 2));
-                top: 100px;
+                top: 125px; /* 🟢 FIX: Shifted down to accommodate the lowered Navbar */
             }
-            .container { padding-top: 3vh; }
+            .container { padding-top: 5vh; }
             
             /* Scale up popups dynamically for massive screens */
             .modal-content { max-width: clamp(460px, 35vw, 800px); }
@@ -2190,13 +2190,13 @@
         function applyLiquidGlass(val) {
             document.getElementById('glass-val').innerText = val;
             
-            const blurPx = (val / 100) * 24; 
-            // Keep cards darker! Lowest opacity is now 55% so they stay beautifully tinted
-            const bgAlpha = 100 - (val / 100 * 45);       
-            const borderAlpha = 100 - (val / 100 * 60);   
-            // Keep blobs subtle! Max boost is only 0.25 so the screen stays comfortably dark
+            const blurPx = (val / 100) * 28; 
+            // 🟢 FIX: Scale properly from 100% (Solid) down to 15% (Highly Transparent Glass)
+            const bgAlpha = 100 - (val * 0.85);       
+            const borderAlpha = 100 - (val * 0.60);   
+            
             const blobOpacity = (val / 100) * 0.25;       
-            const shadowAlpha = (val / 100) * 0.5;        
+            const shadowAlpha = (val / 100) * 0.6;        
 
             document.documentElement.style.setProperty('--glass-blur', blurPx + 'px');
             document.documentElement.style.setProperty('--glass-bg', bgAlpha + '%');
@@ -5893,62 +5893,63 @@
             const w = ambientCanvas.width;
             const h = ambientCanvas.height;
 
-            if (currentAmbientFx === 'thunderstorm' || currentAmbientFx === 'rain') {
-                const count = currentAmbientFx === 'thunderstorm' ? 120 : 80;
-                for (let i = 0; i < count; i++) {
+            if (currentAmbientFx === 'thunderstorm') {
+                for (let i = 0; i < 150; i++) {
                     ambientParticles.push({
-                        x: Math.random() * w,
-                        y: Math.random() * h,
-                        length: 15 + Math.random() * 20,
-                        speed: 16 + Math.random() * 12,
+                        x: Math.random() * w, y: Math.random() * h,
+                        length: 20 + Math.random() * 40,
+                        speedY: 25 + Math.random() * 15, speedX: 4 + Math.random() * 6,
+                        opacity: 0.3 + Math.random() * 0.5
+                    });
+                }
+            } else if (currentAmbientFx === 'rain') {
+                for (let i = 0; i < 100; i++) {
+                    ambientParticles.push({
+                        x: Math.random() * w, y: Math.random() * h,
+                        length: 10 + Math.random() * 20,
+                        speedY: 12 + Math.random() * 8, speedX: 1 + Math.random() * 2,
+                        thickness: 0.5 + Math.random() * 1.5,
                         opacity: 0.2 + Math.random() * 0.4
                     });
                 }
             } else if (currentAmbientFx === 'snow') {
-                for (let i = 0; i < 90; i++) {
+                for (let i = 0; i < 120; i++) {
                     ambientParticles.push({
-                        x: Math.random() * w,
-                        y: Math.random() * h,
-                        r: 1.5 + Math.random() * 3,
-                        speed: 0.8 + Math.random() * 1.8,
-                        swing: Math.random() * Math.PI * 2,
-                        swingSpeed: 0.02 + Math.random() * 0.03
+                        x: Math.random() * w, y: Math.random() * h,
+                        r: 1 + Math.random() * 3.5,
+                        speed: 0.5 + Math.random() * 1.5,
+                        swing: Math.random() * Math.PI * 2, swingSpeed: 0.01 + Math.random() * 0.02,
+                        opacity: 0.3 + Math.random() * 0.7,
+                        blur: Math.random() > 0.8 ? 3 : 0 // 🟢 Added Depth of field blur to snowflakes
                     });
                 }
             } else if (currentAmbientFx === 'sakura') {
-                for (let i = 0; i < 45; i++) {
+                for (let i = 0; i < 50; i++) {
                     ambientParticles.push({
-                        x: Math.random() * w,
-                        y: Math.random() * h,
-                        w: 8 + Math.random() * 6,
-                        h: 12 + Math.random() * 8,
-                        speedY: 1 + Math.random() * 1.5,
-                        speedX: 0.5 + Math.random() * 1,
-                        rot: Math.random() * Math.PI,
-                        rotSpeed: 0.01 + Math.random() * 0.02,
-                        opacity: 0.5 + Math.random() * 0.4
+                        x: Math.random() * w, y: Math.random() * h,
+                        size: 6 + Math.random() * 6,
+                        speedY: 1 + Math.random() * 2, speedX: 0.5 + Math.random() * 2,
+                        rot: Math.random() * Math.PI, rotSpeed: (Math.random() - 0.5) * 0.05,
+                        flip: Math.random() * Math.PI, flipSpeed: 0.02 + Math.random() * 0.05,
+                        opacity: 0.6 + Math.random() * 0.4
                     });
                 }
             } else if (currentAmbientFx === 'stars') {
-                for (let i = 0; i < 110; i++) {
+                for (let i = 0; i < 150; i++) {
                     ambientParticles.push({
-                        x: Math.random() * w,
-                        y: Math.random() * h,
-                        r: 0.6 + Math.random() * 1.8,
-                        alpha: Math.random(),
-                        alphaSpeed: 0.01 + Math.random() * 0.025
+                        x: Math.random() * w, y: Math.random() * h,
+                        r: 0.5 + Math.random() * 1.5,
+                        alpha: Math.random(), alphaSpeed: 0.005 + Math.random() * 0.02,
+                        driftX: (Math.random() - 0.5) * 0.1, driftY: (Math.random() - 0.5) * 0.1
                     });
                 }
             } else if (currentAmbientFx === 'embers') {
                 for (let i = 0; i < 70; i++) {
                     ambientParticles.push({
-                        x: Math.random() * w,
-                        y: Math.random() * h,
+                        x: Math.random() * w, y: Math.random() * h,
                         r: 1 + Math.random() * 2.5,
-                        speedY: 0.8 + Math.random() * 2,
-                        speedX: (Math.random() - 0.5) * 1.2,
-                        opacity: 0.4 + Math.random() * 0.6,
-                        flicker: Math.random() * Math.PI
+                        speedY: 0.8 + Math.random() * 2, speedX: (Math.random() - 0.5) * 1.2,
+                        opacity: 0.4 + Math.random() * 0.6, flicker: Math.random() * Math.PI
                     });
                 }
             }
@@ -5977,76 +5978,99 @@
 
             if (currentAmbientFx === 'thunderstorm') {
                 lightningTimer++;
-                if (lightningTimer > 180 && Math.random() < 0.02) {
-                    lightningAlpha = 0.55 + Math.random() * 0.35;
+                if (lightningTimer > 150 && Math.random() < 0.03) {
+                    lightningAlpha = 0.6 + Math.random() * 0.4;
                     lightningTimer = 0;
                 }
-
                 if (lightningAlpha > 0.01) {
-                    ambientCtx.fillStyle = `rgba(255, 255, 255, ${lightningAlpha})`;
+                    ambientCtx.fillStyle = `rgba(230, 240, 255, ${lightningAlpha})`;
                     ambientCtx.fillRect(0, 0, w, h);
-                    lightningAlpha *= 0.84;
+                    lightningAlpha *= 0.85;
+                    if (Math.random() < 0.2) lightningAlpha += 0.2; // 🟢 Double flicker for realism
                 }
 
-                ambientCtx.strokeStyle = 'rgba(186, 230, 253, 0.5)';
                 ambientCtx.lineWidth = 1.5;
-                ambientCtx.beginPath();
                 for (let p of ambientParticles) {
+                    ambientCtx.strokeStyle = `rgba(186, 230, 253, ${p.opacity})`;
+                    ambientCtx.beginPath();
                     ambientCtx.moveTo(p.x, p.y);
-                    ambientCtx.lineTo(p.x - 2, p.y + p.length);
-                    p.y += p.speed;
-                    p.x -= 2;
+                    ambientCtx.lineTo(p.x - p.speedX, p.y + p.length);
+                    ambientCtx.stroke();
+                    p.y += p.speedY; p.x -= p.speedX;
+                    if (p.y > h) { p.y = -50; p.x = Math.random() * (w + 300); }
+                }
+            } else if (currentAmbientFx === 'rain') {
+                for (let p of ambientParticles) {
+                    ambientCtx.strokeStyle = `rgba(200, 225, 255, ${p.opacity})`;
+                    ambientCtx.lineWidth = p.thickness; // 🟢 Varying depth thickness
+                    ambientCtx.beginPath();
+                    ambientCtx.moveTo(p.x, p.y);
+                    ambientCtx.lineTo(p.x - p.speedX, p.y + p.length);
+                    ambientCtx.stroke();
+                    p.y += p.speedY; p.x -= p.speedX;
                     if (p.y > h) { p.y = -20; p.x = Math.random() * (w + 100); }
                 }
-                ambientCtx.stroke();
-            } else if (currentAmbientFx === 'rain') {
-                ambientCtx.strokeStyle = 'rgba(224, 242, 254, 0.35)';
-                ambientCtx.lineWidth = 1.2;
-                ambientCtx.beginPath();
-                for (let p of ambientParticles) {
-                    ambientCtx.moveTo(p.x, p.y);
-                    ambientCtx.lineTo(p.x - 1, p.y + p.length);
-                    p.y += p.speed * 0.8;
-                    p.x -= 1;
-                    if (p.y > h) { p.y = -20; p.x = Math.random() * (w + 50); }
-                }
-                ambientCtx.stroke();
             } else if (currentAmbientFx === 'snow') {
-                ambientCtx.fillStyle = 'rgba(255, 255, 255, 0.75)';
                 for (let p of ambientParticles) {
                     ambientCtx.beginPath();
+                    ambientCtx.fillStyle = `rgba(255, 255, 255, ${p.opacity})`;
+                    if(p.blur) {
+                        ambientCtx.shadowBlur = p.blur;
+                        ambientCtx.shadowColor = 'white';
+                    } else {
+                        ambientCtx.shadowBlur = 0;
+                    }
                     ambientCtx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
                     ambientCtx.fill();
                     p.swing += p.swingSpeed;
-                    p.x += Math.sin(p.swing) * 0.8;
+                    p.x += Math.sin(p.swing) * 0.5;
                     p.y += p.speed;
                     if (p.y > h) { p.y = -10; p.x = Math.random() * w; }
                 }
+                ambientCtx.shadowBlur = 0;
             } else if (currentAmbientFx === 'sakura') {
                 for (let p of ambientParticles) {
+                    ambientCtx.fillStyle = `rgba(255, 183, 197, ${p.opacity})`;
                     ambientCtx.save();
                     ambientCtx.translate(p.x, p.y);
                     ambientCtx.rotate(p.rot);
-                    ambientCtx.fillStyle = `rgba(244, 114, 182, ${p.opacity})`;
+                    ambientCtx.scale(Math.sin(p.flip), 1); // 🟢 3D Tumbling Effect
                     ambientCtx.beginPath();
-                    ambientCtx.ellipse(0, 0, p.w / 2, p.h / 2, Math.PI / 4, 0, Math.PI * 2);
+                    
+                    // 🟢 Real Petal Bezier Curves instead of plain circles
+                    ambientCtx.moveTo(0, 0);
+                    ambientCtx.bezierCurveTo(p.size, -p.size, p.size*1.5, p.size/2, 0, p.size*1.2);
+                    ambientCtx.bezierCurveTo(-p.size*1.5, p.size/2, -p.size, -p.size, 0, 0);
+                    
                     ambientCtx.fill();
                     ambientCtx.restore();
 
                     p.y += p.speedY;
                     p.x += Math.sin(p.rot) * p.speedX;
                     p.rot += p.rotSpeed;
-                    if (p.y > h) { p.y = -20; p.x = Math.random() * w; }
+                    p.flip += p.flipSpeed;
+                    if (p.y > h + 20) { p.y = -20; p.x = Math.random() * w; }
                 }
             } else if (currentAmbientFx === 'stars') {
                 for (let p of ambientParticles) {
                     p.alpha += p.alphaSpeed;
-                    if (p.alpha > 1 || p.alpha < 0.1) p.alphaSpeed = -p.alphaSpeed;
-                    ambientCtx.fillStyle = `rgba(254, 240, 138, ${Math.max(0, Math.min(1, p.alpha))})`;
+                    if (p.alpha > 1 || p.alpha < 0.05) p.alphaSpeed = -p.alphaSpeed;
+                    p.x += p.driftX; p.y += p.driftY; // 🟢 Add slow natural drifting
+                    if(p.x < 0) p.x = w; if(p.x > w) p.x = 0;
+                    if(p.y < 0) p.y = h; if(p.y > h) p.y = 0;
+
+                    ambientCtx.fillStyle = `rgba(255, 255, 255, ${Math.max(0, Math.min(1, p.alpha))})`;
+                    if (p.alpha > 0.8) {
+                        ambientCtx.shadowBlur = 4;
+                        ambientCtx.shadowColor = 'white';
+                    } else {
+                        ambientCtx.shadowBlur = 0;
+                    }
                     ambientCtx.beginPath();
                     ambientCtx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
                     ambientCtx.fill();
                 }
+                ambientCtx.shadowBlur = 0;
             } else if (currentAmbientFx === 'embers') {
                 for (let p of ambientParticles) {
                     p.flicker += 0.05;
@@ -6060,7 +6084,7 @@
                     ambientCtx.shadowBlur = 0;
 
                     p.y -= p.speedY;
-                    p.x += Math.speedX || ((Math.random() - 0.5) * 1.2);
+                    p.x += p.speedX;
                     if (p.y < -10) { p.y = h + 10; p.x = Math.random() * w; }
                 }
             }
