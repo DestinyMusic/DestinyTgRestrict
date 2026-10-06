@@ -6983,8 +6983,8 @@
             const bar = document.getElementById(`${uiId}-bar`);
             const left = document.getElementById(`${uiId}-left`);
             const right = document.getElementById(`${uiId}-right`);
+            const cardContainer = document.getElementById(uiId); // 🟢 Targets the specific task card
             
-            // Local interval instead of global, allowing multiple tasks to poll at the same time
             const localInterval = setInterval(async () => {
                 try {
                     const res = await fetch('/api/editor_progress?task_uuid=' + taskUuid);
@@ -6993,7 +6993,6 @@
                     if (data.status === 'success') {
                         let phase = data.phase || "Processing...";
                         
-                        // 🟢 Dynamically update In/Out labels
                         const clientsEl = document.getElementById(`${uiId}-clients`);
                         if (clientsEl && (data.fetcher || data.uploader)) {
                             clientsEl.innerHTML = `<span>📥 In: <span style="color:#a78bfa;">${data.fetcher || 'Unknown'}</span></span> <span>📤 Out: <span style="color:#34d399;">${data.uploader || 'Unknown'}</span></span>`;
@@ -7007,11 +7006,11 @@
                             right.innerText = (data.speed > 0 ? formatBytes(data.speed) + '/s | ' : '') + 'ETA: ' + formatTime(data.eta);
                         } else {
                             txt.innerText = phase;
-                            if (phase.includes('Remuxing') || phase.includes('Splitting') || phase.includes('Zipping')) {
+                            if (phase.includes('Remuxing') || phase.includes('Splitting') || phase.includes('Zipping') || phase.includes('Extracting') || phase.includes('Processing Audio')) {
                                 bar.style.width = '100%';
-                                bar.style.background = phase.includes('Zipping') ? '#8b5cf6' : '#f59e0b';
+                                bar.style.background = phase.includes('Zipping') ? '#8b5cf6' : (phase.includes('Splitting') ? '#f472b6' : (phase.includes('Extracting') ? '#10b981' : '#f59e0b'));
                                 left.innerText = phase + '...';
-                                right.innerText = '';
+                                right.innerText = 'Please wait';
                             }
                         }
                         
@@ -7026,6 +7025,16 @@
                                 bar.style.width = '100%';
                                 left.innerText = '';
                                 right.innerText = '';
+                                
+                                // 🟢 FIX: Smoothly fade out and remove the task card after 3.5 seconds
+                                setTimeout(() => {
+                                    if (cardContainer) {
+                                        cardContainer.style.transition = "all 0.5s ease-out";
+                                        cardContainer.style.opacity = "0";
+                                        cardContainer.style.transform = "scale(0.95)";
+                                        setTimeout(() => cardContainer.remove(), 500);
+                                    }
+                                }, 3500);
                             }
                         }
                     }
