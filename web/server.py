@@ -925,10 +925,18 @@ async def _api_tg_qr_start(request):
         user_id = request["authenticated_user_id"]
         qr_key = uuid.uuid4().hex
         
-        temp_client = Client(f"qr_{qr_key[:8]}", api_id=API_ID, api_hash=API_HASH, in_memory=True, ipv6=False)
+        temp_client = Client(
+            f"qr_{qr_key[:8]}",
+            api_id=API_ID,
+            api_hash=API_HASH,
+            in_memory=True,
+            ipv6=False,
+            device_model="DestinyTgRestrict",
+            app_version="DestinyTgRestrict 1.0",
+            system_version="Linux"
+        )
         await temp_client.connect()
         
-        # 🟢 Event flag: set ONLY when Telegram pushes that the phone scanned the code
         scanned_event = asyncio.Event()
 
         async def _on_raw_update(client, update, users, chats):
@@ -971,11 +979,22 @@ async def _api_tg_qr_check(request):
         
     temp_client = session_data["client"]
     user_id = session_data["user_id"]
+    
+    # 🟢 1. Do NOT touch Telegram servers until phone actually scans the QR
+    if not session_data["scanned_event"].is_set():
+        return web.json_response({"status": "pending"})
+        
     try:
         res = await temp_client.invoke(raw.functions.auth.ExportLoginToken(api_id=API_ID, api_hash=API_HASH, except_ids=[]))
         
         # 🟢 Case 1: Account is on DC 2 without 2FA
         if isinstance(res, raw.types.auth.LoginTokenSuccess):
+            auth_user = res.authorization.user
+            if callable(getattr(temp_client.storage, "user_id", None)):
+                await temp_client.storage.user_id(auth_user.id)
+            if callable(getattr(temp_client.storage, "is_bot", None)):
+                await temp_client.storage.is_bot(False)
+
             session_str = await temp_client.export_session_string()
             await db.set_session(user_id, session_str)
             await db.set_api_id(user_id, API_ID)
@@ -990,19 +1009,33 @@ async def _api_tg_qr_check(request):
             transfer_token = res.token
             await temp_client.disconnect()
             
-            # Create client directly targeted at your datacenter
-            migrated_client = Client(f"qr_dc{target_dc}_{qr_key[:8]}", api_id=API_ID, api_hash=API_HASH, in_memory=True, ipv6=False)
+            migrated_client = Client(
+                f"qr_dc{target_dc}_{qr_key[:8]}", 
+                api_id=API_ID, 
+                api_hash=API_HASH, 
+                in_memory=True, 
+                ipv6=False,
+                device_model="DestinyTgRestrict",
+                app_version="DestinyTgRestrict 1.0",
+                system_version="Linux"
+            )
             if callable(getattr(migrated_client.storage, "dc_id", None)):
                 await migrated_client.storage.dc_id(target_dc)
             else:
                 migrated_client.storage.dc_id = target_dc
                 
             await migrated_client.connect()
-            session_data["client"] = migrated_client  # Update reference for 2FA password verification
+            session_data["client"] = migrated_client
             
             try:
                 import_res = await migrated_client.invoke(raw.functions.auth.ImportLoginToken(token=transfer_token))
                 if isinstance(import_res, raw.types.auth.LoginTokenSuccess):
+                    auth_user = import_res.authorization.user
+                    if callable(getattr(migrated_client.storage, "user_id", None)):
+                        await migrated_client.storage.user_id(auth_user.id)
+                    if callable(getattr(migrated_client.storage, "is_bot", None)):
+                        await migrated_client.storage.is_bot(False)
+
                     session_str = await migrated_client.export_session_string()
                     await db.set_session(user_id, session_str)
                     await db.set_api_id(user_id, API_ID)
@@ -1011,14 +1044,18 @@ async def _api_tg_qr_check(request):
                     TG_QR_LOGIN_SESSIONS.pop(qr_key, None)
                     return web.json_response({"status": "authorized", "message": "Telegram session connected successfully!"})
             except Exception as import_err:
-                if "session_password_needed" in str(import_err).lower():
+                err_text = str(import_err).lower()
+                if "session_password_needed" in err_text or isinstance(import_err, SessionPasswordNeeded):
                     return web.json_response({"status": "2fa_required", "message": "Two-Step Verification password required."})
-                raise import_err
+                logger.error(f"[QR IMPORT ERROR] {import_err}", exc_info=True)
+                return web.json_response({"status": "error", "message": str(import_err)})
 
         return web.json_response({"status": "pending"})
     except Exception as e:
-        if "session_password_needed" in str(e).lower():
+        err_text = str(e).lower()
+        if "session_password_needed" in err_text or isinstance(e, SessionPasswordNeeded):
             return web.json_response({"status": "2fa_required", "message": "Two-Step Verification password required."})
+        logger.error(f"[QR CHECK ERROR] {e}", exc_info=True)
         return web.json_response({"status": "pending"})
 
 async def _api_tg_qr_verify_2fa(request):
@@ -1055,7 +1092,15 @@ async def _api_tg_send_code(request):
     uid = int(data.get("user_id"))
     phone = data.get("phone")
     
-    client = Client(f"web_auth_{uid}_{uuid.uuid4().hex}", in_memory=True, api_id=API_ID, api_hash=API_HASH)
+    client = Client(
+        f"web_auth_{uid}_{uuid.uuid4().hex}", 
+        in_memory=True, 
+        api_id=API_ID, 
+        api_hash=API_HASH,
+        device_model="DestinyTgRestrict",
+        app_version="DestinyTgRestrict 1.0",
+        system_version="Linux"
+    )
     await client.connect()
     try:
         code = await client.send_code(phone)
@@ -1166,7 +1211,17 @@ async def _api_chats_handler(request):
         try:
             api_id = await db.get_api_id(uid) or API_ID
             api_hash = await db.get_api_hash(uid) or API_HASH
-            uclient = Client(f"User_{uid}", session_string=session_str, api_id=api_id, api_hash=api_hash, workers=100, ipv6=False)
+            uclient = Client(
+                 f"User_{uid}", 
+                 session_string=session_str, 
+                 api_id=api_id, 
+                 api_hash=api_hash, 
+                 workers=100, 
+                 ipv6=False,
+                 device_model="DestinyTgRestrict",
+                 app_version="DestinyTgRestrict 1.0",
+                 system_version="Linux"
+            )
             uclient.add_handler(MessageHandler(user_watcher_handler, is_watched_chat))
             await uclient.start()
             USER_CLIENTS[uid] = uclient
@@ -1431,7 +1486,17 @@ async def _api_topics_handler(request):
         try:
             api_id = await db.get_api_id(uid) or API_ID
             api_hash = await db.get_api_hash(uid) or API_HASH
-            uclient = Client(f"User_{uid}", session_string=session_str, api_id=api_id, api_hash=api_hash, workers=100, ipv6=False)
+            uclient = Client(
+                 f"User_{uid}", 
+                 session_string=session_str, 
+                 api_id=api_id, 
+                 api_hash=api_hash, 
+                 workers=100, 
+                 ipv6=False,
+                 device_model="DestinyTgRestrict",
+                 app_version="DestinyTgRestrict 1.0",
+                 system_version="Linux"
+            )
             uclient.add_handler(MessageHandler(user_watcher_handler, is_watched_chat))
             await uclient.start()
             USER_CLIENTS[uid] = uclient
