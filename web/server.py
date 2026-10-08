@@ -906,7 +906,70 @@ async def _api_download_log_handler(request):
     except Exception:
         return web.Response(text="Error downloading logs.", status=500)
 
+import base64
+import uuid
+from urllib.parse import quote
+from pyrogram import raw
+
+TG_QR_LOGIN_SESSIONS = {}
 WEB_AUTH_CACHE = {}
+
+async def _api_tg_qr_start(request):
+    try:
+        user_id = request["authenticated_user_id"]
+        qr_key = uuid.uuid4().hex
+        
+        temp_client = Client(f"qr_{qr_key[:8]}", api_id=API_ID, api_hash=API_HASH, in_memory=True)
+        await temp_client.connect()
+        
+        res = await temp_client.invoke(raw.functions.auth.ExportLoginToken(api_id=API_ID, api_hash=API_HASH, except_ids=[]))
+        
+        if isinstance(res, raw.types.auth.LoginToken):
+            b64_tok = base64.urlsafe_b64encode(res.token).decode("utf-8").rstrip("=")
+            tg_qr_url = f"tg://login?token={b64_tok}"
+            
+            TG_QR_LOGIN_SESSIONS[qr_key] = {
+                "user_id": user_id, "client": temp_client, "expires": res.expires, "status": "pending"
+            }
+            
+            qr_img_api = f"https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=10&data={quote(tg_qr_url, safe='')}"
+            return web.json_response({
+                "status": "success", "qr_key": qr_key, "qr_img": qr_img_api,
+                "expires_in": max(15, int(res.expires - time.time()))
+            })
+        else:
+            await temp_client.disconnect()
+            return web.json_response({"status": "error", "message": "Failed to generate QR token"}, status=500)
+    except Exception as e:
+        return web.json_response({"status": "error", "message": str(e)}, status=500)
+
+async def _api_tg_qr_check(request):
+    qr_key = request.query.get("qr_key", "").strip()
+    session_data = TG_QR_LOGIN_SESSIONS.get(qr_key)
+    if not session_data:
+        return web.json_response({"status": "expired", "message": "Session expired"})
+        
+    temp_client = session_data["client"]
+    user_id = session_data["user_id"]
+    try:
+        res = await temp_client.invoke(raw.functions.auth.ExportLoginToken(api_id=API_ID, api_hash=API_HASH, except_ids=[]))
+        if isinstance(res, raw.types.auth.LoginTokenSuccess):
+            session_str = await temp_client.export_session_string()
+            await db.set_session(user_id, session_str)
+            await db.set_api_id(user_id, API_ID)
+            await db.set_api_hash(user_id, API_HASH)
+            await temp_client.disconnect()
+            TG_QR_LOGIN_SESSIONS.pop(qr_key, None)
+            return web.json_response({"status": "authorized", "message": "Telegram session connected successfully!"})
+        elif isinstance(res, raw.types.auth.LoginTokenMigrateTo):
+            await temp_client.disconnect()
+            TG_QR_LOGIN_SESSIONS.pop(qr_key, None)
+            return web.json_response({"status": "error", "message": f"Account is on DC {res.dc_id}. Please use string session login."})
+        return web.json_response({"status": "pending"})
+    except Exception as e:
+        if "session_password_needed" in str(e).lower():
+            return web.json_response({"status": "2fa_required", "message": "Account has 2FA enabled. Use OTP login instead."})
+        return web.json_response({"status": "pending"})
 
 async def _api_tg_send_code(request):
     data = await request.json()
@@ -1213,32 +1276,34 @@ def _get_sos_sync():
 
 async def _api_sos_handler(request):
     uid = request["authenticated_user_id"]
-        
-    session_str = await db.get_session(uid)    
-    if not session_str and uid not in ADMINS:
+    if not await db.is_user_admin(uid):
         return web.json_response({"status": "error", "message": "Unauthorized"})
 
-    m_down, m_up, m_total, month_name = await db.get_monthly_bandwidth()
     os_name, mem, disk, net = await asyncio.to_thread(_get_sos_sync)
+    bytes_recv_total = net.bytes_recv
+    bytes_sent_total = net.bytes_sent
+    bytes_combined = bytes_recv_total + bytes_sent_total
+
+    worker_bots_count = len(USER_TASK_BOTS.get(uid, [])) + len(USER_STREAM_BOTS.get(uid, []))
 
     return web.json_response({
         "status": "success",
-        "os": os_name,
-        "hostname": socket.gethostname(),
-        "kernel": platform.uname().release,
+        "cpu_cores": psutil.cpu_count(logical=True),
         "cpu_percent": psutil.cpu_percent(interval=0.1),
+        "ram_used_gb": round((mem.total - mem.available) / (1024**3), 2),
+        "ram_total_gb": round(mem.total / (1024**3), 2),
         "ram_percent": mem.percent,
-        "ram_used": _pretty_bytes(mem.used),
-        "ram_total": _pretty_bytes(mem.total),
+        "disk_used_gb": round(disk.used / (1024**3), 2),
+        "disk_total_gb": round(disk.total / (1024**3), 2),
         "disk_percent": disk.percent,
-        "disk_free": _pretty_bytes(disk.free),
-        "disk_total": _pretty_bytes(disk.total),
-        "boot_download": _pretty_bytes(net.bytes_recv),
-        "boot_upload": _pretty_bytes(net.bytes_sent),
-        "month_name": month_name,
-        "month_download": _pretty_bytes(m_down),
-        "month_upload": _pretty_bytes(m_up),
-        "month_total": _pretty_bytes(m_total)
+        "disk_free_gb": round(disk.free / (1024**3), 2),
+        "bandwidth": {
+            "total_bytes": bytes_combined,
+            "recv_bytes": bytes_recv_total,
+            "sent_bytes": bytes_sent_total,
+            "active_streams": len(GLOBAL_NETWORK_STATS.get("active", {}))
+        },
+        "workers_online": worker_bots_count
     })
 
 PWA_MANIFEST = {
@@ -2799,6 +2864,8 @@ async def start_koyeb_health_check(host: str = "0.0.0.0"):
     app_web.router.add_post("/api/settings/tokens", _api_save_worker_tokens)
     
     # Telegram Connect
+    app_web.router.add_post("/api/tg_qr/start", _api_tg_qr_start)
+    app_web.router.add_get("/api/tg_qr/check", _api_tg_qr_check)
     app_web.router.add_post("/api/tg/send_code", _api_tg_send_code)
     app_web.router.add_post("/api/tg/verify", _api_tg_verify_code)
     app_web.router.add_post("/api/tg/verify_2fa", _api_tg_verify_2fa)
