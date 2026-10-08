@@ -2013,12 +2013,16 @@
 
                     <!-- 📱 QR CODE METHOD -->
                     <div id="tg-login-qr-section" style="text-align: center; padding: 15px 0;">
+                        <!-- 🟢 FIX: Fast Client-Side QR Generator -->
+                        <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+
                         <div id="qr-loading-box" style="padding: 30px; font-size: 13px; color: var(--subtext);">
                             <div style="font-size: 24px; margin-bottom: 8px;">⏳</div> Generating secure Telegram login token...
                         </div>
                         <div id="qr-display-box" style="display: none; flex-direction: column; align-items: center; gap: 12px;">
                             <div style="background: #fff; padding: 12px; border-radius: 16px; box-shadow: 0 8px 30px rgba(0,0,0,0.5); display: inline-block;">
-                                <img id="tg-qr-image" src="" alt="Telegram Login QR" style="width: 200px; height: 200px; display: block; border-radius: 8px;">
+                                <!-- 🟢 Changed img to canvas for instant rendering -->
+                                <canvas id="tg-qr-image" style="width: 200px; height: 200px; display: block; border-radius: 8px;"></canvas>
                             </div>
                             <div style="font-size: 12px; color: var(--subtext); line-height: 1.6; max-width: 320px;">
                                 Open <b>Telegram</b> on your phone ➔ <b>Settings</b> ➔ <b>Devices</b> ➔ tap <b>Link Desktop Device</b> and point your camera here.
@@ -2576,7 +2580,15 @@
                 const data = await res.json();
                 
                 if (data.status === 'success') {
-                    document.getElementById('tg-qr-image').src = data.qr_img;
+                    // 🟢 FIX: Render instantly in the browser, no waiting for slow external API images!
+                    new QRious({
+                        element: document.getElementById('tg-qr-image'),
+                        value: data.qr_url,
+                        size: 260,
+                        background: 'white',
+                        foreground: 'black'
+                    });
+                    
                     document.getElementById('qr-loading-box').style.display = 'none';
                     document.getElementById('qr-display-box').style.display = 'flex';
                     
