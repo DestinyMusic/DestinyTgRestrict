@@ -1867,6 +1867,9 @@
                             <option value="document" selected>Document (.mkv / .001)</option>
                             <option value="video">Playable Media (Video/Audio Player)</option>
                             <option value="zip">Archive (.zip / .zip.001)</option>
+                            <option value="extract_audio">Extract Selected Audios (Upload as tracks)</option>
+                            <option value="extract_sub">Extract Selected Subtitles (Upload as .srt/.vtt)</option>
+                            <option value="extract_video">Extract Selected Videos (Upload as .mp4)</option>
                         </select>
                     </div>
 
@@ -2591,6 +2594,10 @@
                 const res = await fetch('/api/tg_qr/start', { method: 'POST' });
                 const data = await res.json();
                 
+                // 🟢 RACE CONDITION FIX: If the user clicked Phone OTP or logged in while we were waiting for the server, abort instantly!
+                const isConnectedNow = document.getElementById('tg-status')?.innerText.includes('Active');
+                if (isConnectedNow || qrSection.style.display === 'none') return;
+
                 if (data.status === 'success') {
                     // 🟢 FIX: Render instantly in the browser, no waiting for slow external API images!
                     new QRious({
@@ -7053,6 +7060,13 @@
                 window.editorMediaLink = link;
                 container.innerHTML = '';
                 
+                // 1. Add this formatting helper function anywhere in your script
+                function formatBytesEditor(bytes) {
+                    if (!bytes || bytes === 0) return '0 B';
+                    const k = 1024, sizes = ['B', 'KB', 'MB', 'GB', 'TB'], i = Math.floor(Math.log(bytes) / Math.log(k));
+                    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+                }
+
                 data.streams.forEach(function(s) {
                     const type = s.codec_type || 'unknown';
                     const codec = s.codec_name || '';
@@ -7074,6 +7088,16 @@
                     }
                     
                     let langText = lang ? '(' + lang + ')' : '';
+
+                    // 🟢 2. Calculate the track size using either metadata tags or Bitrate * Duration math
+                    let sizeStr = "Size Unknown";
+                    const bytes = (s.tags && (s.tags.NUMBER_OF_BYTES || s.tags['NUMBER_OF_BYTES-eng'])) || null;
+                    
+                    if (bytes) {
+                        sizeStr = formatBytesEditor(parseInt(bytes));
+                    } else if (s.bit_rate && window.playerTotalDuration > 0) {
+                        sizeStr = formatBytesEditor((parseInt(s.bit_rate) / 8) * window.playerTotalDuration);
+                    }
                     
                     let htmlStr = '<div style="padding: 12px; margin: 0; background: rgba(0,0,0,0.4); border: 1px solid var(--card-border); border-left: 4px solid ' + color + '; display: flex; flex-direction: column; gap: 8px; border-radius: 12px;">';
                     htmlStr += '<div style="display: flex; justify-content: space-between; align-items: center;">';
@@ -7081,7 +7105,10 @@
                     htmlStr += '<input type="checkbox" id="edit-keep-' + idx + '" checked style="width: 16px; height: 16px; accent-color: var(--accent);"> ';
                     htmlStr += 'Track ' + idx + ' [' + displayType + ']';
                     htmlStr += '</label>';
-                    htmlStr += '<span style="color: var(--subtext); font-size: 11px;">' + codec + ' ' + langText + '</span>';
+                    
+                    // 🟢 3. Inject the track size into the HTML output
+                    htmlStr += '<span style="color: var(--subtext); font-size: 11px;">' + codec + ' ' + langText + ' <span style="color: ' + color + '; margin-left: 6px; font-weight: 800; font-family: monospace;">🗂 ' + sizeStr + '</span></span>';
+                    
                     htmlStr += '</div>';
                     htmlStr += '<div style="display: flex; gap: 8px; margin-top: 4px;">';
                     htmlStr += '<div style="flex: 3; display: flex; flex-direction: column;">';
@@ -7445,7 +7472,7 @@
                 if (cb && cb.checked) {
                     const orderVal = document.getElementById('edit-order-' + idx).value;
                     config.push({
-                        type: "main",
+                        type: s.codec_type || "main", // 🟢 Passes "audio", "video", or "subtitle" directly to the Python backend so it knows what to extract!
                         index: idx,
                         title: document.getElementById('edit-title-' + idx).value,
                         delay: document.getElementById('edit-delay-' + idx).value || 0,
