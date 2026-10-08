@@ -1013,6 +1013,45 @@ async def _api_tg_qr_check(request):
             return web.json_response({"status": "2fa_required", "message": "Account has 2FA enabled. Use OTP login instead."})
         return web.json_response({"status": "pending"})
 
+async def _api_tg_qr_verify_2fa(request):
+    """Verifies the Telegram Cloud Password for a QR login session."""
+    data = await request.json()
+    qr_key = data.get("qr_key", "").strip()
+    pwd = data.get("password", "")
+    
+    session_data = TG_QR_LOGIN_SESSIONS.get(qr_key)
+    if not session_data:
+        return web.json_response({"status": "error", "message": "QR login session expired. Please generate a new QR code."})
+        
+    temp_client = session_data["client"]
+    user_id = session_data["user_id"]
+    
+    try:
+        await temp_client.check_password(pwd)
+        
+        # Enforce Telegram ID match to prevent account mix-ups
+        me = await temp_client.get_me()
+        if me.id != user_id:
+            await temp_client.disconnect()
+            TG_QR_LOGIN_SESSIONS.pop(qr_key, None)
+            return web.json_response({
+                "status": "error", 
+                "message": f"⚠️ ID Mismatch! Logged-in web user is {user_id}, but scanned Telegram account is {me.id}."
+            })
+            
+        session_str = await temp_client.export_session_string()
+        await temp_client.disconnect()
+        TG_QR_LOGIN_SESSIONS.pop(qr_key, None)
+        
+        await db.set_session(user_id, session_str)
+        await db.set_api_id(user_id, API_ID)
+        await db.set_api_hash(user_id, API_HASH)
+        return web.json_response({"status": "success", "message": "Logged in successfully!"})
+    except (PasswordHashInvalid, SessionPasswordNeeded):
+        return web.json_response({"status": "error", "message": "Incorrect 2FA password! Please try again."})
+    except Exception as e:
+        return web.json_response({"status": "error", "message": str(e)})
+        
 async def _api_tg_send_code(request):
     data = await request.json()
     uid = int(data.get("user_id"))
@@ -3111,6 +3150,7 @@ async def start_koyeb_health_check(host: str = "0.0.0.0"):
     # Telegram Connect
     app_web.router.add_post("/api/tg_qr/start", _api_tg_qr_start)
     app_web.router.add_get("/api/tg_qr/check", _api_tg_qr_check)
+    app_web.router.add_post("/api/tg_qr/verify_2fa", _api_tg_qr_verify_2fa)
     app_web.router.add_post("/api/tg/send_code", _api_tg_send_code)
     app_web.router.add_post("/api/tg/verify", _api_tg_verify_code)
     app_web.router.add_post("/api/tg/verify_2fa", _api_tg_verify_2fa)
