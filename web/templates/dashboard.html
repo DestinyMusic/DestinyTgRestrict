@@ -2003,64 +2003,92 @@
 
                 <div class="section-title">Telegram Session Management</div>
                 <div class="card" style="margin-bottom: 20px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 15px;">
-                        <div>
-                            <h3 style="margin: 0; font-size: 16px; color: #fff;">Connect Telegram via Web</h3>
-                            <span style="font-size: 11px; color: var(--subtext);">Link your account directly from your browser to enable downloading.</span>
-                        </div>
-                        <div style="display: flex; background: rgba(0,0,0,0.3); padding: 4px; border-radius: 12px; border: 1px solid var(--card-border);">
-                            <button id="btn-tab-qr" onclick="switchTgLoginTab('qr')" style="padding: 6px 14px; border-radius: 8px; border: none; background: var(--accent); color: #fff; font-weight: 700; font-size: 11px; cursor: pointer;">Scan QR Code</button>
-                            <button id="btn-tab-phone" onclick="switchTgLoginTab('phone')" style="padding: 6px 14px; border-radius: 8px; border: none; background: transparent; color: var(--subtext); font-weight: 700; font-size: 11px; cursor: pointer;">Phone OTP</button>
-                        </div>
-                    </div>
-
-                    <!-- 📱 QR CODE METHOD -->
-                    <div id="tg-login-qr-section" style="text-align: center; padding: 15px 0;">
-                        <!-- 🟢 FIX: Fast Client-Side QR Generator -->
-                        <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
-
-                        <div id="qr-loading-box" style="padding: 30px; font-size: 13px; color: var(--subtext);">
-                            <div style="font-size: 24px; margin-bottom: 8px;">⏳</div> Generating secure Telegram login token...
-                        </div>
-                        <div id="qr-display-box" style="display: none; flex-direction: column; align-items: center; gap: 12px;">
-                            <div style="background: #fff; padding: 12px; border-radius: 16px; box-shadow: 0 8px 30px rgba(0,0,0,0.5); display: inline-block;">
-                                <!-- 🟢 Changed img to canvas for instant rendering -->
-                                <canvas id="tg-qr-image" style="width: 200px; height: 200px; display: block; border-radius: 8px;"></canvas>
+                    <!-- 🟢 1. DISPLAYED ONLY WHEN SESSION IS ACTIVE -->
+                    <div id="tg-connected-box" style="display: none; padding: 10px 0;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+                            <div>
+                                <h3 style="margin: 0; font-size: 16px; color: #10b981;">✅ Telegram Session Connected</h3>
+                                <span style="font-size: 12px; color: var(--subtext);">Your account is authorized to forward restricted content and run watchers.</span>
                             </div>
-                            <div style="font-size: 12px; color: var(--subtext); line-height: 1.6; max-width: 320px;">
-                                Open <b>Telegram</b> on your phone ➔ <b>Settings</b> ➔ <b>Devices</b> ➔ tap <b>Link Desktop Device</b> and point your camera here.
+                            <span style="background: rgba(16, 185, 129, 0.2); color: #10b981; padding: 6px 14px; border-radius: 10px; font-size: 11px; font-weight: 800;">ACTIVE</span>
+                        </div>
+                        <button id="tg-logout-btn" class="primary-btn" style="padding: 12px; background: rgba(239, 68, 68, 0.15); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.4); margin-top: 20px;" onclick="tgLogout()">
+                            🛑 Terminate Telegram Session
+                        </button>
+                    </div>
+
+                    <!-- 🟢 2. DISPLAYED ONLY WHEN LOGGED OUT -->
+                    <div id="tg-login-wrapper">
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 15px;">
+                            <div>
+                                <h3 style="margin: 0; font-size: 16px; color: #fff;">Connect Telegram via Web</h3>
+                                <span style="font-size: 11px; color: var(--subtext);">Link your account directly from your browser to enable downloading.</span>
                             </div>
-                            <div id="qr-countdown" style="font-size: 11px; color: var(--accent); font-weight: 700;">Expires in: 30s</div>
+                            <div style="display: flex; background: rgba(0,0,0,0.3); padding: 4px; border-radius: 12px; border: 1px solid var(--card-border);">
+                                <button id="btn-tab-qr" onclick="switchTgLoginTab('qr')" style="padding: 6px 14px; border-radius: 8px; border: none; background: var(--accent); color: #fff; font-weight: 700; font-size: 11px; cursor: pointer;">Scan QR Code</button>
+                                <button id="btn-tab-phone" onclick="switchTgLoginTab('phone')" style="padding: 6px 14px; border-radius: 8px; border: none; background: transparent; color: var(--subtext); font-weight: 700; font-size: 11px; cursor: pointer;">Phone OTP</button>
+                            </div>
                         </div>
-                    </div>
 
-                    <!-- 📱 PHONE OTP METHOD -->
-                    <div id="tg-login-phone-section" style="display: none; margin-top: 10px;">
-                        <div id="tg-login-step1">
-                            <div class="input-group">
-                            <label>Phone Number (with country code)</label>
-                            <input type="text" id="tg-phone" placeholder="e.g. +1234567890">
-                        </div>
-                        <button class="primary-btn" style="padding: 12px; background: #10b981;" onclick="tgSendCode()">Send OTP Code</button>
-                    </div>
+                        <!-- 📱 QR CODE METHOD -->
+                        <div id="tg-login-qr-section" style="text-align: center; padding: 15px 0;">
+                            <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
 
-                    <div id="tg-login-step2" style="display: none;">
-                        <div class="input-group">
-                            <label>Telegram OTP Code (Check your app)</label>
-                            <input type="text" id="tg-code" placeholder="12345">
-                        </div>
-                        <button class="primary-btn" style="padding: 12px; background: #10b981;" onclick="tgVerifyCode()">Verify Code</button>
-                    </div>
+                            <div id="qr-loading-box" style="padding: 30px; font-size: 13px; color: var(--subtext);">
+                                <div style="font-size: 24px; margin-bottom: 8px;">⏳</div> Generating secure Telegram login token...
+                            </div>
+                            <div id="qr-display-box" style="display: none; flex-direction: column; align-items: center; gap: 12px;">
+                                <div style="background: #fff; padding: 12px; border-radius: 16px; box-shadow: 0 8px 30px rgba(0,0,0,0.5); display: inline-block;">
+                                    <canvas id="tg-qr-image" style="width: 200px; height: 200px; display: block; border-radius: 8px;"></canvas>
+                                </div>
+                                <div style="font-size: 12px; color: var(--subtext); line-height: 1.6; max-width: 320px;">
+                                    Open <b>Telegram</b> on your phone ➔ <b>Settings</b> ➔ <b>Devices</b> ➔ tap <b>Link Desktop Device</b> and point your camera here.
+                                </div>
+                                <div id="qr-countdown" style="font-size: 11px; color: var(--accent); font-weight: 700;">Expires in: 30s</div>
+                            </div>
 
-                    <div id="tg-login-step3" style="display: none;">
-                        <div class="input-group">
-                            <label>Two-Step Verification Password</label>
-                            <input type="password" id="tg-2fa" placeholder="••••••••">
+                            <!-- 🔒 2FA CLOUD PASSWORD MODAL FOR QR -->
+                            <div id="qr-2fa-box" style="display: none; max-width: 380px; margin: 0 auto; text-align: left; background: rgba(0,0,0,0.3); padding: 20px; border-radius: 16px; border: 1px solid var(--card-border);">
+                                <h4 style="margin: 0 0 8px 0; color: #fff; font-size: 14px;">🔒 Two-Step Verification Required</h4>
+                                <p style="font-size: 12px; color: var(--subtext); margin-bottom: 15px;">QR scanned successfully! Enter your Telegram cloud password to complete authentication.</p>
+                                <div class="input-group">
+                                    <label>Cloud Password (2FA)</label>
+                                    <input type="password" id="tg-qr-2fa" placeholder="••••••••" onkeydown="if(event.key==='Enter') tgVerifyQr2FA()">
+                                </div>
+                                <div style="display: flex; gap: 10px; margin-top: 15px;">
+                                    <button type="button" class="primary-btn" id="btn-qr-2fa-submit" style="flex: 2; padding: 12px; background: #10b981;" onclick="tgVerifyQr2FA()">Verify Password</button>
+                                    <button type="button" class="btn-cancel" style="flex: 1; padding: 12px;" onclick="cancelQr2FA()">Cancel</button>
+                                </div>
+                            </div>
                         </div>
-                        <button class="primary-btn" style="padding: 12px; background: #10b981;" onclick="tgVerify2FA()">Submit Password</button>
+
+                        <!-- 📱 PHONE OTP METHOD -->
+                        <div id="tg-login-phone-section" style="display: none; margin-top: 10px;">
+                            <div id="tg-login-step1">
+                                <div class="input-group">
+                                    <label>Phone Number (with country code)</label>
+                                    <input type="text" id="tg-phone" placeholder="e.g. +1234567890">
+                                </div>
+                                <button type="button" class="primary-btn" style="padding: 12px; background: #10b981;" onclick="tgSendCode()">Send OTP Code</button>
+                            </div>
+
+                            <div id="tg-login-step2" style="display: none;">
+                                <div class="input-group">
+                                    <label>Telegram OTP Code (Check your app)</label>
+                                    <input type="text" id="tg-code" placeholder="12345">
+                                </div>
+                                <button type="button" class="primary-btn" style="padding: 12px; background: #10b981;" onclick="tgVerifyCode()">Verify Code</button>
+                            </div>
+
+                            <div id="tg-login-step3" style="display: none;">
+                                <div class="input-group">
+                                    <label>Two-Step Verification Password</label>
+                                    <input type="password" id="tg-2fa" placeholder="••••••••">
+                                </div>
+                                <button type="button" class="primary-btn" style="padding: 12px; background: #10b981;" onclick="tgVerify2FA()">Submit Password</button>
+                            </div>
+                        </div>
                     </div>
-                    
-                    <button id="tg-logout-btn" class="primary-btn" style="padding: 12px; background: rgba(239, 68, 68, 0.1); color: var(--danger); margin-top: 15px; display: none;" onclick="tgLogout()">Disconnect Telegram Session</button>
                 </div>
 
                 <div class="section-title">Security & Credentials</div>
@@ -2579,27 +2607,31 @@
             }
         }
 
+        let currentQrKey = null;
+
         async function startTelegramQR() {
             if (typeof qrPollTimer !== 'undefined' && qrPollTimer) clearInterval(qrPollTimer);
             if (typeof qrExpiryTimer !== 'undefined' && qrExpiryTimer) clearInterval(qrExpiryTimer);
             
-            // 🟢 FIX: Never generate a QR code if the section is hidden or the user is already logged in!
+            // Never generate or poll QR if session is already active
+            const isConnected = document.getElementById('tg-status')?.innerText.includes('Active');
             const qrSection = document.getElementById('tg-login-qr-section');
-            if (!qrSection || qrSection.style.display === 'none') return;
+            if (isConnected || !qrSection || qrSection.style.display === 'none') return;
             
             document.getElementById('qr-loading-box').style.display = 'block';
             document.getElementById('qr-display-box').style.display = 'none';
+            document.getElementById('qr-2fa-box').style.display = 'none';
             
             try {
                 const res = await fetch('/api/tg_qr/start', { method: 'POST' });
                 const data = await res.json();
                 
-                // 🟢 RACE CONDITION FIX: If the user clicked Phone OTP or logged in while we were waiting for the server, abort instantly!
                 const isConnectedNow = document.getElementById('tg-status')?.innerText.includes('Active');
                 if (isConnectedNow || qrSection.style.display === 'none') return;
 
                 if (data.status === 'success') {
-                    // 🟢 FIX: Render instantly in the browser, no waiting for slow external API images!
+                    currentQrKey = data.qr_key;
+                    
                     new QRious({
                         element: document.getElementById('tg-qr-image'),
                         value: data.qr_url,
@@ -2614,10 +2646,11 @@
                     let timeLeft = data.expires_in || 30;
                     qrExpiryTimer = setInterval(() => {
                         timeLeft--;
-                        document.getElementById('qr-countdown').innerText = `Expires in: ${timeLeft}s`;
+                        const cd = document.getElementById('qr-countdown');
+                        if (cd) cd.innerText = `Expires in: ${timeLeft}s`;
                         if (timeLeft <= 0) {
                             clearInterval(qrExpiryTimer);
-                            startTelegramQR(); // Auto-refresh token on expiration
+                            startTelegramQR();
                         }
                     }, 1000);
                     
@@ -2633,8 +2666,12 @@
                             window.location.reload();
                         } else if (checkData.status === '2fa_required') {
                             clearInterval(qrPollTimer);
-                            alert("Two-Factor Authentication is enabled on this account. Please log in using Phone OTP.");
-                            switchTgLoginTab('phone');
+                            clearInterval(qrExpiryTimer);
+                            // 🟢 Hide QR preview and reveal 2FA Cloud Password Box
+                            document.getElementById('qr-display-box').style.display = 'none';
+                            document.getElementById('qr-loading-box').style.display = 'none';
+                            document.getElementById('qr-2fa-box').style.display = 'block';
+                            document.getElementById('tg-qr-2fa').focus();
                         }
                     }, 2500);
                 } else {
@@ -2643,6 +2680,41 @@
             } catch (e) {
                 document.getElementById('qr-loading-box').innerText = "Network error loading QR.";
             }
+        }
+
+        async function tgVerifyQr2FA() {
+            const pwd = document.getElementById('tg-qr-2fa').value;
+            if (!pwd) return alert("Please enter your 2FA password.");
+            
+            const btn = document.getElementById('btn-qr-2fa-submit');
+            btn.innerText = "Verifying...";
+            btn.disabled = true;
+            
+            try {
+                const res = await fetch('/api/tg_qr/verify_2fa', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({qr_key: currentQrKey, password: pwd})
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    alert("✅ Telegram Logged In Successfully!");
+                    window.location.reload();
+                } else {
+                    alert("❌ Error: " + data.message);
+                }
+            } catch (e) {
+                alert("Network error.");
+            } finally {
+                btn.innerText = "Verify Password";
+                btn.disabled = false;
+            }
+        }
+
+        function cancelQr2FA() {
+            document.getElementById('qr-2fa-box').style.display = 'none';
+            document.getElementById('tg-qr-2fa').value = '';
+            startTelegramQR();
         }
 
         function formatBytesSos(bytes) {
@@ -3121,23 +3193,19 @@
                 document.getElementById('hardware').innerText = data.ram + "% / " + data.cpu + "%";
                 
                 const tgStatusEl = document.getElementById('tg-status');
+                const tgConnectedBox = document.getElementById('tg-connected-box');
+                const tgLoginWrapper = document.getElementById('tg-login-wrapper');
+                
                 if (data.tg_session_active) {
                     tgStatusEl.innerHTML = '<span style="color: #10b981;">✅ Active (Ready for Restricted Files)</span>';
                     
-                    // 🟢 FIX: Aggressively kill QR timers once logged in to stop background lag!
+                    // Stop any lingering QR poll timers
                     if (typeof qrPollTimer !== 'undefined' && qrPollTimer) clearInterval(qrPollTimer);
                     if (typeof qrExpiryTimer !== 'undefined' && qrExpiryTimer) clearInterval(qrExpiryTimer);
 
-                    // Hide ALL login sections completely
-                    const qrSec = document.getElementById('tg-login-qr-section');
-                    const phSec = document.getElementById('tg-login-phone-section');
-                    if (qrSec) qrSec.style.display = 'none';
-                    if (phSec) phSec.style.display = 'none';
-                    
-                    document.getElementById('tg-login-step1').style.display = 'none';
-                    document.getElementById('tg-login-step2').style.display = 'none';
-                    document.getElementById('tg-login-step3').style.display = 'none';
-                    document.getElementById('tg-logout-btn').style.display = 'block';
+                    // Show active session box with Terminate button, hide all login forms
+                    if (tgConnectedBox) tgConnectedBox.style.display = 'block';
+                    if (tgLoginWrapper) tgLoginWrapper.style.display = 'none';
                     
                     if (!chatsLoaded && document.getElementById('view-chats').classList.contains('active')) {
                         fetchChatsList();
@@ -3145,14 +3213,11 @@
                     }
                 } else {
                     tgStatusEl.innerHTML = '<span style="color: #ef4444;">❌ Not Connected — Login First!</span>';
-                    const phSec = document.getElementById('tg-login-phone-section');
-                    // Only show Step 1 if the Phone OTP tab is currently open
-                    if (phSec && phSec.style.display !== 'none') {
-                        document.getElementById('tg-login-step1').style.display = 'block';
-                    } else if (!phSec) {
-                        document.getElementById('tg-login-step1').style.display = 'block';
-                    }
-                    document.getElementById('tg-logout-btn').style.display = 'none';
+                    
+                    // Show login forms, hide active session box
+                    if (tgConnectedBox) tgConnectedBox.style.display = 'none';
+                    if (tgLoginWrapper) tgLoginWrapper.style.display = 'block';
+                    
                     chatsLoaded = false;
                 }
 
