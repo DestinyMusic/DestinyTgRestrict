@@ -7062,7 +7062,7 @@
                 
                 // 1. Add this formatting helper function anywhere in your script
                 function formatBytesEditor(bytes) {
-                    if (!bytes || bytes === 0) return '0 B';
+                    if (!bytes || bytes === 0 || isNaN(bytes)) return '0 B';
                     const k = 1024, sizes = ['B', 'KB', 'MB', 'GB', 'TB'], i = Math.floor(Math.log(bytes) / Math.log(k));
                     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
                 }
@@ -7091,12 +7091,20 @@
 
                     // 🟢 2. Calculate the track size using either metadata tags or Bitrate * Duration math
                     let sizeStr = "Size Unknown";
-                    const bytes = (s.tags && (s.tags.NUMBER_OF_BYTES || s.tags['NUMBER_OF_BYTES-eng'])) || null;
-                    
-                    if (bytes) {
+                    let bytes = null;
+                    if (s.tags) {
+                        bytes = s.tags.NUMBER_OF_BYTES || s.tags.number_of_bytes || s.tags['NUMBER_OF_BYTES-eng'];
+                    }
+                    // If no explicit byte tag exists, try calculating it using Bitrate
+                    if (!bytes && s.bit_rate && window.playerTotalDuration > 0) {
+                        bytes = (parseInt(s.bit_rate) / 8) * window.playerTotalDuration;
+                    }
+                    // Extreme fallback: If all else fails, estimate based on total file size divided by track count
+                    if (!bytes && window.editorProbeData?.format?.size) {
+                        bytes = parseInt(window.editorProbeData.format.size) / window.editorProbeData.streams.length;
+                        sizeStr = "~" + formatBytesEditor(bytes); // Mark as approximate
+                    } else if (bytes) {
                         sizeStr = formatBytesEditor(parseInt(bytes));
-                    } else if (s.bit_rate && window.playerTotalDuration > 0) {
-                        sizeStr = formatBytesEditor((parseInt(s.bit_rate) / 8) * window.playerTotalDuration);
                     }
                     
                     let htmlStr = '<div style="padding: 12px; margin: 0; background: rgba(0,0,0,0.4); border: 1px solid var(--card-border); border-left: 4px solid ' + color + '; display: flex; flex-direction: column; gap: 8px; border-radius: 12px;">';
