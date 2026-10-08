@@ -919,7 +919,8 @@ async def _api_tg_qr_start(request):
         user_id = request["authenticated_user_id"]
         qr_key = uuid.uuid4().hex
         
-        temp_client = Client(f"qr_{qr_key[:8]}", api_id=API_ID, api_hash=API_HASH, in_memory=True)
+        # 🟢 FIX: Added ipv6=False to completely bypass the 10-second IPv6 timeout freeze on VPS servers!
+        temp_client = Client(f"qr_{qr_key[:8]}", api_id=API_ID, api_hash=API_HASH, in_memory=True, ipv6=False)
         await temp_client.connect()
         
         res = await temp_client.invoke(raw.functions.auth.ExportLoginToken(api_id=API_ID, api_hash=API_HASH, except_ids=[]))
