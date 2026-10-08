@@ -2656,22 +2656,31 @@
                     
                     // Poll for status verification
                     qrPollTimer = setInterval(async () => {
-                        const checkRes = await fetch(`/api/tg_qr/check?qr_key=${data.qr_key}`);
-                        const checkData = await checkRes.json();
-                        
-                        if (checkData.status === 'authorized') {
-                            clearInterval(qrPollTimer);
-                            clearInterval(qrExpiryTimer);
-                            alert("✅ Logged in successfully!");
-                            window.location.reload();
-                        } else if (checkData.status === '2fa_required') {
-                            clearInterval(qrPollTimer);
-                            clearInterval(qrExpiryTimer);
-                            // 🟢 Hide QR preview and reveal 2FA Cloud Password Box
-                            document.getElementById('qr-display-box').style.display = 'none';
-                            document.getElementById('qr-loading-box').style.display = 'none';
-                            document.getElementById('qr-2fa-box').style.display = 'block';
-                            document.getElementById('tg-qr-2fa').focus();
+                        try {
+                            const checkRes = await fetch(`/api/tg_qr/check?qr_key=${data.qr_key}`);
+                            const checkData = await checkRes.json();
+                            
+                            if (checkData.status === 'authorized') {
+                                clearInterval(qrPollTimer);
+                                clearInterval(qrExpiryTimer);
+                                alert("✅ Logged in successfully!");
+                                window.location.reload();
+                            } else if (checkData.status === '2fa_required') {
+                                clearInterval(qrPollTimer);
+                                clearInterval(qrExpiryTimer);
+                                // 🟢 Hide QR preview and reveal 2FA Cloud Password Box
+                                document.getElementById('qr-display-box').style.display = 'none';
+                                document.getElementById('qr-loading-box').style.display = 'none';
+                                document.getElementById('qr-2fa-box').style.display = 'block';
+                                document.getElementById('tg-qr-2fa').focus();
+                            } else if (checkData.status === 'error' || checkData.status === 'expired') {
+                                clearInterval(qrPollTimer);
+                                clearInterval(qrExpiryTimer);
+                                alert("❌ " + (checkData.message || "QR Session Expired"));
+                                startTelegramQR();
+                            }
+                        } catch (e) {
+                            console.warn("QR Poll error:", e);
                         }
                     }, 2500);
                 } else {
