@@ -95,7 +95,25 @@ from pyrogram.types import (
     InlineKeyboardMarkup, InlineKeyboardButton, Message, 
     BotCommand, BotCommandScopeDefault, BotCommandScopeChat, CallbackQuery
 )
+from pyrogram.storage.sqlite_storage import SQLiteStorage
 from concurrent.futures import ThreadPoolExecutor
+
+# 🟢 FIX: Patch Pyrogram SQLite storage for Python 3.11+ collectible usernames
+_orig_update_usernames = SQLiteStorage.update_usernames
+async def _safe_update_usernames(self, parsed_usernames):
+    if not parsed_usernames:
+        return
+    try:
+        sanitized = [
+            (int(p[0]), str(p[1]))
+            for p in parsed_usernames
+            if isinstance(p, (tuple, list)) and len(p) >= 2 and p[0] is not None and p[1] is not None
+        ]
+        if sanitized:
+            await _orig_update_usernames(self, sanitized)
+    except Exception:
+        pass
+SQLiteStorage.update_usernames = _safe_update_usernames
 import traceback                        
 import html
 import math
