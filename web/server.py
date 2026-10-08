@@ -915,14 +915,28 @@ from pyrogram import raw
 TG_QR_LOGIN_SESSIONS = {}
 WEB_AUTH_CACHE = {}
 
+# ==============================================================================
+# --- FIXED: TELEGRAM QR CODE LOGIN ENGINE (NO SELF-INVALIDATION & DC MIGRATION) ---
+# ==============================================================================
+from pyrogram.handlers import RawUpdateHandler
+
 async def _api_tg_qr_start(request):
     try:
         user_id = request["authenticated_user_id"]
         qr_key = uuid.uuid4().hex
         
-        # 🟢 FIX: Added ipv6=False to completely bypass the 10-second IPv6 timeout freeze on VPS servers!
         temp_client = Client(f"qr_{qr_key[:8]}", api_id=API_ID, api_hash=API_HASH, in_memory=True, ipv6=False)
         await temp_client.connect()
+        
+        # 🟢 Event flag: set ONLY when Telegram pushes that the phone scanned the code
+        scanned_event = asyncio.Event()
+
+        async def _on_raw_update(client, update, users, chats):
+            if isinstance(update, raw.types.UpdateLoginToken):
+                scanned_event.set()
+
+        temp_client.add_handler(RawUpdateHandler(_on_raw_update))
+        await temp_client.dispatcher.start()
         
         res = await temp_client.invoke(raw.functions.auth.ExportLoginToken(api_id=API_ID, api_hash=API_HASH, except_ids=[]))
         
@@ -931,12 +945,16 @@ async def _api_tg_qr_start(request):
             tg_qr_url = f"tg://login?token={b64_tok}"
             
             TG_QR_LOGIN_SESSIONS[qr_key] = {
-                "user_id": user_id, "client": temp_client, "expires": res.expires, "status": "pending"
+                "user_id": user_id, 
+                "client": temp_client, 
+                "expires": res.expires, 
+                "scanned_event": scanned_event
             }
             
-            qr_img_api = f"https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=10&data={quote(tg_qr_url, safe='')}"
             return web.json_response({
-                "status": "success", "qr_key": qr_key, "qr_img": qr_img_api,
+                "status": "success", 
+                "qr_key": qr_key, 
+                "qr_url": tg_qr_url,
                 "expires_in": max(15, int(res.expires - time.time()))
             })
         else:
@@ -953,8 +971,16 @@ async def _api_tg_qr_check(request):
         
     temp_client = session_data["client"]
     user_id = session_data["user_id"]
+    scanned_event = session_data["scanned_event"]
+
+    # 🟢 CRITICAL: Do NOT invoke ExportLoginToken while waiting! Keep the QR token alive.
+    if not scanned_event.is_set():
+        return web.json_response({"status": "pending"})
+
     try:
+        # The phone scanned the QR code; finalize authorization
         res = await temp_client.invoke(raw.functions.auth.ExportLoginToken(api_id=API_ID, api_hash=API_HASH, except_ids=[]))
+        
         if isinstance(res, raw.types.auth.LoginTokenSuccess):
             session_str = await temp_client.export_session_string()
             await db.set_session(user_id, session_str)
@@ -963,10 +989,24 @@ async def _api_tg_qr_check(request):
             await temp_client.disconnect()
             TG_QR_LOGIN_SESSIONS.pop(qr_key, None)
             return web.json_response({"status": "authorized", "message": "Telegram session connected successfully!"})
+            
         elif isinstance(res, raw.types.auth.LoginTokenMigrateTo):
+            # 🟢 MIGRATION: Auto-migrate to the user's actual datacenter (e.g. DC 4 / DC 5)
             await temp_client.disconnect()
-            TG_QR_LOGIN_SESSIONS.pop(qr_key, None)
-            return web.json_response({"status": "error", "message": f"Account is on DC {res.dc_id}. Please use string session login."})
+            migrated_client = Client(f"qr_mig_{qr_key[:8]}", api_id=API_ID, api_hash=API_HASH, in_memory=True, ipv6=False)
+            migrated_client.session.dc_id = res.dc_id
+            await migrated_client.connect()
+            
+            auth_res = await migrated_client.invoke(raw.functions.auth.ImportLoginToken(token=res.token))
+            if isinstance(auth_res, raw.types.auth.LoginTokenSuccess):
+                session_str = await migrated_client.export_session_string()
+                await db.set_session(user_id, session_str)
+                await db.set_api_id(user_id, API_ID)
+                await db.set_api_hash(user_id, API_HASH)
+                await migrated_client.disconnect()
+                TG_QR_LOGIN_SESSIONS.pop(qr_key, None)
+                return web.json_response({"status": "authorized", "message": "Telegram session connected successfully!"})
+
         return web.json_response({"status": "pending"})
     except Exception as e:
         if "session_password_needed" in str(e).lower():
