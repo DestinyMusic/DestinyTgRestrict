@@ -104,9 +104,10 @@ async def _api_diagnostics_middleware(request, handler):
     if response.status >= 400 and response.status not in {401, 416, 499}:
         result = "FAILED"
         reason = f"HTTP {response.status}"
-        if response.content_type.startswith("text/") and response.body:
+        # 🟢 CRITICAL FIX: Safe check for StreamResponses to stop the server crashing
+        if hasattr(response, "body") and response.content_type.startswith("text/") and response.body:
             reason = response.body[:2048].decode("utf-8", errors="replace")
-    elif response.content_type == "application/json" and response.body:
+    elif hasattr(response, "body") and response.content_type == "application/json" and response.body:
         try:
             payload = json.loads(response.body)
             if isinstance(payload, dict) and payload.get("status") == "error":
@@ -2554,7 +2555,66 @@ async def _api_edit_media_handler(request):
 
             # 🟢 REMUX OR BYPASS (Standard Video vs Audio)
             is_single_audio = str(new_name).lower().endswith(('.flac', '.mp3', '.m4a', '.wav', '.aac', '.opus', '.ogg', '.alac', '.mka', '.dsf', '.dff', '.ac3', '.eac3', '.dts'))
-            
+
+            # 🟢 FIX: TRACK EXTRACTION ENGINE (Rips selected tracks to standalone files!)
+            if upload_mode in ["extract_audio", "extract_sub", "extract_video"]:
+                EDITOR_UI_STATE[task_uuid]["phase"] = "Extracting Tracks"
+                await safe_tg_edit(status_msg, f"⚙️ **Extracting Selected Tracks...**\n\n📄 `{new_name}`")
+                
+                extracted_files = []
+                for track in config:
+                    if track.get("type") in ["ext_audio", "ext_sub"]: continue 
+                    
+                    idx_str = str(track.get('index', '0'))
+                    t_idx = idx_str.replace('v:', '').replace('a:', '').replace('s:', '')
+                    t_type = track.get("type", "")
+                    if "v" in idx_str: t_type = "video"
+                    elif "a" in idx_str: t_type = "audio"
+                    elif "s" in idx_str: t_type = "subtitle"
+                    
+                    if upload_mode == "extract_audio" and t_type != "audio": continue
+                    if upload_mode == "extract_sub" and t_type != "subtitle": continue
+                    if upload_mode == "extract_video" and t_type != "video": continue
+                    
+                    ext = ".m4a" if t_type == "audio" else (".vtt" if t_type == "subtitle" else ".mp4")
+                    out_name = f"Track_{t_idx}_{sanitize_filename(new_name)}{ext}"
+                    out_path = temp_dir / out_name
+                    
+                    ex_cmd = ["ffmpeg", "-y", "-i", str(input_file), "-map", f"0:{t_idx}", "-c", "copy", str(out_path)]
+                    proc = await asyncio.create_subprocess_exec(*ex_cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+                    await proc.communicate()
+                    
+                    if out_path.exists(): extracted_files.append(out_path)
+                
+                if not extracted_files: 
+                    raise Exception(f"No tracks matched your extraction choice ({upload_mode}).")
+                    
+                total_tracks = len(extracted_files)
+                for i, ex_file in enumerate(extracted_files, start=1):
+                    EDITOR_UI_STATE[task_uuid]["phase"] = f"Uploading Track {i}/{total_tracks}"
+                    await safe_tg_edit(status_msg, f"☁️ **Uploading Extracted Track {i} of {total_tracks}...**\n`{ex_file.name}`")
+                    
+                    is_audio_file = str(ex_file).lower().endswith(('.flac', '.mp3', '.m4a', '.wav', '.aac', '.opus', '.ogg'))
+                    if upload_mode == "extract_audio" and is_audio_file:
+                        send_fn = upload_client.send_audio
+                        doc_key = "audio"
+                        audio_meta = await get_audio_metadata(ex_file)
+                        extra_kwargs = {
+                            "duration": audio_meta.get("duration", 0), "performer": audio_meta.get("performer", "Unknown Artist"),
+                            "title": audio_meta.get("title", ex_file.name), "thumb": str(thumb_path) if (thumb_path and thumb_path.exists()) else audio_meta.get("thumb")
+                        }
+                    else:
+                        send_fn = upload_client.send_document
+                        doc_key = "document"
+                        extra_kwargs = {"thumb": str(thumb_path) if (thumb_path and thumb_path.exists()) else None}
+                        
+                    cap = await generate_rich_caption(ex_file, ex_file.name)
+                    await safe_send(upload_client, uid, final_chat_id, task_uuid, is_bot, send_fn, progress=progress, progress_args=["up", task_uuid], chat_id=final_chat_id, message_thread_id=upload_thread_id, caption=cap, **{doc_key: str(ex_file)}, **extra_kwargs)
+                    
+                EDITOR_UI_STATE[task_uuid]["done"] = True
+                await safe_tg_edit(status_msg, f"✅ **Extraction Completed!**\nDelivered {total_tracks} tracks.")
+                return
+
             if is_single_audio:
                 EDITOR_UI_STATE[task_uuid]["phase"] = "Processing Audio"
                 await safe_tg_edit(status_msg, f"⚙️ **Processing Audio File (Preserving Tags)...**\n\n📄 `{new_name}`")
