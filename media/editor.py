@@ -52,26 +52,36 @@ def _build_global_tags_xml(global_tags):
 
 
 async def process_remux(input_file, output_file, stream_config, global_tags=None):
-    """Instantly reshuffles, delays, adds external tracks, and renames streams using MKVToolNix."""
+    """Instantly reshuffles, delays, adds external tracks, applies ordering, and renames streams using MKVToolNix."""
     
+    # Sort the tracks based on the 'order' key provided by the Web UI
+    try:
+        stream_config = sorted(stream_config, key=lambda x: int(x.get('order', 999)))
+    except Exception:
+        pass
+
     # Initialize mkvmerge command
     cmd = ["mkvmerge", "-o", output_file]
     
-    # 🟢 Global Metadata (Movie Title)
+    # Global Metadata (Movie Title)
     if global_tags and global_tags.get("title"):
         cmd.extend(["--title", clean_media_text(global_tags["title"])])
 
     main_args = []
     ext_args = []
+    track_order = []
     
     internal_video = []
     internal_audio = []
     internal_sub = []
 
+    # Main file is File Index 0. External files start at Index 1.
+    ext_file_index = 1
+
     for track in stream_config:
         delay_ms = int(track.get("delay", 0))
         
-        # 🟢 Handle External Track Injections
+        # Handle External Track Injections
         if track.get("type") in ["ext_audio", "ext_sub"]:
             ext_file = track.get("local_path")
             if not ext_file or not os.path.exists(ext_file):
@@ -90,7 +100,11 @@ async def process_remux(input_file, output_file, stream_config, global_tags=None
                 
             ext_args.append(ext_file)
             
-        # 🟢 Handle Original File Tracks
+            # Add to MKVMerge Track Order (FileIndex:TrackIndex)
+            track_order.append(f"{ext_file_index}:0")
+            ext_file_index += 1
+            
+        # Handle Original File Tracks
         else:
             idx_str = str(track.get('index', '0'))
             idx = idx_str.replace('v:', '').replace('a:', '').replace('s:', '')
@@ -110,8 +124,11 @@ async def process_remux(input_file, output_file, stream_config, global_tags=None
                 
             if track.get("lang"):
                 main_args.extend(["--language", f"{idx}:{track['lang']}"])
+                
+            # Add to MKVMerge Track Order (Main File is Index 0)
+            track_order.append(f"0:{idx}")
 
-    # 🟢 FIX: Force MKVMerge to drop tracks you deselected!
+    # Force MKVMerge to drop tracks you deselected
     if internal_video: main_args.extend(["--video-tracks", ",".join(internal_video)])
     else: main_args.append("--no-video")
     
@@ -126,12 +143,15 @@ async def process_remux(input_file, output_file, stream_config, global_tags=None
     cmd.append(input_file)
     cmd.extend(ext_args)
     
+    # Apply the strict User UI ordering
+    if track_order:
+        cmd.extend(["--track-order", ",".join(track_order)])
+    
     # Execute MKVToolNix
     proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     out, err = await proc.communicate()
     
     if proc.returncode != 0:
-        # MKVMerge prints its errors to stdout instead of stderr, so we combine them!
         err_str = err.decode('utf-8', errors='ignore').strip()
         out_str = out.decode('utf-8', errors='ignore').strip()
         full_error = f"{err_str}\n{out_str}".strip()
@@ -141,7 +161,6 @@ async def process_remux(input_file, output_file, stream_config, global_tags=None
     if global_tags is not None:
         xml_data = _build_global_tags_xml(global_tags)
         
-        # 🟢 FIX: Only run the XML tagger if valid XML data was actually generated
         if xml_data:
             tags_path = f"{output_file}.tags.xml"
             try:
@@ -157,7 +176,7 @@ async def process_remux(input_file, output_file, stream_config, global_tags=None
                     raise Exception(error)
             except Exception as e:
                 raise Exception(f"MKV metadata update failed: {e}")
-            finally: # 🟢 FIX: Shifted 4 spaces right so it correctly attaches to the 'try' block
+            finally: 
                 if os.path.exists(tags_path):
                     os.remove(tags_path)
         
