@@ -7480,7 +7480,8 @@
                 if (cb && cb.checked) {
                     const orderVal = document.getElementById('edit-order-' + idx).value;
                     config.push({
-                        type: s.codec_type || "main", // 🟢 Passes "audio", "video", or "subtitle" directly to the Python backend so it knows what to extract!
+                        type: s.codec_type || "main",
+                        codec: s.codec_name || "", // 🟢 FIX: Send the exact codec to Python so it extracts "as-is" without conversion!
                         index: idx,
                         title: document.getElementById('edit-title-' + idx).value,
                         delay: document.getElementById('edit-delay-' + idx).value || 0,
