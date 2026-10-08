@@ -2450,7 +2450,15 @@
             if (viewId === 'chats') loadWebChats();
             if (viewId === 'network') fetchNetworkStats();
             if (viewId === 'sos') loadSosStats();
-            if (viewId === 'settings') loadWorkerTokens();
+            if (viewId === 'settings') {
+                loadWorkerTokens();
+                // 🟢 FIX: Auto-start the QR generation instantly when Settings is opened!
+                const qrSection = document.getElementById('tg-login-qr-section');
+                const isConnected = document.getElementById('tg-status')?.innerText.includes('Active');
+                if (!isConnected && qrSection && qrSection.style.display !== 'none') {
+                    startTelegramQR();
+                }
+            }
             if (viewId === 'admin') loadAdminUsers();
             if (viewId === 'globe') setTimeout(initWorldGlobe, 300); // 🟢 Boot Globe when tab opens
         }
@@ -2569,8 +2577,12 @@
         }
 
         async function startTelegramQR() {
-            if (qrPollTimer) clearInterval(qrPollTimer);
-            if (qrExpiryTimer) clearInterval(qrExpiryTimer);
+            if (typeof qrPollTimer !== 'undefined' && qrPollTimer) clearInterval(qrPollTimer);
+            if (typeof qrExpiryTimer !== 'undefined' && qrExpiryTimer) clearInterval(qrExpiryTimer);
+            
+            // 🟢 FIX: Never generate a QR code if the section is hidden or the user is already logged in!
+            const qrSection = document.getElementById('tg-login-qr-section');
+            if (!qrSection || qrSection.style.display === 'none') return;
             
             document.getElementById('qr-loading-box').style.display = 'block';
             document.getElementById('qr-display-box').style.display = 'none';
@@ -3104,20 +3116,35 @@
                 const tgStatusEl = document.getElementById('tg-status');
                 if (data.tg_session_active) {
                     tgStatusEl.innerHTML = '<span style="color: #10b981;">✅ Active (Ready for Restricted Files)</span>';
+                    
+                    // 🟢 FIX: Aggressively kill QR timers once logged in to stop background lag!
+                    if (typeof qrPollTimer !== 'undefined' && qrPollTimer) clearInterval(qrPollTimer);
+                    if (typeof qrExpiryTimer !== 'undefined' && qrExpiryTimer) clearInterval(qrExpiryTimer);
+
+                    // Hide ALL login sections completely
+                    const qrSec = document.getElementById('tg-login-qr-section');
+                    const phSec = document.getElementById('tg-login-phone-section');
+                    if (qrSec) qrSec.style.display = 'none';
+                    if (phSec) phSec.style.display = 'none';
+                    
                     document.getElementById('tg-login-step1').style.display = 'none';
                     document.getElementById('tg-login-step2').style.display = 'none';
                     document.getElementById('tg-login-step3').style.display = 'none';
                     document.getElementById('tg-logout-btn').style.display = 'block';
                     
-                    // 🟢 FIX: Stop spamming get_dialogs on every heartbeat!
-                    // ONLY fetch the chat list if the user is actually looking at the Chats tab!
                     if (!chatsLoaded && document.getElementById('view-chats').classList.contains('active')) {
                         fetchChatsList();
                         chatsLoaded = true;
                     }
                 } else {
                     tgStatusEl.innerHTML = '<span style="color: #ef4444;">❌ Not Connected — Login First!</span>';
-                    document.getElementById('tg-login-step1').style.display = 'block';
+                    const phSec = document.getElementById('tg-login-phone-section');
+                    // Only show Step 1 if the Phone OTP tab is currently open
+                    if (phSec && phSec.style.display !== 'none') {
+                        document.getElementById('tg-login-step1').style.display = 'block';
+                    } else if (!phSec) {
+                        document.getElementById('tg-login-step1').style.display = 'block';
+                    }
                     document.getElementById('tg-logout-btn').style.display = 'none';
                     chatsLoaded = false;
                 }
