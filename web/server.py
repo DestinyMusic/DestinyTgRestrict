@@ -2559,7 +2559,7 @@ async def _api_edit_media_handler(request):
             # 🟢 FIX: TRACK EXTRACTION ENGINE (Rips selected tracks to standalone files!)
             if upload_mode in ["extract_audio", "extract_sub", "extract_video"]:
                 EDITOR_UI_STATE[task_uuid]["phase"] = "Extracting Tracks"
-                await safe_tg_edit(status_msg, f"⚙️ **Extracting Selected Tracks...**\n\n📄 `{new_name}`")
+                await safe_tg_edit(status_msg, f"⚙️ **Extracting Selected Tracks As-Is...**\n\n📄 `{new_name}`")
                 
                 extracted_files = []
                 for track in config:
@@ -2568,6 +2568,8 @@ async def _api_edit_media_handler(request):
                     idx_str = str(track.get('index', '0'))
                     t_idx = idx_str.replace('v:', '').replace('a:', '').replace('s:', '')
                     t_type = track.get("type", "")
+                    codec = track.get("codec", "").lower()
+                    
                     if "v" in idx_str: t_type = "video"
                     elif "a" in idx_str: t_type = "audio"
                     elif "s" in idx_str: t_type = "subtitle"
@@ -2576,10 +2578,18 @@ async def _api_edit_media_handler(request):
                     if upload_mode == "extract_sub" and t_type != "subtitle": continue
                     if upload_mode == "extract_video" and t_type != "video": continue
                     
-                    ext = ".m4a" if t_type == "audio" else (".vtt" if t_type == "subtitle" else ".mp4")
+                    # 🟢 FIX: 100% "As-Is" Raw Stream Mapping. Zero conversion.
+                    if t_type == "audio":
+                        ext = f".{codec}" if codec in ["aac", "ac3", "eac3", "flac", "mp3", "opus", "dts", "wav"] else ".mka"
+                    elif t_type == "subtitle":
+                        ext = ".srt" if codec == "subrip" else (".ass" if codec == "ass" else ".vtt")
+                    else:
+                        ext = ".mkv" # Safest native container for raw video chunks without transcoding
+                        
                     out_name = f"Track_{t_idx}_{sanitize_filename(new_name)}{ext}"
                     out_path = temp_dir / out_name
                     
+                    # -c copy ensures bit-for-bit extraction with no re-encoding
                     ex_cmd = ["ffmpeg", "-y", "-i", str(input_file), "-map", f"0:{t_idx}", "-c", "copy", str(out_path)]
                     proc = await asyncio.create_subprocess_exec(*ex_cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
                     await proc.communicate()
