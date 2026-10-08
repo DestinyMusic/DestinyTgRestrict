@@ -971,16 +971,10 @@ async def _api_tg_qr_check(request):
         
     temp_client = session_data["client"]
     user_id = session_data["user_id"]
-    scanned_event = session_data["scanned_event"]
-
-    # 🟢 CRITICAL: Do NOT invoke ExportLoginToken while waiting! Keep the QR token alive.
-    if not scanned_event.is_set():
-        return web.json_response({"status": "pending"})
-
     try:
-        # The phone scanned the QR code; finalize authorization
         res = await temp_client.invoke(raw.functions.auth.ExportLoginToken(api_id=API_ID, api_hash=API_HASH, except_ids=[]))
         
+        # 🟢 Case 1: Account is on DC 2 without 2FA
         if isinstance(res, raw.types.auth.LoginTokenSuccess):
             session_str = await temp_client.export_session_string()
             await db.set_session(user_id, session_str)
@@ -990,27 +984,41 @@ async def _api_tg_qr_check(request):
             TG_QR_LOGIN_SESSIONS.pop(qr_key, None)
             return web.json_response({"status": "authorized", "message": "Telegram session connected successfully!"})
             
+        # 🟢 Case 2: Account is on DC 5 (India) / DC 4 / DC 1 -> Auto-Migrate!
         elif isinstance(res, raw.types.auth.LoginTokenMigrateTo):
-            # 🟢 MIGRATION: Auto-migrate to the user's actual datacenter (e.g. DC 4 / DC 5)
+            target_dc = res.dc_id
+            transfer_token = res.token
             await temp_client.disconnect()
-            migrated_client = Client(f"qr_mig_{qr_key[:8]}", api_id=API_ID, api_hash=API_HASH, in_memory=True, ipv6=False)
-            migrated_client.session.dc_id = res.dc_id
-            await migrated_client.connect()
             
-            auth_res = await migrated_client.invoke(raw.functions.auth.ImportLoginToken(token=res.token))
-            if isinstance(auth_res, raw.types.auth.LoginTokenSuccess):
-                session_str = await migrated_client.export_session_string()
-                await db.set_session(user_id, session_str)
-                await db.set_api_id(user_id, API_ID)
-                await db.set_api_hash(user_id, API_HASH)
-                await migrated_client.disconnect()
-                TG_QR_LOGIN_SESSIONS.pop(qr_key, None)
-                return web.json_response({"status": "authorized", "message": "Telegram session connected successfully!"})
+            # Create client directly targeted at your datacenter
+            migrated_client = Client(f"qr_dc{target_dc}_{qr_key[:8]}", api_id=API_ID, api_hash=API_HASH, in_memory=True, ipv6=False)
+            if callable(getattr(migrated_client.storage, "dc_id", None)):
+                await migrated_client.storage.dc_id(target_dc)
+            else:
+                migrated_client.storage.dc_id = target_dc
+                
+            await migrated_client.connect()
+            session_data["client"] = migrated_client  # Update reference for 2FA password verification
+            
+            try:
+                import_res = await migrated_client.invoke(raw.functions.auth.ImportLoginToken(token=transfer_token))
+                if isinstance(import_res, raw.types.auth.LoginTokenSuccess):
+                    session_str = await migrated_client.export_session_string()
+                    await db.set_session(user_id, session_str)
+                    await db.set_api_id(user_id, API_ID)
+                    await db.set_api_hash(user_id, API_HASH)
+                    await migrated_client.disconnect()
+                    TG_QR_LOGIN_SESSIONS.pop(qr_key, None)
+                    return web.json_response({"status": "authorized", "message": "Telegram session connected successfully!"})
+            except Exception as import_err:
+                if "session_password_needed" in str(import_err).lower():
+                    return web.json_response({"status": "2fa_required", "message": "Two-Step Verification password required."})
+                raise import_err
 
         return web.json_response({"status": "pending"})
     except Exception as e:
         if "session_password_needed" in str(e).lower():
-            return web.json_response({"status": "2fa_required", "message": "Account has 2FA enabled. Use OTP login instead."})
+            return web.json_response({"status": "2fa_required", "message": "Two-Step Verification password required."})
         return web.json_response({"status": "pending"})
 
 async def _api_tg_qr_verify_2fa(request):
@@ -1029,16 +1037,6 @@ async def _api_tg_qr_verify_2fa(request):
     try:
         await temp_client.check_password(pwd)
         
-        # Enforce Telegram ID match to prevent account mix-ups
-        me = await temp_client.get_me()
-        if me.id != user_id:
-            await temp_client.disconnect()
-            TG_QR_LOGIN_SESSIONS.pop(qr_key, None)
-            return web.json_response({
-                "status": "error", 
-                "message": f"⚠️ ID Mismatch! Logged-in web user is {user_id}, but scanned Telegram account is {me.id}."
-            })
-            
         session_str = await temp_client.export_session_string()
         await temp_client.disconnect()
         TG_QR_LOGIN_SESSIONS.pop(qr_key, None)
@@ -1051,7 +1049,7 @@ async def _api_tg_qr_verify_2fa(request):
         return web.json_response({"status": "error", "message": "Incorrect 2FA password! Please try again."})
     except Exception as e:
         return web.json_response({"status": "error", "message": str(e)})
-        
+
 async def _api_tg_send_code(request):
     data = await request.json()
     uid = int(data.get("user_id"))
