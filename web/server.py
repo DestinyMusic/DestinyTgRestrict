@@ -2470,30 +2470,13 @@ async def _api_edit_media_handler(request):
                 total_tracks = len(all_media)
                 final_chat_id = uid if dest == "tg" else upload_chat_id
                 
-                # Worker Bot Selection
                 uclient = USER_CLIENTS.get(uid)
-                stream_bots = USER_STREAM_BOTS.get(uid, [])
-                upload_client = app
-                is_bot = True
-                
-                valid_bot = None
-                import random
-                shuffled_bots = list(stream_bots)
-                random.shuffle(shuffled_bots)
-                for b in shuffled_bots:
+                is_premium = False
+                if uclient and uclient.is_connected:
                     try:
-                        if not getattr(b, "is_connected", False): await b.connect()
-                        await b.get_chat(final_chat_id)
-                        valid_bot = b
-                        break
+                        me = uclient.me or await uclient.get_me()
+                        is_premium = getattr(me, "is_premium", False)
                     except: pass
-                if valid_bot:
-                    upload_client = valid_bot
-                elif uclient and uclient.is_connected:
-                    upload_client = uclient
-                    is_bot = False
-                    
-                EDITOR_UI_STATE[task_uuid]["uploader"] = _lbl(upload_client)
                     
                 # Process and upload each track cleanly
                 for t_idx, track_path in enumerate(all_media, start=1):
@@ -2504,47 +2487,117 @@ async def _api_edit_media_handler(request):
                     EDITOR_UI_STATE[task_uuid]["phase"] = f"Uploading {t_type} {t_idx}/{total_tracks}"
                     await safe_tg_edit(status_msg, f"☁️ **Uploading {t_type} {t_idx} of {total_tracks}...**\n`{track_path.name}`")
                     
-                    extra_kw = {}
-                    track_thumb = thumb_path
-                    audio_meta = {}
-                    
-                    # 🟢 FORCE DOCUMENTS IF SELECTED IN UI (Overrides audio/video native players)
-                    if upload_mode == "document" or not (is_audio or is_video):
-                        caption_text = f"`{track_path.name}`"
-                        send_fn = upload_client.send_document
-                        doc_key = "document"
-                    else:
-                        caption_text = await generate_rich_caption(track_path, track_path.name)
-                        if is_audio:
-                            send_fn = upload_client.send_audio
-                            doc_key = "audio"
-                            audio_meta = await get_audio_metadata(track_path)
-                            extra_kw.update({
-                                "duration": audio_meta.get("duration", 0),
-                                "performer": audio_meta.get("performer", "Unknown Artist"),
-                                "title": audio_meta.get("title", track_path.name)
-                            })
-                            if not track_thumb and audio_meta.get("thumb"):
-                                track_thumb = Path(audio_meta["thumb"])
-                        elif is_video:
-                            send_fn = upload_client.send_video
-                            doc_key = "video"
-                            extra_kw = {"supports_streaming": True}
-                    
-                    await safe_send(
-                        upload_client, uid, final_chat_id, task_uuid, is_bot, send_fn,
-                        progress=progress, progress_args=["up", task_uuid],
-                        chat_id=final_chat_id, message_thread_id=upload_thread_id,
-                        thumb=str(track_thumb) if track_thumb else None, 
-                        caption=caption_text, **{doc_key: str(track_path)}, **extra_kw
-                    )
-                    
-                    try: os.remove(track_path)
-                    except Exception: pass
-                    if audio_meta.get("thumb"):
-                        try: os.remove(audio_meta["thumb"])
+                    if dest == "gofile":
+                        url = await upload_to_gofile(str(track_path))
+                        await app.send_message(uid, f"✅ **{t_type} {t_idx} Extracted & Uploaded!**\n\n🔗 **GoFile Link:** {url}", disable_web_page_preview=True)
+                        try: os.remove(track_path)
                         except Exception: pass
-                    await asyncio.sleep(1.5)
+                        continue
+
+                    # Telegram Dynamic Upload Routing & >2GB Fallback
+                    file_size = os.path.getsize(track_path)
+                    max_size = (3980 * 1024 * 1024) if is_premium else (1980 * 1024 * 1024)
+                    
+                    upload_client = app
+                    is_bot = True
+
+                    if file_size > (1980 * 1024 * 1024) and is_premium:
+                        if uclient and getattr(uclient, "is_connected", False):
+                            upload_client = uclient
+                            is_bot = False
+                    else:
+                        stream_bots = USER_STREAM_BOTS.get(uid, [])
+                        valid_bot = None
+                        import random
+                        shuffled_bots = list(stream_bots)
+                        random.shuffle(shuffled_bots)
+                        for b in shuffled_bots:
+                            try:
+                                if not getattr(b, "is_connected", False): await b.connect()
+                                await b.get_chat(final_chat_id)
+                                valid_bot = b
+                                break
+                            except: pass
+                            
+                        if valid_bot:
+                            upload_client = valid_bot
+                        else:
+                            try:
+                                await app.get_chat(final_chat_id)
+                                upload_client = app
+                            except:
+                                if uclient and uclient.is_connected:
+                                    upload_client = uclient
+                                    is_bot = False
+
+                    EDITOR_UI_STATE[task_uuid]["uploader"] = _lbl(upload_client)
+                    
+                    if file_size > max_size:
+                        total_parts = math.ceil(file_size / max_size)
+                        EDITOR_UI_STATE[task_uuid]["phase"] = f"Splitting {t_type} {t_idx}"
+                        part_num = 1
+                        with open(track_path, 'rb') as f:
+                            while True:
+                                chunk = f.read(max_size)
+                                if not chunk: break
+                                part_path = temp_dir / f"{track_path.name}.{part_num:03d}"
+                                with open(part_path, 'wb') as pf: pf.write(chunk)
+                                part_caption = await generate_rich_caption(part_path, part_path.name)
+                                await safe_send(
+                                    upload_client, uid, final_chat_id, task_uuid, is_bot, upload_client.send_document,
+                                    progress=progress, progress_args=["up", task_uuid],
+                                    chat_id=final_chat_id, message_thread_id=upload_thread_id,
+                                    document=str(part_path), thumb=str(thumb_path) if (thumb_path and thumb_path.exists()) else None,
+                                    caption=part_caption
+                                )
+                                try: os.remove(part_path)
+                                except Exception: pass
+                                part_num += 1
+                                await asyncio.sleep(1.5)
+                        try: os.remove(track_path)
+                        except Exception: pass
+                    else:
+                        extra_kw = {}
+                        track_thumb = thumb_path
+                        audio_meta = {}
+                        
+                        # 🟢 FORCE DOCUMENTS IF SELECTED IN UI
+                        if upload_mode == "document" or not (is_audio or is_video):
+                            caption_text = f"`{track_path.name}`"
+                            send_fn = upload_client.send_document
+                            doc_key = "document"
+                        else:
+                            caption_text = await generate_rich_caption(track_path, track_path.name)
+                            if is_audio:
+                                send_fn = upload_client.send_audio
+                                doc_key = "audio"
+                                audio_meta = await get_audio_metadata(track_path)
+                                extra_kw.update({
+                                    "duration": audio_meta.get("duration", 0),
+                                    "performer": audio_meta.get("performer", "Unknown Artist"),
+                                    "title": audio_meta.get("title", track_path.name)
+                                })
+                                if not track_thumb and audio_meta.get("thumb"):
+                                    track_thumb = Path(audio_meta["thumb"])
+                            elif is_video:
+                                send_fn = upload_client.send_video
+                                doc_key = "video"
+                                extra_kw = {"supports_streaming": True}
+                        
+                        await safe_send(
+                            upload_client, uid, final_chat_id, task_uuid, is_bot, send_fn,
+                            progress=progress, progress_args=["up", task_uuid],
+                            chat_id=final_chat_id, message_thread_id=upload_thread_id,
+                            thumb=str(track_thumb) if track_thumb else None, 
+                            caption=caption_text, **{doc_key: str(track_path)}, **extra_kw
+                        )
+                        
+                        try: os.remove(track_path)
+                        except Exception: pass
+                        if audio_meta.get("thumb"):
+                            try: os.remove(audio_meta["thumb"])
+                            except Exception: pass
+                        await asyncio.sleep(1.5)
                     
                 try: await status_msg.delete()
                 except Exception: pass
@@ -2600,26 +2653,107 @@ async def _api_edit_media_handler(request):
                     raise Exception(f"No tracks matched your extraction choice ({upload_mode}).")
                     
                 total_tracks = len(extracted_files)
+                
+                final_chat_id = uid if dest == "tg" else upload_chat_id
+                uclient = USER_CLIENTS.get(uid)
+                is_premium = False
+                if uclient and uclient.is_connected:
+                    try:
+                        me = uclient.me or await uclient.get_me()
+                        is_premium = getattr(me, "is_premium", False)
+                    except: pass
+                    
                 for i, ex_file in enumerate(extracted_files, start=1):
                     EDITOR_UI_STATE[task_uuid]["phase"] = f"Uploading Track {i}/{total_tracks}"
                     await safe_tg_edit(status_msg, f"☁️ **Uploading Extracted Track {i} of {total_tracks}...**\n`{ex_file.name}`")
                     
-                    is_audio_file = str(ex_file).lower().endswith(('.flac', '.mp3', '.m4a', '.wav', '.aac', '.opus', '.ogg'))
-                    if upload_mode == "extract_audio" and is_audio_file:
-                        send_fn = upload_client.send_audio
-                        doc_key = "audio"
-                        audio_meta = await get_audio_metadata(ex_file)
-                        extra_kwargs = {
-                            "duration": audio_meta.get("duration", 0), "performer": audio_meta.get("performer", "Unknown Artist"),
-                            "title": audio_meta.get("title", ex_file.name), "thumb": str(thumb_path) if (thumb_path and thumb_path.exists()) else audio_meta.get("thumb")
-                        }
+                    if dest == "gofile":
+                        url = await upload_to_gofile(str(ex_file))
+                        await app.send_message(uid, f"✅ **Track {i} Extracted & Uploaded!**\n\n🔗 **GoFile Link:** {url}", disable_web_page_preview=True)
+                        try: os.remove(ex_file)
+                        except Exception: pass
+                        continue
+
+                    file_size = os.path.getsize(ex_file)
+                    max_size = (3980 * 1024 * 1024) if is_premium else (1980 * 1024 * 1024)
+                    
+                    upload_client = app
+                    is_bot = True
+
+                    if file_size > (1980 * 1024 * 1024) and is_premium:
+                        if uclient and getattr(uclient, "is_connected", False):
+                            upload_client = uclient
+                            is_bot = False
                     else:
-                        send_fn = upload_client.send_document
-                        doc_key = "document"
-                        extra_kwargs = {"thumb": str(thumb_path) if (thumb_path and thumb_path.exists()) else None}
-                        
-                    cap = await generate_rich_caption(ex_file, ex_file.name)
-                    await safe_send(upload_client, uid, final_chat_id, task_uuid, is_bot, send_fn, progress=progress, progress_args=["up", task_uuid], chat_id=final_chat_id, message_thread_id=upload_thread_id, caption=cap, **{doc_key: str(ex_file)}, **extra_kwargs)
+                        stream_bots = USER_STREAM_BOTS.get(uid, [])
+                        valid_bot = None
+                        import random
+                        shuffled_bots = list(stream_bots)
+                        random.shuffle(shuffled_bots)
+                        for b in shuffled_bots:
+                            try:
+                                if not getattr(b, "is_connected", False): await b.connect()
+                                await b.get_chat(final_chat_id)
+                                valid_bot = b
+                                break
+                            except: pass
+                            
+                        if valid_bot:
+                            upload_client = valid_bot
+                        else:
+                            try:
+                                await app.get_chat(final_chat_id)
+                                upload_client = app
+                            except:
+                                if uclient and uclient.is_connected:
+                                    upload_client = uclient
+                                    is_bot = False
+
+                    EDITOR_UI_STATE[task_uuid]["uploader"] = _lbl(upload_client)
+                    
+                    if file_size > max_size:
+                        total_parts = math.ceil(file_size / max_size)
+                        EDITOR_UI_STATE[task_uuid]["phase"] = f"Splitting Track {i} into {total_parts} parts"
+                        part_num = 1
+                        with open(ex_file, 'rb') as f:
+                            while True:
+                                chunk = f.read(max_size)
+                                if not chunk: break
+                                part_path = temp_dir / f"{ex_file.name}.{part_num:03d}"
+                                with open(part_path, 'wb') as pf: pf.write(chunk)
+                                part_caption = await generate_rich_caption(part_path, part_path.name)
+                                await safe_send(
+                                    upload_client, uid, final_chat_id, task_uuid, is_bot, upload_client.send_document,
+                                    progress=progress, progress_args=["up", task_uuid],
+                                    chat_id=final_chat_id, message_thread_id=upload_thread_id,
+                                    document=str(part_path), thumb=str(thumb_path) if (thumb_path and thumb_path.exists()) else None,
+                                    caption=part_caption
+                                )
+                                try: os.remove(part_path)
+                                except Exception: pass
+                                part_num += 1
+                                await asyncio.sleep(1.5)
+                        try: os.remove(ex_file)
+                        except Exception: pass
+                    else:
+                        is_audio_file = str(ex_file).lower().endswith(('.flac', '.mp3', '.m4a', '.wav', '.aac', '.opus', '.ogg'))
+                        if upload_mode == "extract_audio" and is_audio_file:
+                            send_fn = upload_client.send_audio
+                            doc_key = "audio"
+                            audio_meta = await get_audio_metadata(ex_file)
+                            extra_kwargs = {
+                                "duration": audio_meta.get("duration", 0), "performer": audio_meta.get("performer", "Unknown Artist"),
+                                "title": audio_meta.get("title", ex_file.name), "thumb": str(thumb_path) if (thumb_path and thumb_path.exists()) else audio_meta.get("thumb")
+                            }
+                        else:
+                            send_fn = upload_client.send_document
+                            doc_key = "document"
+                            extra_kwargs = {"thumb": str(thumb_path) if (thumb_path and thumb_path.exists()) else None}
+                            
+                        cap = await generate_rich_caption(ex_file, ex_file.name)
+                        await safe_send(upload_client, uid, final_chat_id, task_uuid, is_bot, send_fn, progress=progress, progress_args=["up", task_uuid], chat_id=final_chat_id, message_thread_id=upload_thread_id, caption=cap, **{doc_key: str(ex_file)}, **extra_kwargs)
+                        try: os.remove(ex_file)
+                        except Exception: pass
                     
                 EDITOR_UI_STATE[task_uuid]["done"] = True
                 await safe_tg_edit(status_msg, f"✅ **Extraction Completed!**\nDelivered {total_tracks} tracks.")
