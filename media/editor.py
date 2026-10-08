@@ -63,6 +63,10 @@ async def process_remux(input_file, output_file, stream_config, global_tags=None
 
     main_args = []
     ext_args = []
+    
+    internal_video = []
+    internal_audio = []
+    internal_sub = []
 
     for track in stream_config:
         delay_ms = int(track.get("delay", 0))
@@ -88,8 +92,15 @@ async def process_remux(input_file, output_file, stream_config, global_tags=None
             
         # 🟢 Handle Original File Tracks
         else:
-            idx = str(track.get('index', '0')).replace('v:', '').replace('a:', '').replace('s:', '')
+            idx_str = str(track.get('index', '0'))
+            idx = idx_str.replace('v:', '').replace('a:', '').replace('s:', '')
+            t_type = track.get("type", "")
             
+            if "v" in idx_str or t_type == "video": internal_video.append(idx)
+            elif "a" in idx_str or t_type == "audio": internal_audio.append(idx)
+            elif "s" in idx_str or t_type == "subtitle": internal_sub.append(idx)
+            else: internal_audio.append(idx)
+
             if delay_ms != 0:
                 main_args.extend(["--sync", f"{idx}:{delay_ms}"])
                 
@@ -99,6 +110,16 @@ async def process_remux(input_file, output_file, stream_config, global_tags=None
                 
             if track.get("lang"):
                 main_args.extend(["--language", f"{idx}:{track['lang']}"])
+
+    # 🟢 FIX: Force MKVMerge to drop tracks you deselected!
+    if internal_video: main_args.extend(["--video-tracks", ",".join(internal_video)])
+    else: main_args.append("--no-video")
+    
+    if internal_audio: main_args.extend(["--audio-tracks", ",".join(internal_audio)])
+    else: main_args.append("--no-audio")
+    
+    if internal_sub: main_args.extend(["--subtitle-tracks", ",".join(internal_sub)])
+    else: main_args.append("--no-subtitles")
 
     # Build the final command structure
     cmd.extend(main_args)
