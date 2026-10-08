@@ -600,7 +600,10 @@ async def main():
                 api_hash=u_hash, 
                 workers=100,
                 ipv6=False,
-                no_updates=False 
+                no_updates=False,
+                device_model="DestinyTgRestrict",
+                app_version="DestinyTgRestrict 1.0",
+                system_version="Linux"
             )
             
             user_client.add_handler(MessageHandler(user_watcher_handler, is_watched_chat))
