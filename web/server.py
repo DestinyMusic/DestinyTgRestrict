@@ -619,6 +619,18 @@ async def _api_add_task(request):
     try:
         data = await request.json()
         user_id = request["authenticated_user_id"]
+        
+        # 🟢 DYNAMIC WAKE-UP: Start User Session immediately to resolve public/private links
+        if user_id not in USER_CLIENTS:
+            user_session = await db.get_session(user_id)
+            if user_session:
+                u_api = await db.get_api_id(user_id) or API_ID
+                u_hash = await db.get_api_hash(user_id) or API_HASH
+                new_client = Client(f"User_{user_id}", session_string=user_session, api_id=u_api, api_hash=u_hash, workers=100, ipv6=False)
+                new_client.add_handler(MessageHandler(user_watcher_handler, is_watched_chat))
+                await new_client.start()
+                USER_CLIENTS[user_id] = new_client
+
         link = data.get("link")
         dest_str = data.get("dest", "")
         delay = max(3, min(int(data.get("delay", 3)), 3600))
@@ -776,40 +788,49 @@ async def _api_add_watcher(request):
         is_restricted, _ = await check_link_restriction(user_id, link)
         if is_restricted is None: is_restricted = False
 
+        # 🟢 DYNAMIC WAKE-UP MOVED HIGHER: Ensure session exists BEFORE resolving
+        if user_id not in USER_CLIENTS:
+            user_session = await db.get_session(user_id)
+            if user_session:
+                u_api = await db.get_api_id(user_id) or API_ID
+                u_hash = await db.get_api_hash(user_id) or API_HASH
+                new_client = Client(f"User_{user_id}", session_string=user_session, api_id=u_api, api_hash=u_hash, workers=100, ipv6=False)
+                new_client.add_handler(MessageHandler(user_watcher_handler, is_watched_chat))
+                await new_client.start()
+                USER_CLIENTS[user_id] = new_client
+
         parsed = _parse_source_link(link)
         source_thread = parsed.get("topic_id")
+        user_client = USER_CLIENTS.get(user_id, app)
         
-        user_client = USER_CLIENTS.get(user_id)
-        target_peer = parsed["join_target"] if parsed["kind"] == "public" else parsed["chat_id"]
-        
-        # Ensure string usernames have the '@' prefix
-        if isinstance(target_peer, str) and not target_peer.lstrip("-").isdigit() and not target_peer.startswith("@"):
-            target_peer = f"@{target_peer}"
-
-        chat = None
-        # Try resolving via User Session first, then fall back to Bot Client
-        clients_to_try = [c for c in [user_client, app] if c]
-        last_err = None
-        for cl in clients_to_try:
-            try:
-                try: await cl.resolve_peer(target_peer)
+        try:
+            # 🟢 FIX: Handle Invite Links, Public Links, and Private Links bulletproofly 
+            if parsed["kind"] == "invite":
+                try: await user_client.join_chat(parsed["join_target"])
                 except Exception: pass
-                chat = await cl.get_chat(target_peer)
-                if chat: break
-            except Exception as e:
-                last_err = e
-
-        if not chat:
-            return web.json_response({
-                "status": "error", 
-                "message": f"Could not resolve source chat '{target_peer}'. Ensure the channel exists and the bot or user account has access. Error: {last_err}"
-            }, status=400)
-
-        source_id = chat.id
-        source_title = chat.title or getattr(chat, "first_name", None) or str(source_id)
-        if parsed.get("topic_id"): 
-            active_cl = user_client or app
-            source_title += await get_topic_title(active_cl, source_id, parsed["topic_id"])
+                chat = await user_client.get_chat(parsed["join_target"])
+            elif parsed["kind"] == "public":
+                try:
+                    await user_client.resolve_peer(parsed["join_target"])
+                    chat = await user_client.get_chat(parsed["join_target"])
+                except Exception:
+                    await app.resolve_peer(parsed["join_target"])
+                    chat = await app.get_chat(parsed["join_target"])
+            else:
+                try: 
+                    await user_client.resolve_peer(parsed["chat_id"])
+                    chat = await user_client.get_chat(parsed["chat_id"])
+                except Exception: 
+                    await app.resolve_peer(parsed["chat_id"])
+                    chat = await app.get_chat(parsed["chat_id"])
+                    
+            source_id = chat.id
+            source_title = chat.title or getattr(chat, "first_name", None) or str(source_id)
+            if parsed.get("topic_id"): 
+                source_title += await get_topic_title(user_client, source_id, parsed["topic_id"])
+        except Exception as e:
+            # 🟢 CRITICAL FIX: If all resolvers fail, block it gracefully instead of crashing the DB
+            return web.json_response({"status": "error", "message": f"Could not access Source. Make sure the link is valid and I have access. Error: {e}"}, status=400)
             
         dest_title = "Saved Messages" if dest_chat_id == user_id else str(dest_chat_id)
         if dest_chat_id != user_id:
@@ -838,17 +859,6 @@ async def _api_add_watcher(request):
             if not has_worker_access:
                 try: await app.send_message(user_id, f"⚠️ **Worker Bot Warning:** You just started a Live Watcher to `{dest_title}` via the Web UI, but your Worker Bots are not Admins there!\n\nI will fallback to your User Session. Add your worker bots as Admins for maximum forwarding speed.")
                 except Exception: pass
-
-        if user_id not in USER_CLIENTS:
-            user_session = await db.get_session(user_id)
-            if user_session:
-                u_api = await db.get_api_id(user_id) or API_ID
-                u_hash = await db.get_api_hash(user_id) or API_HASH
-                # 🟢 FIX: Increased workers to 100
-                new_client = Client(f"User_{user_id}", session_string=user_session, api_id=u_api, api_hash=u_hash, workers=100, ipv6=False)
-                new_client.add_handler(MessageHandler(user_watcher_handler, is_watched_chat))
-                await new_client.start()
-                USER_CLIENTS[user_id] = new_client
 
         last_msg_id = 0
         try:
