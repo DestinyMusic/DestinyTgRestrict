@@ -621,15 +621,16 @@ async def _api_add_task(request):
         user_id = request["authenticated_user_id"]
         
         # 🟢 DYNAMIC WAKE-UP: Start User Session immediately to resolve public/private links
-        if user_id not in USER_CLIENTS:
+        uclient = USER_CLIENTS.get(user_id)
+        if not uclient or not getattr(uclient, "is_connected", False):
             user_session = await db.get_session(user_id)
             if user_session:
                 u_api = await db.get_api_id(user_id) or API_ID
                 u_hash = await db.get_api_hash(user_id) or API_HASH
-                new_client = Client(f"User_{user_id}", session_string=user_session, api_id=u_api, api_hash=u_hash, workers=100, ipv6=False)
-                new_client.add_handler(MessageHandler(user_watcher_handler, is_watched_chat))
-                await new_client.start()
-                USER_CLIENTS[user_id] = new_client
+                uclient = Client(f"User_{user_id}", session_string=user_session, api_id=u_api, api_hash=u_hash, workers=100, ipv6=False)
+                uclient.add_handler(MessageHandler(user_watcher_handler, is_watched_chat))
+                await uclient.start()
+                USER_CLIENTS[user_id] = uclient
 
         link = data.get("link")
         dest_str = data.get("dest", "")
@@ -640,7 +641,7 @@ async def _api_add_task(request):
         allowed_types = [t for t in allowed_types if t in ALL_MSG_TYPES]
         include_keywords = _normalize_keyword_list(data.get("include_keywords"))
         exclude_keywords = _normalize_keyword_list(data.get("exclude_keywords"))
-        cleanup_keywords = _normalize_keyword_list(data.get("cleanup_keywords")) # 🟢 NEW
+        cleanup_keywords = _normalize_keyword_list(data.get("cleanup_keywords"))
         try:
             thumb_b64 = _normalize_task_thumb_data(data.get("thumb_b64"))
         except ValueError as exc:
@@ -654,16 +655,19 @@ async def _api_add_task(request):
         
         if dest_str:
             dest_chat_id, dest_thread_id = _parse_chat_target(dest_str)
-            uclient = USER_CLIENTS.get(user_id, app)
             try:
-                d_chat = await uclient.get_chat(dest_chat_id)
-                dest_title = d_chat.title or d_chat.first_name or str(dest_chat_id)
-                if dest_thread_id: 
-                    dest_title += await get_topic_title(uclient, dest_chat_id, dest_thread_id)
+                if uclient and getattr(uclient, "is_connected", False):
+                    d_chat = await uclient.get_chat(dest_chat_id)
+                    dest_title = d_chat.title or d_chat.first_name or str(dest_chat_id)
+                    if dest_thread_id: 
+                        dest_title += await get_topic_title(uclient, dest_chat_id, dest_thread_id)
+                else:
+                    d_chat = await app.get_chat(dest_chat_id)
+                    dest_title = d_chat.title or d_chat.first_name or str(dest_chat_id)
             except:
                 dest_title = str(dest_chat_id)
 
-        # 🟢 NEW: Check Worker Bots access and warn via PM if missing!
+        # 🟢 Check Worker Bots access and warn via PM if missing!
         worker_bots = USER_TASK_BOTS.get(user_id, [])
         is_dm = str(dest_chat_id).lstrip("-").isdigit() and not str(dest_chat_id).startswith("-100") and int(dest_chat_id) > 0
         if worker_bots and not is_dm:
@@ -693,7 +697,6 @@ async def _api_add_task(request):
         batch_temp.ACTIVE_TASKS[user_id] += 1
         batch_temp.IS_BATCH[user_id] = False
 
-        # 🟢 Pre-resolve In & Out clients
         needs_reupload = bool(is_restricted or thumb_b64 or cleanup_keywords)
         client_in, client_out = await resolve_task_clients(user_id, link, dest_chat_id, needs_reupload=needs_reupload)
 
@@ -716,8 +719,8 @@ async def _api_add_task(request):
             "include_keywords": include_keywords,
             "exclude_keywords": exclude_keywords,
             "thumb_b64": thumb_b64,
-            "fetcher": _get_lbl(client_in),   # 🟢 Displays In client immediately
-            "uploader": _get_lbl(client_out), # 🟢 Displays Out client immediately
+            "fetcher": _get_lbl(client_in),   
+            "uploader": _get_lbl(client_out), 
         }
 
         task_coro = asyncio.create_task(
@@ -735,11 +738,11 @@ async def _api_add_task(request):
                 allowed_types=allowed_types,
                 include_keywords=include_keywords,
                 exclude_keywords=exclude_keywords,
-                cleanup_keywords=cleanup_keywords, # 🟢 ADDED THIS
+                cleanup_keywords=cleanup_keywords, 
                 thumb_b64=thumb_b64,
             )
         )
-        ACTIVE_TASK_OBJECTS[task_uuid] = task_coro # 🟢 Save task handle for hard cancel
+        ACTIVE_TASK_OBJECTS[task_uuid] = task_coro 
         return web.json_response({"status": "success"})
     except Exception as e:
         return web.json_response({"status": "error", "message": str(e)}, status=500)
@@ -774,7 +777,7 @@ async def _api_add_watcher(request):
         allowed_types = [t for t in allowed_types if t in ALL_MSG_TYPES]
         include_keywords = _normalize_keyword_list(data.get("include_keywords"))
         exclude_keywords = _normalize_keyword_list(data.get("exclude_keywords"))
-        cleanup_keywords = _normalize_keyword_list(data.get("cleanup_keywords")) # 🟢 NEW
+        cleanup_keywords = _normalize_keyword_list(data.get("cleanup_keywords")) 
         try:
             thumb_b64 = _normalize_task_thumb_data(data.get("thumb_b64"))
         except ValueError as exc:
@@ -785,52 +788,76 @@ async def _api_add_watcher(request):
         if dest_str:
             dest_chat_id, dest_thread_id = _parse_chat_target(dest_str)
 
-        is_restricted, _ = await check_link_restriction(user_id, link)
-        if is_restricted is None: is_restricted = False
-
-        # 🟢 DYNAMIC WAKE-UP MOVED HIGHER: Ensure session exists BEFORE resolving
-        if user_id not in USER_CLIENTS:
+        # 🟢 1. DYNAMIC WAKE-UP: Ensure User Session is fully awake BEFORE testing links
+        uclient = USER_CLIENTS.get(user_id)
+        if not uclient or not getattr(uclient, "is_connected", False):
             user_session = await db.get_session(user_id)
             if user_session:
                 u_api = await db.get_api_id(user_id) or API_ID
                 u_hash = await db.get_api_hash(user_id) or API_HASH
-                new_client = Client(f"User_{user_id}", session_string=user_session, api_id=u_api, api_hash=u_hash, workers=100, ipv6=False)
-                new_client.add_handler(MessageHandler(user_watcher_handler, is_watched_chat))
-                await new_client.start()
-                USER_CLIENTS[user_id] = new_client
+                uclient = Client(f"User_{user_id}", session_string=user_session, api_id=u_api, api_hash=u_hash, workers=100, ipv6=False)
+                uclient.add_handler(MessageHandler(user_watcher_handler, is_watched_chat))
+                await uclient.start()
+                USER_CLIENTS[user_id] = uclient
+
+        is_restricted, _ = await check_link_restriction(user_id, link)
+        if is_restricted is None: is_restricted = False
 
         parsed = _parse_source_link(link)
         source_thread = parsed.get("topic_id")
-        user_client = USER_CLIENTS.get(user_id, app)
         
-        try:
-            # 🟢 FIX: Handle Invite Links, Public Links, and Private Links bulletproofly 
-            if parsed["kind"] == "invite":
-                try: await user_client.join_chat(parsed["join_target"])
-                except Exception: pass
-                chat = await user_client.get_chat(parsed["join_target"])
-            elif parsed["kind"] == "public":
-                try:
-                    await user_client.resolve_peer(parsed["join_target"])
-                    chat = await user_client.get_chat(parsed["join_target"])
-                except Exception:
-                    await app.resolve_peer(parsed["join_target"])
-                    chat = await app.get_chat(parsed["join_target"])
-            else:
-                try: 
-                    await user_client.resolve_peer(parsed["chat_id"])
-                    chat = await user_client.get_chat(parsed["chat_id"])
-                except Exception: 
-                    await app.resolve_peer(parsed["chat_id"])
-                    chat = await app.get_chat(parsed["chat_id"])
+        # 🟢 2. INTELLIGENT SOURCE RESOLVER: Try User Session -> Worker Bots -> Main Bot
+        clients_to_try = []
+        if uclient and getattr(uclient, "is_connected", False):
+            clients_to_try.append(uclient)
+            
+        worker_bots = USER_TASK_BOTS.get(user_id, [])
+        for wb in worker_bots:
+            try:
+                if not getattr(wb, "is_connected", False): await wb.connect()
+                if getattr(wb, "is_connected", False): clients_to_try.append(wb)
+            except Exception: pass
+            
+        clients_to_try.append(app) # Main Bot as final fallback
+
+        chat = None
+        source_id = None
+        source_title = None
+        last_error = None
+        user_client = app # Default
+
+        for c_obj in clients_to_try:
+            try:
+                if parsed["kind"] == "invite":
+                    try: await c_obj.join_chat(parsed["join_target"])
+                    except Exception: pass
+                    chat = await c_obj.get_chat(parsed["join_target"])
+                elif parsed["kind"] == "public":
+                    try: await c_obj.resolve_peer(parsed["join_target"])
+                    except Exception: pass
+                    chat = await c_obj.get_chat(parsed["join_target"])
+                else:
+                    try: await c_obj.resolve_peer(parsed["chat_id"])
+                    except Exception: pass
+                    chat = await c_obj.get_chat(parsed["chat_id"])
                     
-            source_id = chat.id
-            source_title = chat.title or getattr(chat, "first_name", None) or str(source_id)
-            if parsed.get("topic_id"): 
-                source_title += await get_topic_title(user_client, source_id, parsed["topic_id"])
-        except Exception as e:
-            # 🟢 CRITICAL FIX: If all resolvers fail, block it gracefully instead of crashing the DB
-            return web.json_response({"status": "error", "message": f"Could not access Source. Make sure the link is valid and I have access. Error: {e}"}, status=400)
+                # If we get here without exception, this client successfully accessed the chat!
+                source_id = chat.id
+                source_title = chat.title or getattr(chat, "first_name", None) or str(source_id)
+                if parsed.get("topic_id"): 
+                    source_title += await get_topic_title(c_obj, source_id, parsed["topic_id"])
+                
+                user_client = c_obj # Save the successful client to use for destination checks
+                break 
+            except Exception as e:
+                last_error = e
+                continue
+
+        if not chat or not source_id:
+            return web.json_response({
+                "status": "error", 
+                "message": f"Could not access Source. I tried your User Session, Worker Bots, and Main Bot. Ensure the link is valid and at least one account has joined the channel. Last Error: {last_error}"
+            }, status=400)
             
         dest_title = "Saved Messages" if dest_chat_id == user_id else str(dest_chat_id)
         if dest_chat_id != user_id:
@@ -843,14 +870,12 @@ async def _api_add_watcher(request):
                     dest_title += await get_topic_title(user_client, dest_chat_id, dest_thread_id)
             except: pass
 
-        # 🟢 NEW: Check Worker Bots access and warn via PM if missing!
-        worker_bots = USER_TASK_BOTS.get(user_id, [])
+        # 🟢 3. CHECK WORKER BOT ACCESS
         is_dm = str(dest_chat_id).lstrip("-").isdigit() and not str(dest_chat_id).startswith("-100") and int(dest_chat_id) > 0
         if worker_bots and not is_dm:
             has_worker_access = False
             for wb in worker_bots:
                 try:
-                    if not getattr(wb, "is_connected", False): await wb.connect()
                     wb_member = await wb.get_chat_member(dest_chat_id, "me")
                     if wb_member.status in [enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER]:
                         has_worker_access = True
@@ -860,9 +885,10 @@ async def _api_add_watcher(request):
                 try: await app.send_message(user_id, f"⚠️ **Worker Bot Warning:** You just started a Live Watcher to `{dest_title}` via the Web UI, but your Worker Bots are not Admins there!\n\nI will fallback to your User Session. Add your worker bots as Admins for maximum forwarding speed.")
                 except Exception: pass
 
+        # Fetch the latest message ID to serve as our starting point
         last_msg_id = 0
         try:
-            async for m in USER_CLIENTS.get(user_id, app).get_chat_history(source_id, limit=1):
+            async for m in user_client.get_chat_history(source_id, limit=1):
                 last_msg_id = m.id
         except: pass
 
@@ -879,11 +905,11 @@ async def _api_add_watcher(request):
             allowed_types=allowed_types,
             include_keywords=include_keywords,
             exclude_keywords=exclude_keywords,
-            cleanup_keywords=cleanup_keywords, # 🟢 ADDED THIS
+            cleanup_keywords=cleanup_keywords, 
             thumb_b64=thumb_b64,
             last_msg_id=last_msg_id
         )
-        GLOBAL_WATCHER_SOURCES.add(source_id) # 🟢 UPDATE CACHE
+        GLOBAL_WATCHER_SOURCES.add(source_id) 
         return web.json_response({"status": "success"})
     except Exception as e:
         return web.json_response({"status": "error", "message": str(e)}, status=500)
