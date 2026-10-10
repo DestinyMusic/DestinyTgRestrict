@@ -779,24 +779,37 @@ async def _api_add_watcher(request):
         parsed = _parse_source_link(link)
         source_thread = parsed.get("topic_id")
         
-        user_client = USER_CLIENTS.get(user_id, app)
-        try:
-            if parsed["kind"] == "public":
-                try: await user_client.resolve_peer(parsed["join_target"])
+        user_client = USER_CLIENTS.get(user_id)
+        target_peer = parsed["join_target"] if parsed["kind"] == "public" else parsed["chat_id"]
+        
+        # Ensure string usernames have the '@' prefix
+        if isinstance(target_peer, str) and not target_peer.lstrip("-").isdigit() and not target_peer.startswith("@"):
+            target_peer = f"@{target_peer}"
+
+        chat = None
+        # Try resolving via User Session first, then fall back to Bot Client
+        clients_to_try = [c for c in [user_client, app] if c]
+        last_err = None
+        for cl in clients_to_try:
+            try:
+                try: await cl.resolve_peer(target_peer)
                 except Exception: pass
-                chat = await user_client.get_chat(parsed["join_target"])
-            else:
-                try: await user_client.resolve_peer(parsed["chat_id"])
-                except Exception: pass
-                chat = await user_client.get_chat(parsed["chat_id"])
-            source_id = chat.id
-            # 🟢 FIX: Extract first_name so Bot DMs dynamically show the actual Bot name instead of raw IDs
-            source_title = chat.title or getattr(chat, "first_name", None) or str(source_id)
-            if parsed.get("topic_id"): 
-                source_title += await get_topic_title(user_client, source_id, parsed["topic_id"])
-        except Exception:
-            source_id = parsed.get("chat_id")
-            source_title = "Watched Source"
+                chat = await cl.get_chat(target_peer)
+                if chat: break
+            except Exception as e:
+                last_err = e
+
+        if not chat:
+            return web.json_response({
+                "status": "error", 
+                "message": f"Could not resolve source chat '{target_peer}'. Ensure the channel exists and the bot or user account has access. Error: {last_err}"
+            }, status=400)
+
+        source_id = chat.id
+        source_title = chat.title or getattr(chat, "first_name", None) or str(source_id)
+        if parsed.get("topic_id"): 
+            active_cl = user_client or app
+            source_title += await get_topic_title(active_cl, source_id, parsed["topic_id"])
             
         dest_title = "Saved Messages" if dest_chat_id == user_id else str(dest_chat_id)
         if dest_chat_id != user_id:
