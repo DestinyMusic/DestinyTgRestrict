@@ -132,8 +132,7 @@ def _parse_source_link(src_link: str):
     if str(username_or_id).lstrip("-").isdigit():
         chat_target = int(username_or_id)
     else:
-        # Prepend '@' so Pyrogram treats it as a username instead of crashing on int()
-        chat_target = username_or_id if str(username_or_id).startswith("@") else f"@{username_or_id}"
+        chat_target = username_or_id
 
     if str(username_or_id).startswith("+") or "joinchat" in str(username_or_id):
         return {
