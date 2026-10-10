@@ -139,18 +139,22 @@ async def list_watchers(client, message):
         
         # 🟢 FIX: AUTO-RESOLVE SOURCE NAME (Fixes Bot DMs showing as raw numbers)
         if src_display == str(src_id) or str(src_display).lstrip("-").isdigit():
+            safe_src_id = src_id
+            if isinstance(src_id, str) and not src_id.lstrip("-").isdigit() and not src_id.startswith("@"):
+                safe_src_id = f"@{src_id}"
+
             try:
-                try: await client.resolve_peer(src_id)
+                try: await client.resolve_peer(safe_src_id)
                 except Exception: pass
-                chat_info = await client.get_chat(src_id)
+                chat_info = await client.get_chat(safe_src_id)
                 src_display = chat_info.title or chat_info.first_name or getattr(chat_info, "username", None) or "Source Chat"
             except Exception:
                 owner_client = USER_CLIENTS.get(user_id) if "USER_CLIENTS" in globals() else None
                 if owner_client and getattr(owner_client, "is_connected", False):
                     try:
-                        try: await owner_client.resolve_peer(src_id)
+                        try: await owner_client.resolve_peer(safe_src_id)
                         except Exception: pass
-                        chat_info = await owner_client.get_chat(src_id)
+                        chat_info = await owner_client.get_chat(safe_src_id)
                         src_display = chat_info.title or chat_info.first_name or getattr(chat_info, "username", None) or "Source Chat"
                     except Exception: pass
             
