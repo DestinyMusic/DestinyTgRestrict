@@ -160,7 +160,7 @@ async def start_task_final(client: Client, message_context: Message, task_data: 
         )
     )   
     
-async def handle_public_unrestricted(client: Client, acc, chatid: str, msgid: int, dest_chat_id, dest_thread_id, user_id, task_uuid, filter_thread_id, allowed_types, delay=3, pre_fetched_msg=None):
+async def handle_public_unrestricted(client: Client, acc, chatid: str, msgid: int, dest_chat_id, dest_thread_id, user_id, task_uuid, filter_thread_id, allowed_types, delay=3, pre_fetched_msg=None, source_username=None):
     """Fast-Path exclusively for Public Unrestricted links. Supports Albums."""
     
     msg = pre_fetched_msg
@@ -174,6 +174,13 @@ async def handle_public_unrestricted(client: Client, acc, chatid: str, msgid: in
         if connected_workers:
             import random
             upload_client = random.choice(connected_workers)
+
+    # 🟢 NEW: Warm up the worker bot cache so it recognizes numeric IDs!
+    if source_username and upload_client not in (client, acc):
+        try: await upload_client.resolve_peer(source_username)
+        except Exception:
+            try: await upload_client.get_chat(source_username)
+            except Exception: pass
 
     # 🟢 FIX: Inject UI Labels for Web Dashboard (Fast-Path bypasses router)
     if task_uuid and user_id in ACTIVE_PROCESSES and task_uuid in ACTIVE_PROCESSES[user_id]:
@@ -431,44 +438,28 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
                 if source_ref is None:
                     return await message.reply("❌ Could not resolve source chat.")
 
-                # 🟢 CRITICAL FIX: Force User Session to cache the peer using the original Username!
-                # If we skip this, acc throws PEER_ID_INVALID when given a raw integer ID later.
-                if acc:
-                    try: await acc.get_chat(source_ref)
-                    except Exception:
-                        try: await acc.resolve_peer(source_ref)
-                        except Exception: pass
-
-                # 🟢 Attempt to get the REAL name of the channel / User / Bot
+                # 🟢 NEW: Force the EXACT fetcher client to resolve the peer via network call
                 try:
-                    source_chat = await client.get_chat(source_ref)
+                    source_chat = await fetcher.get_chat(source_ref)
                     source_title = source_chat.title or source_chat.first_name or str(source_ref)
                     if getattr(source_chat, "last_name", None):
                         source_title += f" {source_chat.last_name}"
                     ACTUAL_CHAT_ID = source_chat.id
-                except Exception:
-                    if acc:
+                except Exception as fetch_err:
+                    logger.warning(f"Fetcher get_chat failed for {source_ref}: {fetch_err}")
+                    # Fallback to main bot if the user session failed to fetch the chat
+                    if fetcher != client:
                         try:
-                            source_chat = await acc.get_chat(source_ref)
+                            source_chat = await client.get_chat(source_ref)
                             source_title = source_chat.title or source_chat.first_name or str(source_ref)
                             if getattr(source_chat, "last_name", None):
                                 source_title += f" {source_chat.last_name}"
                             ACTUAL_CHAT_ID = source_chat.id
                         except Exception:
-                            # Force fallback for public strings if get_chat fails
                             ACTUAL_CHAT_ID = source_ref
                             source_title = str(source_ref)
                     else:
-                        ACTUAL_CHAT_ID = source_ref
-                        source_title = str(source_ref)
-                        
-                # 🟢 CRITICAL FIX: The User Session (acc) MUST resolve the peer ID 
-                # before the loop starts, or Telegram throws PEER_ID_INVALID!
-                if acc:
-                    try:
-                        await acc.resolve_peer(ACTUAL_CHAT_ID)
-                    except Exception:
-                        pass
+                        raise fetch_err
 
             except Exception as e: 
                 if not acc:
@@ -483,7 +474,6 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
                     )
                 logger.warning(f"Could not fetch chat title for {source_ref}: {e}")
                 ACTUAL_CHAT_ID = source_ref 
-
             if saved_source_title and source_title == "Unknown Source":
                 source_title = saved_source_title
 
@@ -659,8 +649,9 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
                     try:
                         chatid = ACTUAL_CHAT_ID
                         
-                        # 🟢 FIX: Determine if link is a Public string username
+                        # Explicitly determine if it is a public string username
                         is_pub = isinstance(parsed_source.get("chat_id"), str) and not str(parsed_source.get("chat_id")).lstrip('-').isdigit()
+                        original_username = parsed_source.get("chat_id") if is_pub else None
                         
                         # 🟢 FIX: Bot PMs and User PMs must NEVER use the public fast-path 
                         is_bot_or_user_pm = False
@@ -676,23 +667,26 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
                         if is_pub and not is_restricted and not is_bot_or_user_pm and not has_custom_thumb and not has_cleanup_tags:
                             task_result = await handle_public_unrestricted(
                                 client, acc, chatid, msgid, dest_chat_id, dest_thread_id, 
-                                user_id, task_uuid, filter_thread_id, allowed_types, delay, pre_fetched_msg=pre_fetched_msg
+                                user_id, task_uuid, filter_thread_id, allowed_types, delay, pre_fetched_msg=pre_fetched_msg,
+                                source_username=original_username
                             )
                             if task_result == "FALLBACK_RESTRICTED":
                                 task_result = await handle_private(
                                     client, acc, message, chatid, msgid, index, total_count, 
-                                    None, dest_chat_id, dest_thread_id, delay, # 🟢 FIX: Passed None to disable TG UI updates
+                                    None, dest_chat_id, dest_thread_id, delay, 
                                     user_id, task_uuid, 
                                     is_restricted=True, header_text=inner_header,
-                                    filter_thread_id=filter_thread_id, allowed_types=allowed_types, pre_fetched_msg=pre_fetched_msg
+                                    filter_thread_id=filter_thread_id, allowed_types=allowed_types, pre_fetched_msg=pre_fetched_msg,
+                                    is_public=is_pub, source_username=original_username
                                 )
                         else:
                             task_result = await handle_private(
                                 client, acc, message, chatid, msgid, index, total_count, 
-                                None, dest_chat_id, dest_thread_id, delay, # 🟢 FIX: Passed None to disable TG UI updates
+                                None, dest_chat_id, dest_thread_id, delay, 
                                 user_id, task_uuid, 
                                 is_restricted=is_restricted, header_text=inner_header,
-                                filter_thread_id=filter_thread_id, allowed_types=allowed_types, pre_fetched_msg=pre_fetched_msg
+                                filter_thread_id=filter_thread_id, allowed_types=allowed_types, pre_fetched_msg=pre_fetched_msg,
+                                is_public=is_pub, source_username=original_username
                             )
                     
                     except FloodWait as e:
