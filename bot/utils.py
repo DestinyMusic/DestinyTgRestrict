@@ -373,6 +373,8 @@ async def get_topic_title(client, chat_id, topic_id):
 
     return f" (Topic {topic_id})"
 
+from pyrogram.raw.functions.contacts import ResolveUsername
+
 async def check_link_restriction(user_id, link):
     """Returns (is_restricted, status_text_or_error_message)."""
     parsed = _parse_source_link(link)
@@ -382,18 +384,16 @@ async def check_link_restriction(user_id, link):
     if not chat_id or not msg_id:
         return None, "Invalid Telegram link."
 
-    # 🟢 FIX: Directly use the User Session or Main Bot for validation.
-    # Bypassing the worker pool here prevents the "All worker bots failed" false alarms.
     test_client = USER_CLIENTS.get(user_id)
     if not test_client or not test_client.is_connected:
         test_client = app
 
     try:
-        # 🟢 CRITICAL FIX: Force network resolution so the client caches the username.
-        # resolve_peer() only checks the offline DB. get_chat() makes the live API call!
+        # 🟢 THE PYROFORK BYPASS: Make a RAW API call to force the peer into the local SQLite DB
         if isinstance(chat_id, str) and not str(chat_id).lstrip('-').isdigit():
+            clean_username = chat_id.replace("@", "")
             try: 
-                await test_client.get_chat(chat_id)
+                await test_client.invoke(ResolveUsername(username=clean_username))
             except Exception: 
                 pass
         
@@ -403,7 +403,8 @@ async def check_link_restriction(user_id, link):
         if (not msg or msg.empty) and test_client == app and user_id in USER_CLIENTS:
             test_client = USER_CLIENTS[user_id]
             if isinstance(chat_id, str) and not str(chat_id).lstrip('-').isdigit():
-                try: await test_client.get_chat(chat_id)
+                clean_username = chat_id.replace("@", "")
+                try: await test_client.invoke(ResolveUsername(username=clean_username))
                 except Exception: pass
             msg = await test_client.get_messages(chat_id, msg_id)
 
@@ -416,9 +417,8 @@ async def check_link_restriction(user_id, link):
         return is_content_protected, status_text
         
     except Exception as e:
-        # Clean up the error message for the UI popup
         err_str = str(e).replace("KeyError:", "").replace("'", "").strip()
-        return None, f"Cannot access source: {err_str}"
+        return None, f"{err_str}"
 
 async def split_file_python(file_path, chunk_size=2000*1024*1024):
     loop = asyncio.get_running_loop()
