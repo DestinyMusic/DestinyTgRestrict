@@ -434,50 +434,47 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
                 await acc.start()
                 is_temp_acc = True
 
+            try:
+                source_ref = parsed_source.get("chat_id")
+                
+                # 🟢 THE PYROFORK BYPASS: Seed the blank in-memory database using a RAW API call!
+                if isinstance(source_ref, str) and not str(source_ref).lstrip('-').isdigit():
+                    from pyrogram.raw.functions.contacts import ResolveUsername
+                    clean_user = source_ref.replace("@", "")
                     try:
-                        chatid = ACTUAL_CHAT_ID
-                        
-                        # Explicitly determine if it is a public string username
-                        is_pub = isinstance(parsed_source.get("chat_id"), str) and not str(parsed_source.get("chat_id")).lstrip('-').isdigit()
-                        original_username = parsed_source.get("chat_id") if is_pub else None
-                        
-                        # 🟢 FIX: Bot PMs and User PMs must NEVER use the public fast-path 
-                        is_bot_or_user_pm = False
-                        if "source_chat" in locals():
-                            chat_type_str = str(getattr(source_chat, "type", "")).upper()
-                            if "BOT" in chat_type_str or "PRIVATE" in chat_type_str:
-                                is_bot_or_user_pm = True
+                        await fetcher.invoke(ResolveUsername(username=clean_user))
+                    except Exception:
+                        pass
+                    if fetcher != client:
+                        try:
+                            await client.invoke(ResolveUsername(username=clean_user))
+                        except Exception:
+                            pass
 
-                        task_info = ACTIVE_PROCESSES.get(user_id, {}).get(task_uuid, {})
-                        has_custom_thumb = bool(task_info.get("thumb_file_id") or task_info.get("thumb_b64"))
-                        has_cleanup_tags = bool(task_info.get("cleanup_keywords"))
+                # Now get_chat will work perfectly because the DB is seeded!
+                try:
+                    source_chat = await fetcher.get_chat(source_ref)
+                    source_title = source_chat.title or source_chat.first_name or str(source_ref)
+                    if getattr(source_chat, "last_name", None):
+                        source_title += f" {source_chat.last_name}"
+                    ACTUAL_CHAT_ID = source_chat.id
+                except Exception as fetch_err:
+                    logger.warning(f"Fetcher get_chat failed for {source_ref}: {fetch_err}")
+                    if fetcher != client:
+                        try:
+                            source_chat = await client.get_chat(source_ref)
+                            source_title = source_chat.title or source_chat.first_name or str(source_ref)
+                            if getattr(source_chat, "last_name", None):
+                                source_title += f" {source_chat.last_name}"
+                            ACTUAL_CHAT_ID = source_chat.id
+                        except Exception:
+                            ACTUAL_CHAT_ID = source_ref
+                            source_title = str(source_ref)
+                    else:
+                        ACTUAL_CHAT_ID = source_ref
+                        source_title = str(source_ref)
 
-                        if is_pub and not is_restricted and not is_bot_or_user_pm and not has_custom_thumb and not has_cleanup_tags:
-                            task_result = await handle_public_unrestricted(
-                                client, acc, chatid, msgid, dest_chat_id, dest_thread_id, 
-                                user_id, task_uuid, filter_thread_id, allowed_types, delay, pre_fetched_msg=pre_fetched_msg,
-                                source_username=original_username
-                            )
-                            if task_result == "FALLBACK_RESTRICTED":
-                                task_result = await handle_private(
-                                    client, acc, message, chatid, msgid, index, total_count, 
-                                    None, dest_chat_id, dest_thread_id, delay, 
-                                    user_id, task_uuid, 
-                                    is_restricted=True, header_text=inner_header,
-                                    filter_thread_id=filter_thread_id, allowed_types=allowed_types, pre_fetched_msg=pre_fetched_msg,
-                                    is_public=is_pub, source_username=original_username
-                                )
-                        else:
-                            task_result = await handle_private(
-                                client, acc, message, chatid, msgid, index, total_count, 
-                                None, dest_chat_id, dest_thread_id, delay, 
-                                user_id, task_uuid, 
-                                is_restricted=is_restricted, header_text=inner_header,
-                                filter_thread_id=filter_thread_id, allowed_types=allowed_types, pre_fetched_msg=pre_fetched_msg,
-                                is_public=is_pub, source_username=original_username
-                            )
-                    
-                    except FloodWait as e:
+            except Exception as e: 
                 if not acc:
                     is_pub = isinstance(source_ref, str) and not str(source_ref).lstrip('-').isdigit()
                     reason = "The public username might be incorrect/banned." if is_pub else "I am not inside this private chat."
@@ -663,7 +660,6 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
                     item_error = None
                     task_info = ACTIVE_PROCESSES.get(user_id, {}).get(task_uuid, {})
                     task_info.pop("last_result_reason", None)
-                    try:
                     try:
                         chatid = ACTUAL_CHAT_ID
                         
