@@ -656,7 +656,7 @@ async def process_internal_metadata(file_path, cleanup_tags):
     except Exception as e:
         pass # Silently proceed so the upload doesn't crash if metadata engines fail
 
-async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_chat_id, dest_thread_id, msg, msg_type, index, total_count, status_message, delay, user_id, task_uuid, header_text):
+async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_chat_id, dest_thread_id, msg, msg_type, index, total_count, status_message, delay, user_id, task_uuid, header_text, source_username=None):
     
     if msg_type == "Text":
         try:
@@ -1107,3 +1107,4 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
                 shutil.rmtree(task_folder_path)
         except Exception: pass
         gc.collect()
+
