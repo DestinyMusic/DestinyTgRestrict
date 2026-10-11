@@ -373,131 +373,37 @@ async def get_topic_title(client, chat_id, topic_id):
 
     return f" (Topic {topic_id})"
 
-async def check_link_restriction(user_id, link_text):
-    if link_text.startswith("+") or "joinchat" in link_text:
-        return False, "🔗 **Invite link detected.** Join the chat first before checking restrictions."
-
-    parsed = _parse_source_link(link_text)
-    if not parsed:
-        return None, "⚠️ **Could not analyze link format.**"
-
+async def check_link_restriction(user_id, link):
+    """Returns (is_restricted, status_text_or_error_message)."""
+    parsed = _parse_source_link(link)
     chat_id = parsed.get("chat_id")
     msg_id = parsed.get("msg_id")
-
-    if not chat_id:
-        return None, "⚠️ **Could not determine Chat ID.**"
-
-    is_private = False
     
-    # 🟢 Force User Session if it's a private group, a numeric user/bot ID, or a bot username
-    if parsed.get("kind") == "private_c" or isinstance(chat_id, int) or (isinstance(chat_id, str) and chat_id.lower().endswith("bot")):
-        is_private = True
-        
-    # Additional safety for positive numeric IDs (Direct DMs)
-    if isinstance(chat_id, int) and chat_id > 0:
-        is_private = True
+    if not chat_id or not msg_id:
+        return None, "Invalid Telegram link."
 
-    is_temp_client = False
-    check_client = app 
-    user_session = await db.get_session(user_id)
-    
-    if is_private:
-        existing_client = USER_CLIENTS.get(user_id)
-        if existing_client and existing_client.is_connected:
-            check_client = existing_client
-        elif user_session:
-            api_id = await db.get_api_id(user_id) or API_ID
-            api_hash = await db.get_api_hash(user_id) or API_HASH
-            check_client = Client(":memory:", session_string=user_session, api_id=api_id, api_hash=api_hash, no_updates=True, ipv6=False)
-            is_temp_client = True
-    
-    is_restricted = False
-    status_msg = ""
+    # Fetch the working pool so we test using a client that actually has access
+    pool, _ = await _get_working_tg_pool(user_id, chat_id, msg_id)
+    test_client = pool[0] if pool else app
 
     try:
-        if is_temp_client:
-            await check_client.connect()
-
-        # For resolving Usernames/IDs to actual entities before checking
-        if isinstance(chat_id, str) and not chat_id.lstrip('-').isdigit():
-            try: await check_client.resolve_peer(chat_id)
-            except Exception: pass
-
-        if msg_id:
-            msg = None
-            bot_err_saved = None
-            try:
-                msg = await check_client.get_messages(chat_id, msg_id)
-            except Exception as e:
-                bot_err_saved = e
-
-            if (bot_err_saved or not msg or msg.empty) and check_client == app and user_session:
-                api_id = await db.get_api_id(user_id) or API_ID
-                api_hash = await db.get_api_hash(user_id) or API_HASH
-                check_client = Client(":memory:", session_string=user_session, api_id=api_id, api_hash=api_hash, no_updates=True, ipv6=False)
-                await check_client.connect()
-                is_temp_client = True
-                try:
-                    msg = await check_client.get_messages(chat_id, msg_id)
-                    bot_err_saved = None
-                except Exception as user_err:
-                    bot_err_saved = user_err
-                    
-            if bot_err_saved:
-                raise bot_err_saved
-
-            if not msg or msg.empty:
-                raise Exception("Message not found or inaccessible.")
-
-            if getattr(msg.chat, "has_protected_content", False) or getattr(msg, "has_protected_content", False):
-                is_restricted = True
-                status_msg = "🔒 **Source is RESTRICTED** (Will use Download Mode)"
-            else:
-                is_restricted = False
-                status_msg = "🔓 **Source is PUBLIC/UNRESTRICTED** (Will use Fast Forward)"
-        else:
-            try:
-                chat = await check_client.get_chat(chat_id)
-            except Exception as bot_err:
-                if check_client == app and user_session:
-                    api_id = await db.get_api_id(user_id) or API_ID
-                    api_hash = await db.get_api_hash(user_id) or API_HASH
-                    check_client = Client(":memory:", session_string=user_session, api_id=api_id, api_hash=api_hash, no_updates=True, ipv6=False)
-                    await check_client.connect()
-                    is_temp_client = True
-                    try:
-                        chat = await check_client.get_chat(chat_id)
-                    except Exception as user_err:
-                        raise user_err
-                else:
-                    raise bot_err
-
-            if getattr(chat, "has_protected_content", False):
-                is_restricted = True
-                status_msg = "🔒 **Chat is RESTRICTED** (Will use Download Mode)"
-            else:
-                is_restricted = False
-                status_msg = "🔓 **Chat is PUBLIC/UNRESTRICTED**"
-
-    except Exception as e:
-        err_str = str(e).lower()
-        if "channel_private" in err_str or "user_not_participant" in err_str:
-            status_msg = "⚠️ **Private Chat:** I can't check yet (You need to join first)."
-        elif "username_not_occupied" in err_str or "username_invalid" in err_str or "peer_id_invalid" in err_str:
-            if check_client != app:
-                return None, f"❌ **Telegram Blocked Access:** Even your logged account cannot see this! It may be geo-blocked or deleted."
-            else:
-                return None, f"❌ **Bot Blocked:** The bot cannot see this source. \n\n💡 **FIX:** Please use `/login` to link your account, and I will resolve it using your session!"
-        elif "authkeyunregistered" in err_str or "sessionrevoked" in err_str:
-            return None, f"❌ **Session Expired:** Your login session is invalid. Please run `/logout` and then `/login` again."
-        else:
-            return None, f"❌ **Check Failed:** `{str(e)[:50]}...`\nPlease ensure the link is active and valid."
-    finally:
-        if is_temp_client:
-            try: await check_client.disconnect()
-            except: pass
+        # Force resolution and fetch the exact message natively
+        try: await test_client.resolve_peer(chat_id)
+        except Exception: pass
         
-    return is_restricted, status_msg
+        msg = await test_client.get_messages(chat_id, msg_id)
+        
+        if not msg or msg.empty:
+            return None, "Message is missing, deleted, or inaccessible."
+            
+        is_content_protected = getattr(msg, "has_protected_content", False) or getattr(msg.chat, "has_protected_content", False)
+        
+        status_text = "🔒 **Restricted Content**" if is_content_protected else "🔓 **Unrestricted Content**"
+        return is_content_protected, status_text
+        
+    except Exception as e:
+        # Return an explicit failure, do not default to False
+        return None, f"Cannot access source: {str(e)}"
 
 async def split_file_python(file_path, chunk_size=2000*1024*1024):
     loop = asyncio.get_running_loop()
