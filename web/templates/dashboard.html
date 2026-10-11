@@ -3254,6 +3254,38 @@
                     return res;
                 };
 
+                // 🟢 HELPER: Build UI Badges for Configs
+                const buildSettingsBadges = (t) => {
+                    let delayVal = t.delay !== undefined ? t.delay : 3;
+                    let badges = `<div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; margin-bottom: 6px;">`;
+                    
+                    badges += `<span style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); padding: 2px 7px; border-radius: 6px; font-size: 10px; font-weight: 800; text-transform: uppercase;">⏱ Delay: ${delayVal}s</span>`;
+                    
+                    if (t.allowed_types && t.allowed_types.length > 0) {
+                        let typesStr = t.allowed_types.join(", ");
+                        let displayTypes = typesStr.length > 20 ? typesStr.substring(0, 18) + "..." : typesStr;
+                        badges += `<span style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); padding: 2px 7px; border-radius: 6px; font-size: 10px; font-weight: 800; text-transform: uppercase;" title="${typesStr}">🎛 Filters: ${displayTypes}</span>`;
+                    }
+                    
+                    if (t.cleanup_keywords && t.cleanup_keywords.length > 0) {
+                        badges += `<span style="background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); padding: 2px 7px; border-radius: 6px; font-size: 10px; font-weight: 800; text-transform: uppercase;">🧹 Cleanup: ${t.cleanup_keywords.length} Tag(s)</span>`;
+                    }
+                    
+                    let kwCount = (t.include_keywords?.length || 0) + (t.exclude_keywords?.length || 0);
+                    if (kwCount > 0) {
+                        badges += `<span style="background: rgba(139, 92, 246, 0.15); color: #c4b5fd; border: 1px solid rgba(139, 92, 246, 0.3); padding: 2px 7px; border-radius: 6px; font-size: 10px; font-weight: 800; text-transform: uppercase;">🔎 Rules: ${kwCount}</span>`;
+                    }
+
+                    if (t.thumb_b64 === "REMOVE") {
+                        badges += `<span style="background: rgba(239, 68, 68, 0.15); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.3); padding: 2px 7px; border-radius: 6px; font-size: 10px; font-weight: 800; text-transform: uppercase;">🚫 Thumb: Removed</span>`;
+                    } else if (t.thumb_b64 || t.thumb_file_id) {
+                        badges += `<span style="background: rgba(236, 72, 153, 0.15); color: #f472b6; border: 1px solid rgba(236, 72, 153, 0.3); padding: 2px 7px; border-radius: 6px; font-size: 10px; font-weight: 800; text-transform: uppercase;">🖼 Thumb: Custom</span>`;
+                    }
+                    
+                    badges += `</div>`;
+                    return badges;
+                };
+
                 data.tasks.forEach(t => {
                     let speedStr = t.speed > 0 ? formatBytesTask(t.speed) + '/s' : '';
                     let etaStr = t.eta > 0 ? 'ETA: ' + formatTimeTask(t.eta) : '';
@@ -3290,6 +3322,7 @@
                                 ${t.phase} ➔ ${t.dest}
                             </div>
                             ${clientsRow}
+                            ${buildSettingsBadges(t)}
                             ${batchBadge}
                             ${fileNameStr}
                             <div style="background: rgba(255,255,255,0.1); border-radius: 8px; width: 100%; height: 16px; overflow: hidden; position: relative; margin-top: 4px;">
@@ -3311,7 +3344,7 @@
                 let newWListHtml = data.watchers.length ? '' : '<div style="color: #64748b;">No active watchers.</div>';
                 data.watchers.forEach(w => {
                     // 🟢 Inject dynamic Fetcher/Uploader labels here for Watchers
-                    let clientsRow = `<div style="display: flex; gap: 12px; margin-top: 4px; margin-bottom: 8px; font-size: 10px; color: #94a3b8; font-weight: 600;">
+                    let clientsRow = `<div style="display: flex; gap: 12px; margin-top: 4px; margin-bottom: 4px; font-size: 10px; color: #94a3b8; font-weight: 600;">
                         <span>📥 In: <span style="color: #a78bfa;">${w.fetcher}</span></span>
                         <span>📤 Out: <span style="color: #34d399;">${w.uploader}</span></span>
                     </div>`;
@@ -3322,6 +3355,7 @@
                                 <div style="font-weight: 700; color: #fff; font-size: 14px; word-break: break-word;">📡 ${w.source}</div>
                                 <div style="font-size: 11px; color: var(--accent); margin-top: 4px;">Destination: ${w.dest}</div>
                                 ${clientsRow}
+                                ${buildSettingsBadges(w)}
                                 <div style="display: flex; gap: 12px; margin-top: 8px; font-size: 11px; font-weight: 700; color: var(--subtext);">
                                     <span style="color: #38bdf8;">📡 Detected: ${w.detected}</span>
                                     <span style="color: #10b981;">✅ Forwarded: ${w.success}</span>
