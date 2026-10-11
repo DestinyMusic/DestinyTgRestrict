@@ -382,17 +382,31 @@ async def check_link_restriction(user_id, link):
     if not chat_id or not msg_id:
         return None, "Invalid Telegram link."
 
-    # Fetch the working pool so we test using a client that actually has access
-    pool, _ = await _get_working_tg_pool(user_id, chat_id, msg_id)
-    test_client = pool[0] if pool else app
+    # 🟢 FIX: Directly use the User Session or Main Bot for validation.
+    # Bypassing the worker pool here prevents the "All worker bots failed" false alarms.
+    test_client = USER_CLIENTS.get(user_id)
+    if not test_client or not test_client.is_connected:
+        test_client = app
 
     try:
-        # Force resolution and fetch the exact message natively
-        try: await test_client.resolve_peer(chat_id)
-        except Exception: pass
+        # 🟢 CRITICAL FIX: Force network resolution so the client caches the username.
+        # resolve_peer() only checks the offline DB. get_chat() makes the live API call!
+        if isinstance(chat_id, str) and not str(chat_id).lstrip('-').isdigit():
+            try: 
+                await test_client.get_chat(chat_id)
+            except Exception: 
+                pass
         
         msg = await test_client.get_messages(chat_id, msg_id)
         
+        # Fallback to User Session if the Main Bot was blocked/blind
+        if (not msg or msg.empty) and test_client == app and user_id in USER_CLIENTS:
+            test_client = USER_CLIENTS[user_id]
+            if isinstance(chat_id, str) and not str(chat_id).lstrip('-').isdigit():
+                try: await test_client.get_chat(chat_id)
+                except Exception: pass
+            msg = await test_client.get_messages(chat_id, msg_id)
+
         if not msg or msg.empty:
             return None, "Message is missing, deleted, or inaccessible."
             
@@ -402,8 +416,9 @@ async def check_link_restriction(user_id, link):
         return is_content_protected, status_text
         
     except Exception as e:
-        # Return an explicit failure, do not default to False
-        return None, f"Cannot access source: {str(e)}"
+        # Clean up the error message for the UI popup
+        err_str = str(e).replace("KeyError:", "").replace("'", "").strip()
+        return None, f"Cannot access source: {err_str}"
 
 async def split_file_python(file_path, chunk_size=2000*1024*1024):
     loop = asyncio.get_running_loop()
