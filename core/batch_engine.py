@@ -129,9 +129,11 @@ async def start_task_final(client: Client, message_context: Message, task_data: 
         "dest_title_name": task_data.get("dest_title", "Direct Message"), 
         "item": task_data.get("link", "Unknown"),
         "started": time.time(),
+        "delay": delay,
+        "allowed_types": list(task_data.get("allowed_types", [])),
         "include_keywords": list(task_data.get("include_keywords", [])),
         "exclude_keywords": list(task_data.get("exclude_keywords", [])),
-        "cleanup_keywords": list(task_data.get("cleanup_keywords", [])), # 🟢 NEW
+        "cleanup_keywords": list(task_data.get("cleanup_keywords", [])),
         "thumb_file_id": task_data.get("thumb_file_id"),
         "thumb_b64": task_data.get("thumb_b64"),
     }
@@ -368,9 +370,11 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
         "dest_title_name": dest_title,
         "item": text[:50]+"...", 
         "started": time.time(),
+        "delay": delay,
+        "allowed_types": list(allowed_types or []),
         "include_keywords": list(include_keywords or []),
         "exclude_keywords": list(exclude_keywords or []),
-        "cleanup_keywords": list(cleanup_keywords or []), # 🟢 NEW
+        "cleanup_keywords": list(cleanup_keywords or []),
         "thumb_file_id": thumb_file_id,
         "thumb_b64": thumb_b64,
     }
