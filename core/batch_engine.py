@@ -437,41 +437,57 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
             try:
                 source_ref = parsed_source.get("chat_id")
                 
-                # 🟢 THE PYROFORK BYPASS: Seed the blank in-memory database using a RAW API call!
+                # 🟢 THE PYROFORK BYPASS & DEBUG LOGGER
                 if isinstance(source_ref, str) and not str(source_ref).lstrip('-').isdigit():
                     from pyrogram.raw.functions.contacts import ResolveUsername
                     clean_user = source_ref.replace("@", "")
-                    try:
-                        await fetcher.invoke(ResolveUsername(username=clean_user))
-                    except Exception:
-                        pass
-                    if fetcher != client:
-                        try:
-                            await client.invoke(ResolveUsername(username=clean_user))
-                        except Exception:
-                            pass
+                    
+                    async def _force_resolve(cl):
+                        r = await cl.invoke(ResolveUsername(username=clean_user))
+                        if r.chats:
+                            rid = r.chats[0].id
+                            is_chan = getattr(r.chats[0], "broadcast", False) or getattr(r.chats[0], "megagroup", False)
+                            return int(f"-100{rid}") if is_chan else rid
+                        elif r.users:
+                            return r.users[0].id
+                        return source_ref
 
-                # Now get_chat will work perfectly because the DB is seeded!
-                try:
-                    source_chat = await fetcher.get_chat(source_ref)
-                    source_title = source_chat.title or source_chat.first_name or str(source_ref)
-                    if getattr(source_chat, "last_name", None):
-                        source_title += f" {source_chat.last_name}"
-                    ACTUAL_CHAT_ID = source_chat.id
-                except Exception as fetch_err:
-                    logger.warning(f"Fetcher get_chat failed for {source_ref}: {fetch_err}")
-                    if fetcher != client:
-                        try:
-                            source_chat = await client.get_chat(source_ref)
-                            source_title = source_chat.title or source_chat.first_name or str(source_ref)
-                            if getattr(source_chat, "last_name", None):
-                                source_title += f" {source_chat.last_name}"
-                            ACTUAL_CHAT_ID = source_chat.id
-                        except Exception:
+                    try:
+                        logger.info(f"DEBUG Batch: Invoking ResolveUsername on fetcher for {clean_user}")
+                        numeric_id = await _force_resolve(fetcher)
+                        ACTUAL_CHAT_ID = numeric_id
+                        logger.info(f"DEBUG Batch: Extracted NUMERIC ID: {ACTUAL_CHAT_ID}")
+                    except Exception as e:
+                        logger.error(f"DEBUG Batch: fetcher resolve failed: {e}")
+                        if fetcher != client:
+                            try:
+                                logger.info(f"DEBUG Batch: Falling back to main client resolve...")
+                                numeric_id = await _force_resolve(client)
+                                ACTUAL_CHAT_ID = numeric_id
+                            except Exception as e2:
+                                logger.error(f"DEBUG Batch: main client resolve failed: {e2}")
+                                ACTUAL_CHAT_ID = source_ref
+                        else:
                             ACTUAL_CHAT_ID = source_ref
-                            source_title = str(source_ref)
-                    else:
-                        ACTUAL_CHAT_ID = source_ref
+
+                    # Now that we have the numeric ID, safely get the title
+                    try:
+                        source_chat = await fetcher.get_chat(ACTUAL_CHAT_ID)
+                        source_title = source_chat.title or source_chat.first_name or str(source_ref)
+                        if getattr(source_chat, "last_name", None):
+                            source_title += f" {source_chat.last_name}"
+                    except Exception as title_err:
+                        logger.warning(f"DEBUG Batch: Could not fetch title for {ACTUAL_CHAT_ID}: {title_err}")
+                        source_title = str(source_ref)
+                else:
+                    # It's already numeric
+                    ACTUAL_CHAT_ID = source_ref
+                    try:
+                        source_chat = await fetcher.get_chat(ACTUAL_CHAT_ID)
+                        source_title = source_chat.title or source_chat.first_name or str(source_ref)
+                        if getattr(source_chat, "last_name", None):
+                            source_title += f" {source_chat.last_name}"
+                    except Exception:
                         source_title = str(source_ref)
 
             except Exception as e: 
