@@ -166,7 +166,6 @@ async def handle_public_unrestricted(client: Client, acc, chatid: str, msgid: in
     msg = pre_fetched_msg
     fetcher = acc if acc else client
     
-    # 🟢 NEW: Load Balancer for the Fast-Path!
     upload_client = client
     worker_bots = USER_TASK_BOTS.get(user_id, [])
     if worker_bots:
@@ -175,12 +174,15 @@ async def handle_public_unrestricted(client: Client, acc, chatid: str, msgid: in
             import random
             upload_client = random.choice(connected_workers)
 
-    # 🟢 NEW: Warm up the worker bot cache so it recognizes numeric IDs!
+    # 🟢 THE PYROFORK BYPASS: Warm up the worker bot cache!
     if source_username and upload_client not in (client, acc):
-        try: await upload_client.resolve_peer(source_username)
-        except Exception:
-            try: await upload_client.get_chat(source_username)
-            except Exception: pass
+        from pyrogram.raw.functions.contacts import ResolveUsername
+        clean_user = source_username.replace("@", "")
+        try: await upload_client.invoke(ResolveUsername(username=clean_user))
+        except Exception: pass
+        
+        try: await upload_client.get_chat(source_username)
+        except Exception: pass
 
     # 🟢 FIX: Inject UI Labels for Web Dashboard (Fast-Path bypasses router)
     if task_uuid and user_id in ACTIVE_PROCESSES and task_uuid in ACTIVE_PROCESSES[user_id]:
@@ -435,10 +437,18 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
 
             try:
                 source_ref = parsed_source.get("chat_id")
-                if source_ref is None:
-                    return await message.reply("❌ Could not resolve source chat.")
+                
+                # 🟢 THE PYROFORK BYPASS: Seed the blank in-memory database using a RAW API call!
+                if isinstance(source_ref, str) and not str(source_ref).lstrip('-').isdigit():
+                    from pyrogram.raw.functions.contacts import ResolveUsername
+                    clean_user = source_ref.replace("@", "")
+                    try: await fetcher.invoke(ResolveUsername(username=clean_user))
+                    except Exception: pass
+                    if fetcher != client:
+                        try: await client.invoke(ResolveUsername(username=clean_user))
+                        except Exception: pass
 
-                # 🟢 NEW: Force the EXACT fetcher client to resolve the peer via network call
+                # Now get_chat will work perfectly because the DB is seeded!
                 try:
                     source_chat = await fetcher.get_chat(source_ref)
                     source_title = source_chat.title or source_chat.first_name or str(source_ref)
@@ -447,17 +457,13 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
                     ACTUAL_CHAT_ID = source_chat.id
                 except Exception as fetch_err:
                     logger.warning(f"Fetcher get_chat failed for {source_ref}: {fetch_err}")
-                    # Fallback to main bot if the user session failed to fetch the chat
+                    # Fallback to main client if user session failed
                     if fetcher != client:
-                        try:
-                            source_chat = await client.get_chat(source_ref)
-                            source_title = source_chat.title or source_chat.first_name or str(source_ref)
-                            if getattr(source_chat, "last_name", None):
-                                source_title += f" {source_chat.last_name}"
-                            ACTUAL_CHAT_ID = source_chat.id
-                        except Exception:
-                            ACTUAL_CHAT_ID = source_ref
-                            source_title = str(source_ref)
+                        source_chat = await client.get_chat(source_ref)
+                        source_title = source_chat.title or source_chat.first_name or str(source_ref)
+                        if getattr(source_chat, "last_name", None):
+                            source_title += f" {source_chat.last_name}"
+                        ACTUAL_CHAT_ID = source_chat.id
                     else:
                         raise fetch_err
 
@@ -652,23 +658,16 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
                         # Explicitly determine if it is a public string username
                         is_pub = isinstance(parsed_source.get("chat_id"), str) and not str(parsed_source.get("chat_id")).lstrip('-').isdigit()
                         original_username = parsed_source.get("chat_id") if is_pub else None
-                        
-                        # 🟢 FIX: Bot PMs and User PMs must NEVER use the public fast-path 
-                        is_bot_or_user_pm = False
-                        if "source_chat" in locals():
-                            chat_type_str = str(getattr(source_chat, "type", "")).upper()
-                            if "BOT" in chat_type_str or "PRIVATE" in chat_type_str:
-                                is_bot_or_user_pm = True
 
                         task_info = ACTIVE_PROCESSES.get(user_id, {}).get(task_uuid, {})
                         has_custom_thumb = bool(task_info.get("thumb_file_id") or task_info.get("thumb_b64"))
                         has_cleanup_tags = bool(task_info.get("cleanup_keywords"))
 
-                        if is_pub and not is_restricted and not is_bot_or_user_pm and not has_custom_thumb and not has_cleanup_tags:
+                        if is_pub and not is_restricted and not has_custom_thumb and not has_cleanup_tags:
                             task_result = await handle_public_unrestricted(
                                 client, acc, chatid, msgid, dest_chat_id, dest_thread_id, 
                                 user_id, task_uuid, filter_thread_id, allowed_types, delay, pre_fetched_msg=pre_fetched_msg,
-                                source_username=original_username
+                                source_username=original_username # <-- NEW
                             )
                             if task_result == "FALLBACK_RESTRICTED":
                                 task_result = await handle_private(
@@ -677,8 +676,17 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
                                     user_id, task_uuid, 
                                     is_restricted=True, header_text=inner_header,
                                     filter_thread_id=filter_thread_id, allowed_types=allowed_types, pre_fetched_msg=pre_fetched_msg,
-                                    is_public=is_pub, source_username=original_username
+                                    is_public=is_pub, source_username=original_username # <-- NEW
                                 )
+                        else:
+                            task_result = await handle_private(
+                                client, acc, message, chatid, msgid, index, total_count, 
+                                None, dest_chat_id, dest_thread_id, delay, 
+                                user_id, task_uuid, 
+                                is_restricted=is_restricted, header_text=inner_header,
+                                filter_thread_id=filter_thread_id, allowed_types=allowed_types, pre_fetched_msg=pre_fetched_msg,
+                                is_public=is_pub, source_username=original_username # <-- NEW
+                            )
                         else:
                             task_result = await handle_private(
                                 client, acc, message, chatid, msgid, index, total_count, 
