@@ -782,23 +782,37 @@ async def _api_add_watcher(request):
         source_thread = parsed.get("topic_id")
         
         user_client = USER_CLIENTS.get(user_id, app)
+        target_ref = parsed["join_target"] if parsed["kind"] == "public" else parsed["chat_id"]
+        source_id = None
+        source_title = "Watched Source"
+
+        # 🟢 THE PYROFORK BYPASS: Extract the numeric ID via RAW API!
+        if isinstance(target_ref, str) and not str(target_ref).lstrip('-').isdigit():
+            from pyrogram.raw.functions.contacts import ResolveUsername
+            clean_user = target_ref.replace("@", "")
+            try:
+                r = await user_client.invoke(ResolveUsername(username=clean_user))
+                if r.chats:
+                    rid = r.chats[0].id
+                    is_chan = getattr(r.chats[0], "broadcast", False) or getattr(r.chats[0], "megagroup", False)
+                    source_id = int(f"-100{rid}") if is_chan else rid
+                elif r.users:
+                    source_id = r.users[0].id
+            except Exception:
+                pass
+
+        if not source_id:
+            source_id = target_ref
+
         try:
-            if parsed["kind"] == "public":
-                try: await user_client.resolve_peer(parsed["join_target"])
-                except Exception: pass
-                chat = await user_client.get_chat(parsed["join_target"])
-            else:
-                try: await user_client.resolve_peer(parsed["chat_id"])
-                except Exception: pass
-                chat = await user_client.get_chat(parsed["chat_id"])
+            chat = await user_client.get_chat(source_id)
             source_id = chat.id
-            # 🟢 FIX: Extract first_name so Bot DMs dynamically show the actual Bot name instead of raw IDs
             source_title = chat.title or getattr(chat, "first_name", None) or str(source_id)
             if parsed.get("topic_id"): 
                 source_title += await get_topic_title(user_client, source_id, parsed["topic_id"])
         except Exception:
-            source_id = parsed.get("chat_id")
-            source_title = "Watched Source"
+            if not isinstance(source_id, int) and not (isinstance(source_id, str) and str(source_id).lstrip('-').isdigit()):
+                return web.json_response({"status": "error", "message": f"Could not extract numeric ID for username '{target_ref}'."}, status=400)
             
         dest_title = "Saved Messages" if dest_chat_id == user_id else str(dest_chat_id)
         if dest_chat_id != user_id:
