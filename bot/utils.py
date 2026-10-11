@@ -375,48 +375,92 @@ async def get_topic_title(client, chat_id, topic_id):
 
 from pyrogram.raw.functions.contacts import ResolveUsername
 
+import traceback
+from pyrogram.raw.functions.contacts import ResolveUsername
+
 async def check_link_restriction(user_id, link):
     """Returns (is_restricted, status_text_or_error_message)."""
+    logger.info(f"========== DEBUG: LINK VALIDATION START ==========")
+    logger.info(f"Target Link: {link}")
+    
     parsed = _parse_source_link(link)
     chat_id = parsed.get("chat_id")
     msg_id = parsed.get("msg_id")
-    
+    logger.info(f"Parsed -> chat_id: {chat_id} (Type: {type(chat_id)}), msg_id: {msg_id}")
+
     if not chat_id or not msg_id:
+        logger.error("DEBUG: Invalid link parsed.")
         return None, "Invalid Telegram link."
 
     test_client = USER_CLIENTS.get(user_id)
     if not test_client or not test_client.is_connected:
+        logger.info("DEBUG: User session missing/disconnected. Using App (Main Bot).")
         test_client = app
+    else:
+        logger.info("DEBUG: Using active User Session.")
 
     try:
-        # 🟢 THE PYROFORK BYPASS: Make a RAW API call to force the peer into the local SQLite DB
+        # 🟢 THE ULTIMATE PYROFORK BYPASS
         if isinstance(chat_id, str) and not str(chat_id).lstrip('-').isdigit():
-            clean_username = chat_id.replace("@", "")
-            try: 
-                await test_client.invoke(ResolveUsername(username=clean_username))
-            except Exception: 
-                pass
-        
+            clean_user = chat_id.replace("@", "")
+            logger.info(f"DEBUG: Detected string username '{clean_user}'. Initiating RAW API Resolution...")
+            
+            try:
+                r = await test_client.invoke(ResolveUsername(username=clean_user))
+                logger.info(f"DEBUG: ResolveUsername Raw Response received!")
+                
+                # EXTRACT THE NUMERIC ID MANUALLY
+                if r.chats:
+                    raw_id = r.chats[0].id
+                    is_channel = getattr(r.chats[0], "broadcast", False) or getattr(r.chats[0], "megagroup", False)
+                    chat_id = int(f"-100{raw_id}") if is_channel else raw_id
+                    logger.info(f"DEBUG: Successfully extracted NUMERIC CHAT ID: {chat_id}")
+                elif r.users:
+                    chat_id = r.users[0].id
+                    logger.info(f"DEBUG: Successfully extracted NUMERIC USER ID: {chat_id}")
+                else:
+                    logger.error("DEBUG: ResolveUsername returned no chats or users!")
+                    
+            except Exception as raw_e:
+                logger.error(f"DEBUG: ResolveUsername FAILED: {type(raw_e).__name__} -> {raw_e}")
+
+        logger.info(f"DEBUG: Firing get_messages with Target ID: {chat_id} (Type: {type(chat_id)})")
         msg = await test_client.get_messages(chat_id, msg_id)
         
         # Fallback to User Session if the Main Bot was blocked/blind
         if (not msg or msg.empty) and test_client == app and user_id in USER_CLIENTS:
+            logger.info("DEBUG: Main bot returned empty message. Trying User Session...")
             test_client = USER_CLIENTS[user_id]
+            
             if isinstance(chat_id, str) and not str(chat_id).lstrip('-').isdigit():
-                clean_username = chat_id.replace("@", "")
-                try: await test_client.invoke(ResolveUsername(username=clean_username))
-                except Exception: pass
+                clean_user = chat_id.replace("@", "")
+                try:
+                    r = await test_client.invoke(ResolveUsername(username=clean_user))
+                    if r.chats:
+                        raw_id = r.chats[0].id
+                        is_channel = getattr(r.chats[0], "broadcast", False) or getattr(r.chats[0], "megagroup", False)
+                        chat_id = int(f"-100{raw_id}") if is_channel else raw_id
+                    elif r.users:
+                        chat_id = r.users[0].id
+                except Exception as e:
+                    logger.error(f"DEBUG: User Session ResolveUsername FAILED: {e}")
+                    
+            logger.info(f"DEBUG: Firing User Session get_messages with Target ID: {chat_id}")
             msg = await test_client.get_messages(chat_id, msg_id)
 
         if not msg or msg.empty:
+            logger.error("DEBUG: get_messages returned completely empty!")
             return None, "Message is missing, deleted, or inaccessible."
             
         is_content_protected = getattr(msg, "has_protected_content", False) or getattr(msg.chat, "has_protected_content", False)
+        logger.info(f"DEBUG: Message found! Protected Content: {is_content_protected}")
         
         status_text = "🔒 **Restricted Content**" if is_content_protected else "🔓 **Unrestricted Content**"
+        logger.info("========== DEBUG: VALIDATION SUCCESS ==========")
         return is_content_protected, status_text
         
     except Exception as e:
+        logger.error(f"========== DEBUG: VALIDATION CRASH ==========\n{traceback.format_exc()}")
         err_str = str(e).replace("KeyError:", "").replace("'", "").strip()
         return None, f"{err_str}"
 
