@@ -87,8 +87,10 @@ async def _fetch_and_validate_msg(client, acc, chatid, msgid, user_id, filter_th
 async def handle_private(client: Client, acc, message: Message, chatid, msgid: int, index: int, total_count: int, status_message: Message, dest_chat_id, dest_thread_id, delay, user_id, task_uuid=None, is_restricted=False, header_text="", filter_thread_id=None, allowed_types=None, pre_fetched_msg=None, is_public=False, source_username=None):
     fetcher = acc if acc else client
 
+    # 1. Determine link type
     is_live_watch = (delay == 0 and status_message and "Watcher" in getattr(status_message, "text", ""))
 
+    # 2. Pre-fetch and validate message natively
     msg, msg_type = await _fetch_and_validate_msg(client, acc, chatid, msgid, user_id, filter_thread_id, allowed_types, task_uuid, pre_fetched_msg)
     if not msg:
         return "SKIPPED" 
@@ -97,7 +99,7 @@ async def handle_private(client: Client, acc, message: Message, chatid, msgid: i
         "msg": msg, "msg_type": msg_type, "index": index, "total_count": total_count, 
         "status_message": status_message, "dest_chat_id": dest_chat_id, "dest_thread_id": dest_thread_id,
         "delay": delay, "user_id": user_id, "task_uuid": task_uuid, "header_text": header_text,
-        "source_username": source_username # <-- NEW
+        "source_username": source_username
     }
 
     # 3. Route the task
@@ -183,6 +185,7 @@ def get_dynamic_upload_client(client, acc, user_id, task_uuid, msg_index):
     return my_slice[msg_index % len(my_slice)]
 
 async def _execute_unrestricted_copy(client, acc, chat_id, msgid, dest_chat_id, dest_thread_id, msg, msg_type, user_id, task_uuid, delay, index=1, source_username=None):
+    # 🟢 FIX: Force User Session for Bot DMs and Chat DMs because Worker Bots can't access them!
     is_source_dm = isinstance(chat_id, int) and chat_id > 0
     is_dest_dm = isinstance(dest_chat_id, int) and dest_chat_id > 0
     
@@ -197,7 +200,6 @@ async def _execute_unrestricted_copy(client, acc, chat_id, msgid, dest_chat_id, 
         clean_user = source_username.replace("@", "")
         try: await upload_client.invoke(ResolveUsername(username=clean_user))
         except Exception: pass
-        
         try: await upload_client.get_chat(source_username)
         except Exception: pass
 
@@ -1105,4 +1107,3 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
                 shutil.rmtree(task_folder_path)
         except Exception: pass
         gc.collect()
-
