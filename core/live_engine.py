@@ -42,9 +42,20 @@ async def watcher_worker_loop(wid_str):
             fetcher = owner_client if (owner_client and owner_client.is_connected) else app
 
             try:
+                # 🟢 Force peer resolution to prevent PEER_ID_INVALID on numeric IDs
+                try: await fetcher.resolve_peer(source_id)
+                except Exception: pass
                 msg = await fetcher.get_messages(source_id, msg_id)
             except Exception as fetch_err:
                 logger.warning(f"Watcher {wid_str}: could not fetch {source_id}/{msg_id}: {fetch_err}")
+                err_str = str(fetch_err).lower()
+                
+                # 🟢 Distinguish network/access errors from genuinely deleted messages
+                if "peer_id_invalid" in err_str or "username not found" in err_str or "flood" in err_str or "network" in err_str:
+                    await asyncio.sleep(5)
+                    await WATCHER_QUEUES[wid_str].put(msg_id) # Re-queue the ID safely
+                    continue # Do NOT advance the checkpoint
+                    
                 msg = None
 
             # Never advance the checkpoint merely because an ID was dequeued.
