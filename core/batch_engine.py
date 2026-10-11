@@ -434,6 +434,9 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
                 await acc.start()
                 is_temp_acc = True
 
+            # 🟢 THE FIX: Define the fetcher variable BEFORE we try to use it!
+            fetcher = acc if acc else client
+
             try:
                 source_ref = parsed_source.get("chat_id")
                 
