@@ -1616,15 +1616,33 @@ async def finalize_watcher_setup(client, message, data, delay, user_id=None):
             source_title = chat.title or getattr(chat, "first_name", None) or str(source_id)
 
         elif parsed["kind"] == "public":
-            try:
-                # Try Bot first
-                chat = await app.get_chat(parsed["join_target"])
-            except Exception:
-                # Fallback to User Session
-                chat = await user_client.get_chat(parsed["join_target"])
+            target_ref = parsed["join_target"]
+            source_id = None
+            
+            # 🟢 THE PYROFORK BYPASS: Extract numeric ID via RAW API
+            if isinstance(target_ref, str) and not str(target_ref).lstrip('-').isdigit():
+                from pyrogram.raw.functions.contacts import ResolveUsername
+                clean_user = target_ref.replace("@", "")
+                try:
+                    r = await user_client.invoke(ResolveUsername(username=clean_user))
+                    if r.chats:
+                        rid = r.chats[0].id
+                        is_chan = getattr(r.chats[0], "broadcast", False) or getattr(r.chats[0], "megagroup", False)
+                        source_id = int(f"-100{rid}") if is_chan else rid
+                    elif r.users:
+                        source_id = r.users[0].id
+                except Exception:
+                    pass
+                    
+            if not source_id:
+                source_id = target_ref
                 
-            source_id = chat.id
-            source_title = chat.title or getattr(chat, "first_name", None) or str(source_id)
+            try:
+                chat = await user_client.get_chat(source_id)
+                source_id = chat.id
+                source_title = chat.title or getattr(chat, "first_name", None) or str(source_id)
+            except Exception:
+                source_title = str(source_id)
 
         else:
             chat = await user_client.get_chat(source_id)
