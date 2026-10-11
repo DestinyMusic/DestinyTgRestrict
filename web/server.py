@@ -574,7 +574,14 @@ async def _api_stats_handler(request):
             "failed": info.get("failed", 0),
             "current_file": info.get("current_file", ""),
             "fetcher": info.get("fetcher", "🤖 Unknown"),
-            "uploader": info.get("uploader", "🤖 Unknown")
+            "uploader": info.get("uploader", "🤖 Unknown"),
+            "delay": info.get("delay", 3),
+            "allowed_types": info.get("allowed_types", []),
+            "include_keywords": info.get("include_keywords", []),
+            "exclude_keywords": info.get("exclude_keywords", []),
+            "cleanup_keywords": info.get("cleanup_keywords", []),
+            "thumb_file_id": info.get("thumb_file_id"),
+            "thumb_b64": info.get("thumb_b64")
         })
 
     # User-specific watchers
@@ -591,7 +598,14 @@ async def _api_stats_handler(request):
             "skipped": stats.get("skipped", 0),
             "failed": stats.get("failed", 0),
             "fetcher": w.get("fetcher", "⏳ Waiting..."),
-            "uploader": w.get("uploader", "⏳ Waiting...")
+            "uploader": w.get("uploader", "⏳ Waiting..."),
+            "delay": w.get("delay", 3),
+            "allowed_types": w.get("allowed_types", []),
+            "include_keywords": w.get("include_keywords", []),
+            "exclude_keywords": w.get("exclude_keywords", []),
+            "cleanup_keywords": w.get("cleanup_keywords", []),
+            "thumb_file_id": w.get("thumb_file_id"),
+            "thumb_b64": w.get("thumb_b64")
         })
 
     total_watchers = await db.db.watchers.count_documents({"user_id": user_id})
