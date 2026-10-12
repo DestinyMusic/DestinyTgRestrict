@@ -194,14 +194,18 @@ async def _execute_unrestricted_copy(client, acc, chat_id, msgid, dest_chat_id, 
     else:
         upload_client = get_dynamic_upload_client(client, acc, user_id, task_uuid, index)
 
-    # 🟢 THE PYROFORK BYPASS: Warm up the worker bot cache!
+    # 🟢 THE SPEED UPGRADE: Only make network calls if the bot hasn't cached the ID yet!
     if source_username and upload_client not in (client, acc):
-        from pyrogram.raw.functions.contacts import ResolveUsername
-        clean_user = source_username.replace("@", "")
-        try: await upload_client.invoke(ResolveUsername(username=clean_user))
-        except Exception: pass
-        try: await upload_client.get_chat(source_username)
-        except Exception: pass
+        try:
+            # Instantly succeeds in 0.001s if the bot already knows the channel
+            await upload_client.resolve_peer(chat_id)
+        except Exception:
+            from pyrogram.raw.functions.contacts import ResolveUsername
+            clean_user = source_username.replace("@", "")
+            try: await upload_client.invoke(ResolveUsername(username=clean_user))
+            except Exception: pass
+            try: await upload_client.get_chat(source_username)
+            except Exception: pass
 
     if task_uuid and user_id in ACTIVE_PROCESSES and task_uuid in ACTIVE_PROCESSES[user_id]:
         ACTIVE_PROCESSES[user_id][task_uuid]["fetcher"] = _get_client_label(acc if acc else client)
@@ -1107,4 +1111,3 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
                 shutil.rmtree(task_folder_path)
         except Exception: pass
         gc.collect()
-
