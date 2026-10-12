@@ -176,14 +176,18 @@ async def handle_public_unrestricted(client: Client, acc, chatid: str, msgid: in
             import random
             upload_client = random.choice(connected_workers)
 
-    # 🟢 THE PYROFORK BYPASS: Warm up the worker bot cache!
+    # 🟢 THE SPEED UPGRADE: Only make network calls if the bot hasn't cached the ID yet!
     if source_username and upload_client not in (client, acc):
-        from pyrogram.raw.functions.contacts import ResolveUsername
-        clean_user = source_username.replace("@", "")
-        try: await upload_client.invoke(ResolveUsername(username=clean_user))
-        except Exception: pass
-        try: await upload_client.get_chat(source_username)
-        except Exception: pass
+        try:
+            # Instantly succeeds in 0.001s if the bot already knows the channel
+            await upload_client.resolve_peer(chatid)
+        except Exception:
+            from pyrogram.raw.functions.contacts import ResolveUsername
+            clean_user = source_username.replace("@", "")
+            try: await upload_client.invoke(ResolveUsername(username=clean_user))
+            except Exception: pass
+            try: await upload_client.get_chat(source_username)
+            except Exception: pass
 
     # 🟢 FIX: Inject UI Labels for Web Dashboard (Fast-Path bypasses router)
     if task_uuid and user_id in ACTIVE_PROCESSES and task_uuid in ACTIVE_PROCESSES[user_id]:
