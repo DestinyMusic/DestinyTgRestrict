@@ -407,8 +407,6 @@ async def get_topic_title(client, chat_id, topic_id):
 
     return f" (Topic {topic_id})"
 
-from pyrogram.raw.functions.contacts import ResolveUsername
-
 import traceback
 from pyrogram.raw.functions.contacts import ResolveUsername
 
@@ -418,6 +416,9 @@ async def check_link_restriction(user_id, link):
     logger.info(f"Target Link: {link}")
     
     parsed = _parse_source_link(link)
+    if not parsed:
+        return None, "⚠️ **Could not analyze link format.**"
+        
     chat_id = parsed.get("chat_id")
     msg_id = parsed.get("msg_id")
     logger.info(f"Parsed -> chat_id: {chat_id} (Type: {type(chat_id)}), msg_id: {msg_id}")
@@ -426,68 +427,88 @@ async def check_link_restriction(user_id, link):
         logger.error("DEBUG: Invalid link parsed.")
         return None, "Invalid Telegram link."
 
-    test_client = USER_CLIENTS.get(user_id)
-    if not test_client or not test_client.is_connected:
-        logger.info("DEBUG: User session missing/disconnected. Using App (Main Bot).")
-        test_client = app
-    else:
-        logger.info("DEBUG: Using active User Session.")
+    # 1. Determine who should test the link
+    test_client = app
+    is_temp_client = False
+    user_session = await db.get_session(user_id)
+    
+    # 🟢 AUTO-WAKEUP: If the server restarted, boot up the User Session dynamically
+    if isinstance(chat_id, int) or user_session:
+        if user_id in USER_CLIENTS and USER_CLIENTS[user_id].is_connected:
+            test_client = USER_CLIENTS[user_id]
+            logger.info("DEBUG: Using active persistent User Session.")
+        elif user_session:
+            import uuid
+            from pyrogram import Client
+            api_id = await db.get_api_id(user_id) or API_ID
+            api_hash = await db.get_api_hash(user_id) or API_HASH
+            test_client = Client(f"temp_chk_{user_id}_{uuid.uuid4().hex[:8]}", in_memory=True, session_string=user_session, api_id=api_id, api_hash=api_hash, no_updates=True, ipv6=False)
+            await test_client.start()
+            is_temp_client = True
+            logger.info("DEBUG: Woke up temporary User Session from DB for validation.")
 
     try:
-        # 🟢 THE ULTIMATE PYROFORK BYPASS
+        # 🟢 THE PYROFORK BYPASS (Only for string usernames)
         if isinstance(chat_id, str) and not str(chat_id).lstrip('-').isdigit():
             clean_user = chat_id.replace("@", "")
             logger.info(f"DEBUG: Detected string username '{clean_user}'. Initiating RAW API Resolution...")
-            
             try:
                 r = await test_client.invoke(ResolveUsername(username=clean_user))
-                logger.info(f"DEBUG: ResolveUsername Raw Response received!")
-                
-                # EXTRACT THE NUMERIC ID MANUALLY
                 if r.chats:
-                    raw_id = r.chats[0].id
+                    rid = r.chats[0].id
                     is_channel = getattr(r.chats[0], "broadcast", False) or getattr(r.chats[0], "megagroup", False)
-                    chat_id = int(f"-100{raw_id}") if is_channel else raw_id
-                    logger.info(f"DEBUG: Successfully extracted NUMERIC CHAT ID: {chat_id}")
+                    chat_id = int(f"-100{rid}") if is_channel else rid
+                    logger.info(f"DEBUG: Extracted NUMERIC CHAT ID: {chat_id}")
                 elif r.users:
                     chat_id = r.users[0].id
-                    logger.info(f"DEBUG: Successfully extracted NUMERIC USER ID: {chat_id}")
-                else:
-                    logger.error("DEBUG: ResolveUsername returned no chats or users!")
-                    
             except Exception as raw_e:
-                logger.error(f"DEBUG: ResolveUsername FAILED: {type(raw_e).__name__} -> {raw_e}")
+                logger.error(f"DEBUG: ResolveUsername FAILED: {raw_e}")
 
-        logger.info(f"DEBUG: Firing get_messages with Target ID: {chat_id} (Type: {type(chat_id)})")
-        msg = await test_client.get_messages(chat_id, msg_id)
+        logger.info(f"DEBUG: Firing get_messages with Target ID: {chat_id}")
+        msg = None
+        bot_err = None
         
-        # Fallback to User Session if the Main Bot was blocked/blind
-        if (not msg or msg.empty) and test_client == app and user_id in USER_CLIENTS:
-            logger.info("DEBUG: Main bot returned empty message. Trying User Session...")
-            test_client = USER_CLIENTS[user_id]
+        try:
+            msg = await test_client.get_messages(chat_id, msg_id)
+        except Exception as e:
+            bot_err = e
+            logger.warning(f"DEBUG: get_messages failed on primary client: {e}")
+
+        # 2. Fallback to User Session if Main Bot failed (e.g., Bot was blocked)
+        if (bot_err or not msg or msg.empty) and test_client == app and user_session:
+            logger.info("DEBUG: Main bot failed. Booting User Session fallback...")
+            import uuid
+            from pyrogram import Client
+            api_id = await db.get_api_id(user_id) or API_ID
+            api_hash = await db.get_api_hash(user_id) or API_HASH
+            test_client = Client(f"temp_chk2_{user_id}_{uuid.uuid4().hex[:8]}", in_memory=True, session_string=user_session, api_id=api_id, api_hash=api_hash, no_updates=True, ipv6=False)
+            await test_client.start()
+            is_temp_client = True
             
             if isinstance(chat_id, str) and not str(chat_id).lstrip('-').isdigit():
                 clean_user = chat_id.replace("@", "")
                 try:
                     r = await test_client.invoke(ResolveUsername(username=clean_user))
                     if r.chats:
-                        raw_id = r.chats[0].id
+                        rid = r.chats[0].id
                         is_channel = getattr(r.chats[0], "broadcast", False) or getattr(r.chats[0], "megagroup", False)
-                        chat_id = int(f"-100{raw_id}") if is_channel else raw_id
+                        chat_id = int(f"-100{rid}") if is_channel else rid
                     elif r.users:
                         chat_id = r.users[0].id
-                except Exception as e:
-                    logger.error(f"DEBUG: User Session ResolveUsername FAILED: {e}")
-                    
-            logger.info(f"DEBUG: Firing User Session get_messages with Target ID: {chat_id}")
+                except Exception: pass
+            
             msg = await test_client.get_messages(chat_id, msg_id)
+            bot_err = None
+
+        if bot_err:
+            raise bot_err
 
         if not msg or msg.empty:
-            logger.error("DEBUG: get_messages returned completely empty!")
+            logger.error("DEBUG: get_messages returned empty!")
             return None, "Message is missing, deleted, or inaccessible."
             
         is_content_protected = getattr(msg, "has_protected_content", False) or getattr(msg.chat, "has_protected_content", False)
-        logger.info(f"DEBUG: Message found! Protected Content: {is_content_protected}")
+        logger.info(f"DEBUG: Message found! Protected: {is_content_protected}")
         
         status_text = "🔒 **Restricted Content**" if is_content_protected else "🔓 **Unrestricted Content**"
         logger.info("========== DEBUG: VALIDATION SUCCESS ==========")
@@ -495,8 +516,16 @@ async def check_link_restriction(user_id, link):
         
     except Exception as e:
         logger.error(f"========== DEBUG: VALIDATION CRASH ==========\n{traceback.format_exc()}")
-        err_str = str(e).replace("KeyError:", "").replace("'", "").strip()
-        return None, f"{err_str}"
+        err_str = str(e).lower()
+        if "channel_invalid" in err_str or "channel_private" in err_str or "user_not_participant" in err_str:
+            return None, "⚠️ **Private Chat:** I cannot access this. Please run `/login` so I can use your account to read it."
+        elif "username_not_found" in err_str or "peer_id_invalid" in err_str:
+            return None, "❌ **Access Blocked:** Telegram cannot find this chat. It may be geo-blocked, deleted, or you are not a member."
+        return None, f"{str(e).replace('KeyError:', '').replace('\"', '').strip()}"
+    finally:
+        if is_temp_client:
+            try: await test_client.stop()
+            except: pass
 
 async def split_file_python(file_path, chunk_size=2000*1024*1024):
     loop = asyncio.get_running_loop()
