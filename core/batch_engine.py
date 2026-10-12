@@ -789,10 +789,14 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
                             actual_sleep = max(0, delay - elapsed_time)
                             await asyncio.sleep(actual_sleep)
                         else:
-                            await asyncio.sleep(0.05)
+                            # 🟢 SPEED FIX: Zero artificial delay per skipped message!
+                            await asyncio.sleep(0)
 
                     if not is_restricted:
                         pass # Web UI handles progress, no Telegram edits needed
+                
+                # 🟢 API RATE LIMITER: Tiny 0.3s pause between chunks of 100 to prevent FloodWaits
+                await asyncio.sleep(0.3)
                 
                 # Break the outer chunk loop if cancelled from inside the inner loop
                 if 'was_cancelled' in locals() and was_cancelled:
