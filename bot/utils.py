@@ -521,7 +521,11 @@ async def check_link_restriction(user_id, link):
             return None, "⚠️ **Private Chat:** I cannot access this. Please run `/login` so I can use your account to read it."
         elif "username_not_found" in err_str or "peer_id_invalid" in err_str:
             return None, "❌ **Access Blocked:** Telegram cannot find this chat. It may be geo-blocked, deleted, or you are not a member."
-        return None, f"{str(e).replace('KeyError:', '').replace('\"', '').strip()}"
+        
+        # 🟢 FIX: Removed the backslash and separated the string logic to satisfy Python 3.11 syntax rules
+        clean_err = str(e).replace("KeyError:", "").replace('"', '').strip()
+        return None, clean_err
+        
     finally:
         if is_temp_client:
             try: await test_client.stop()
