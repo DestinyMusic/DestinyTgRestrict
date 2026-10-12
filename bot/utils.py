@@ -235,21 +235,55 @@ def clean_caption(text, entities=None, custom_tags=None):
     return cleaned, entities if cleaned == original else None
 
 
-def filename_matches_filters(message, include_keywords=None, exclude_keywords=None):
-    media = next((
-        getattr(message, attr, None)
-        for attr in ("document", "video", "audio", "animation", "voice", "sticker")
-        if getattr(message, attr, None)
-    ), None)
-    filename = clean_media_text(
-        getattr(media, "file_name", None) or getattr(media, "title", None) or ""
-    ).casefold()
-    includes = [str(word).strip().casefold() for word in (include_keywords or []) if str(word).strip()]
-    excludes = [str(word).strip().casefold() for word in (exclude_keywords or []) if str(word).strip()]
-    return (not includes or any(word in filename for word in includes)) and not any(
-        word in filename for word in excludes
-    )
+def filename_matches_filters(msg, include_keywords, exclude_keywords):
+    if not include_keywords and not exclude_keywords:
+        return True
 
+    # Combine everything into one giant searchable string
+    text_to_search = ""
+    
+    # 1. Text & Captions (Covers Photos, Text posts, and Media with captions)
+    if getattr(msg, "caption", None):
+        text_to_search += msg.caption.lower() + " "
+    if getattr(msg, "text", None):
+        text_to_search += msg.text.lower() + " "
+        
+    # 2. File Names (Covers all possible media types with file names)
+    if getattr(msg, "document", None) and getattr(msg.document, "file_name", None):
+        text_to_search += msg.document.file_name.lower() + " "
+    elif getattr(msg, "video", None) and getattr(msg.video, "file_name", None):
+        text_to_search += msg.video.file_name.lower() + " "
+    elif getattr(msg, "audio", None) and getattr(msg.audio, "file_name", None):
+        text_to_search += msg.audio.file_name.lower() + " "
+    elif getattr(msg, "animation", None) and getattr(msg.animation, "file_name", None):
+        text_to_search += msg.animation.file_name.lower() + " "
+    elif getattr(msg, "voice", None) and getattr(msg.voice, "file_name", None):
+        text_to_search += msg.voice.file_name.lower() + " "
+        
+    # 3. Stickers (Often have emojis instead of file names)
+    if getattr(msg, "sticker", None):
+        if getattr(msg.sticker, "file_name", None):
+            text_to_search += msg.sticker.file_name.lower() + " "
+        if getattr(msg.sticker, "emoji", None):
+            text_to_search += msg.sticker.emoji.lower() + " "
+
+    # If the message has absolutely no text/caption/filename and we HAVE include keywords, skip it.
+    if not text_to_search.strip():
+        if include_keywords:
+            return False
+        return True
+
+    if include_keywords:
+        # Must contain at least one of the include keywords
+        if not any(inc.lower() in text_to_search for inc in include_keywords):
+            return False
+            
+    if exclude_keywords:
+        # Must NOT contain any exclude keywords
+        if any(exc.lower() in text_to_search for exc in exclude_keywords):
+            return False
+            
+    return True
 
 def media_filename(message, fallback_id=None):
     for attr in ("document", "video", "audio", "animation", "voice", "sticker", "photo"):
