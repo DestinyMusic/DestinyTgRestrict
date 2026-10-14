@@ -485,11 +485,24 @@ async def check_link_restriction(user_id, link, is_watcher=False):
         if is_dm_source:
             if not uclient:
                 return None, "⚠️ **Bot/Private DM:** Please connect your Telegram Session in Settings so I can read messages from your private/bot chat."
+
+            # For Watchers, ignore the sample msg_id and only verify the Bot/User DM chat itself
+            if is_watcher:
+                try:
+                    chat_obj = await uclient.get_chat(chat_id)
+                    is_content_protected = bool(getattr(chat_obj, "has_protected_content", False))
+                    logger.info(f"DEBUG: Bot/User DM Watcher chat {chat_id} verified! Protected: {is_content_protected}")
+                    status_text = "🔒 **Restricted Content**" if is_content_protected else "🔓 **Unrestricted Content**"
+                    logger.info("========== DEBUG: VALIDATION SUCCESS ==========")
+                    return is_content_protected, status_text
+                except Exception as e:
+                    return None, f"❌ **Cannot access Bot/User DM:** {e}"
+
             if msg_id:
                 try:
                     msg = await uclient.get_messages(chat_id, msg_id)
                     if msg and not getattr(msg, "empty", True):
-                        is_content_protected = (
+                        is_content_protected = bool(
                             getattr(msg, "has_protected_content", False)
                             or getattr(msg.chat, "has_protected_content", False)
                         )
@@ -500,17 +513,11 @@ async def check_link_restriction(user_id, link, is_watcher=False):
                 except Exception as dm_e:
                     logger.warning(f"DEBUG: DM get_messages error: {dm_e}")
 
-            if is_watcher or is_range:
+            if is_range:
                 try:
                     chat_obj = await uclient.get_chat(chat_id)
-                    is_content_protected = getattr(chat_obj, "has_protected_content", False)
-                    try:
-                        async for last_m in uclient.get_chat_history(chat_id, limit=1):
-                            if last_m and not getattr(last_m, "empty", True):
-                                is_content_protected = is_content_protected or getattr(last_m, "has_protected_content", False)
-                    except Exception:
-                        pass
-                    logger.info(f"DEBUG: Sample msg_id {msg_id} was deleted, but Chat {chat_id} is valid! Protected: {is_content_protected}")
+                    is_content_protected = bool(getattr(chat_obj, "has_protected_content", False))
+                    logger.info(f"DEBUG: Bot/User DM Range chat {chat_id} verified! Protected: {is_content_protected}")
                     status_text = "🔒 **Restricted Content**" if is_content_protected else "🔓 **Unrestricted Content**"
                     logger.info("========== DEBUG: VALIDATION SUCCESS ==========")
                     return is_content_protected, status_text
@@ -561,7 +568,7 @@ async def check_link_restriction(user_id, link, is_watcher=False):
             msg, chat_id, _ = await smart_fetch(app, chat_id)
 
         if msg and not getattr(msg, "empty", True):
-            is_content_protected = (
+            is_content_protected = bool(
                 getattr(msg, "has_protected_content", False)
                 or getattr(msg.chat, "has_protected_content", False)
             )
@@ -582,7 +589,7 @@ async def check_link_restriction(user_id, link, is_watcher=False):
                     continue
 
             if chat_obj:
-                is_content_protected = getattr(chat_obj, "has_protected_content", False)
+                is_content_protected = bool(getattr(chat_obj, "has_protected_content", False))
                 logger.info(f"DEBUG: Sample msg_id {msg_id} was deleted, but Chat {chat_id} is valid! Protected: {is_content_protected}")
                 status_text = "🔒 **Restricted Content**" if is_content_protected else "🔓 **Unrestricted Content**"
                 return is_content_protected, status_text
