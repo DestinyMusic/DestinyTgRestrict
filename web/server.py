@@ -800,23 +800,16 @@ async def _api_add_watcher(request):
         source_id = None
         source_title = "Watched Source"
 
-        # 🟢 THE PYROFORK BYPASS: Extract the numeric ID via RAW API!
+        source_id = target_ref
+        
+        # 🟢 THE PYROFORK BYPASS (Seeding the Cache, DO NOT Mutate the String)
         if isinstance(target_ref, str) and not str(target_ref).lstrip('-').isdigit():
             from pyrogram.raw.functions.contacts import ResolveUsername
             clean_user = target_ref.replace("@", "")
             try:
-                r = await user_client.invoke(ResolveUsername(username=clean_user))
-                if r.chats:
-                    rid = r.chats[0].id
-                    is_chan = getattr(r.chats[0], "broadcast", False) or getattr(r.chats[0], "megagroup", False)
-                    source_id = int(f"-100{rid}") if is_chan else rid
-                elif r.users:
-                    source_id = r.users[0].id
+                await user_client.invoke(ResolveUsername(username=clean_user))
             except Exception:
                 pass
-
-        if not source_id:
-            source_id = target_ref
 
         try:
             chat = await user_client.get_chat(source_id)
@@ -825,7 +818,7 @@ async def _api_add_watcher(request):
             if parsed.get("topic_id"): 
                 source_title += await get_topic_title(user_client, source_id, parsed["topic_id"])
         except Exception:
-            # 🟢 THE "TRY BOTH" ENGINE: If raw positive ID fails, try -100!
+            # 🟢 THE "TRY BOTH" ENGINE: If a raw positive integer fails, try -100!
             if isinstance(source_id, int) and source_id > 0:
                 try:
                     alt_id = int(f"-100{source_id}")
