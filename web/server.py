@@ -1122,12 +1122,24 @@ async def _api_tg_qr_verify_2fa(request):
 async def _api_tg_send_code(request):
     data = await request.json()
     uid = int(data.get("user_id"))
-    phone = data.get("phone")
-    
+    phone = str(data.get("phone") or "").replace(" ", "").replace("-", "").strip()
+    if not re.fullmatch(r"\+\d{8,15}", phone):
+        return web.json_response({
+            "status": "error",
+            "message": "Invalid phone number format. Include '+' and country code (e.g. +919876543210)."
+        })
+
+    # Clean up any previous pending auth client for this user
+    old_cache = WEB_AUTH_CACHE.pop(uid, None)
+    if old_cache and old_cache.get("client"):
+        try:
+            await old_cache["client"].disconnect()
+        except Exception:
+            pass
+
     client = Client(
-        f"web_auth_{uid}_{uuid.uuid4().hex}", 
-        in_memory=True, 
-        api_id=API_ID, 
+        ":memory:",
+        api_id=API_ID,
         api_hash=API_HASH,
         device_model="DestinyTgRestrict",
         app_version="DestinyTgRestrict 1.0",
@@ -1136,8 +1148,10 @@ async def _api_tg_send_code(request):
     await client.connect()
     try:
         code = await client.send_code(phone)
+        delivery_type = str(getattr(code, "type", "unknown"))
+        logger.info(f"📲 OTP requested for user {uid} ({phone[:4]}***) -> Delivery Type: {delivery_type}")
         WEB_AUTH_CACHE[uid] = {"client": client, "phone": phone, "hash": code.phone_code_hash}
-        return web.json_response({"status": "success"})
+        return web.json_response({"status": "success", "delivery": delivery_type})
     except Exception as e:
         await client.disconnect()
         return web.json_response({"status": "error", "message": str(e)})
@@ -1145,7 +1159,7 @@ async def _api_tg_send_code(request):
 async def _api_tg_verify_code(request):
     data = await request.json()
     uid = int(data.get("user_id"))
-    code = data.get("code")
+    code = str(data.get("code") or "").replace(" ", "").strip()
     
     cache = WEB_AUTH_CACHE.get(uid)
     if not cache: return web.json_response({"status": "error", "message": "Session expired. Try again."})
@@ -1168,6 +1182,7 @@ async def _api_tg_verify_code(request):
         await db.set_session(uid, session_str)
         await db.set_api_id(uid, API_ID)
         await db.set_api_hash(uid, API_HASH)
+        await ensure_user_client(uid)
         return web.json_response({"status": "success"})
         
     except SessionPasswordNeeded:
@@ -1201,6 +1216,7 @@ async def _api_tg_verify_2fa(request):
         await db.set_session(uid, session_str)
         await db.set_api_id(uid, API_ID)
         await db.set_api_hash(uid, API_HASH)
+        await ensure_user_client(uid)
         return web.json_response({"status": "success"})
     except Exception as e:
         return web.json_response({"status": "error", "message": str(e)})
