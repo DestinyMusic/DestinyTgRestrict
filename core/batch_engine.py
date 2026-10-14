@@ -417,59 +417,18 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
 
             total_count = max(1, toID - fromID + 1)
 
-            user_data = await db.get_session(user_id)
-            acc = None
+            # 🟢 Reuse persistent User Session so cached access_hashes are never lost!
+            acc = await ensure_user_client(user_id)
             is_temp_acc = False
-            
-            if user_data:
-                api_id = await db.get_api_id(user_id) or API_ID
-                api_hash = await db.get_api_hash(user_id) or API_HASH
-                
-                user_workers = 8
-                
-                acc = Client(
-                    name=f"temp_acc_{user_id}_{uuid.uuid4().hex}", 
-                    in_memory=True,
-                    session_string=user_data, 
-                    api_hash=api_hash, 
-                    api_id=api_id, 
-                    no_updates=True,
-                    workers=user_workers,
-                    sleep_threshold=120, # 🟢 Increased
-                    ipv6=False,
-                    **get_transmission_kwargs(workers=user_workers, is_bot=False) # 🟢 Force 1 concurrent
-                )
-                await acc.start()
-                is_temp_acc = True
 
             # 🟢 THE FIX: Define the fetcher variable BEFORE we try to use it!
             fetcher = acc if acc else client
 
             try:
                 source_ref = parsed_source.get("chat_id")
-                ACTUAL_CHAT_ID = source_ref
-                
-                # 🟢 INTELLIGENT CACHE INJECTION
-                if isinstance(source_ref, str) and not str(source_ref).lstrip('-').isdigit():
-                    from pyrogram.raw.functions.contacts import ResolveUsername
-                    clean_user = source_ref.replace("@", "")
-                    
-                    async def inject_peer(cl):
-                        try:
-                            r = await cl.invoke(ResolveUsername(username=clean_user))
-                            if getattr(r, "users", None):
-                                await cl.storage.update_peers(r.users) # Force-feed memory
-                                return r.users[0].id
-                            if getattr(r, "chats", None):
-                                await cl.storage.update_peers(r.chats) # Force-feed memory
-                                c = r.chats[0]
-                                return int(f"-100{c.id}") if getattr(c, "broadcast", False) or getattr(c, "megagroup", False) else int(f"-{c.id}")
-                        except: pass
-                        return source_ref
-
-                    ACTUAL_CHAT_ID = await inject_peer(fetcher)
-                    if fetcher != client:
-                        await inject_peer(client)
+                ACTUAL_CHAT_ID, peer_kind = await resolve_and_cache_peer(fetcher, source_ref)
+                if fetcher != client and isinstance(source_ref, str) and not str(source_ref).lstrip('-').isdigit():
+                    await resolve_and_cache_peer(client, source_ref)
 
                 try:
                     source_chat = await fetcher.get_chat(ACTUAL_CHAT_ID)
@@ -685,8 +644,8 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
                         is_pub = isinstance(parsed_source.get("chat_id"), str) and not str(parsed_source.get("chat_id")).lstrip('-').isdigit()
                         original_username = parsed_source.get("chat_id") if is_pub else None
                         
-                        # 🟢 FIX: Bot PMs and User PMs must NEVER use the public fast-path 
-                        is_bot_or_user_pm = False
+                        # 🟢 FIX: Bot PMs and User PMs (positive chat IDs) must NEVER use the public fast-path 
+                        is_bot_or_user_pm = isinstance(ACTUAL_CHAT_ID, int) and ACTUAL_CHAT_ID > 0
                         if "source_chat" in locals():
                             chat_type_str = str(getattr(source_chat, "type", "")).upper()
                             if "BOT" in chat_type_str or "PRIVATE" in chat_type_str:
