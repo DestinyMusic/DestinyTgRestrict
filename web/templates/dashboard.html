@@ -2078,6 +2078,7 @@
                                     <input type="text" id="tg-code" placeholder="12345">
                                 </div>
                                 <button type="button" class="primary-btn" style="padding: 12px; background: #10b981;" onclick="tgVerifyCode()">Verify Code</button>
+                                <button type="button" id="tg-resend-btn" class="primary-btn" style="padding: 10px; background: #475569; margin-top: 8px;" onclick="tgResendCode()" disabled>Resend Code via SMS</button>
                             </div>
 
                             <div id="tg-login-step3" style="display: none;">
@@ -3376,6 +3377,8 @@
             } catch(e) {}
         }
 
+        let resendTimerInterval = null;
+
         async function tgSendCode() {
             const phone = document.getElementById('tg-phone').value;
             const res = await fetch('/api/tg/send_code', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({user_id: currentUser, phone: phone}) });
@@ -3383,7 +3386,40 @@
             if (data.status === 'success') {
                 document.getElementById('tg-login-step1').style.display = 'none';
                 document.getElementById('tg-login-step2').style.display = 'block';
+                
+                const isApp = data.delivery.includes("APP");
+                alert(isApp ? "Code sent to your official Telegram app!" : "Code sent via SMS!");
+                
+                // Start 60 second countdown for the Resend button
+                const resendBtn = document.getElementById('tg-resend-btn');
+                resendBtn.disabled = true;
+                let remaining = 60;
+                
+                clearInterval(resendTimerInterval);
+                resendTimerInterval = setInterval(() => {
+                    remaining--;
+                    resendBtn.innerText = `Resend via SMS (${remaining}s)`;
+                    if (remaining <= 0) {
+                        clearInterval(resendTimerInterval);
+                        resendBtn.disabled = false;
+                        resendBtn.innerText = "Resend Code via SMS";
+                    }
+                }, 1000);
             } else alert("Error: " + data.message);
+        }
+
+        async function tgResendCode() {
+            const res = await fetch('/api/tg/resend_code', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({user_id: currentUser})
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                alert("New code dispatched via: " + data.delivery);
+            } else {
+                alert("Resend failed: " + data.message);
+            }
         }
 
         async function tgVerifyCode() {
