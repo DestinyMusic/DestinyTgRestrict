@@ -656,8 +656,9 @@ async def _api_add_task(request):
         
         if dest_str:
             dest_chat_id, dest_thread_id = _parse_chat_target(dest_str)
-            uclient = USER_CLIENTS.get(user_id, app)
+            uclient = (await ensure_user_client(user_id)) or app
             try:
+                await resolve_and_cache_peer(uclient, dest_chat_id)
                 d_chat = await uclient.get_chat(dest_chat_id)
                 dest_title = d_chat.title or d_chat.first_name or str(dest_chat_id)
                 if dest_thread_id: 
@@ -777,7 +778,7 @@ async def _api_add_watcher(request):
         allowed_types = [t for t in allowed_types if t in ALL_MSG_TYPES]
         include_keywords = _normalize_keyword_list(data.get("include_keywords"))
         exclude_keywords = _normalize_keyword_list(data.get("exclude_keywords"))
-        cleanup_keywords = _normalize_keyword_list(data.get("cleanup_keywords")) # 🟢 NEW
+        cleanup_keywords = _normalize_keyword_list(data.get("cleanup_keywords"))
         try:
             thumb_b64 = _normalize_task_thumb_data(data.get("thumb_b64"))
         except ValueError as exc:
@@ -788,70 +789,68 @@ async def _api_add_watcher(request):
         if dest_str:
             dest_chat_id, dest_thread_id = _parse_chat_target(dest_str)
 
-        is_restricted, err_msg = await check_link_restriction(user_id, link)
+        # 🟢 Pass is_watcher=True so deleted sample messages don't block Watcher creation
+        is_restricted, err_msg = await check_link_restriction(user_id, link, is_watcher=True)
         if is_restricted is None: 
             return web.json_response({"status": "error", "message": err_msg or "Cannot access this link. Please ensure your account has access."})
 
         parsed = _parse_source_link(link)
         source_thread = parsed.get("topic_id")
         
-        user_client = USER_CLIENTS.get(user_id, app)
+        # 🟢 Wake up persistent User Session FIRST
+        user_client = (await ensure_user_client(user_id)) or app
         target_ref = parsed["join_target"] if parsed["kind"] == "public" else parsed["chat_id"]
-        source_id = None
         source_title = "Watched Source"
 
-        source_id = target_ref
-        
-        # 🟢 INTELLIGENT CACHE INJECTION
-        if isinstance(target_ref, str) and not str(target_ref).lstrip('-').isdigit():
-            from pyrogram.raw.functions.contacts import ResolveUsername
-            clean_user = target_ref.replace("@", "")
-            try:
-                r = await user_client.invoke(ResolveUsername(username=clean_user))
-                if getattr(r, "users", None):
-                    await user_client.storage.update_peers(r.users)
-                    source_id = r.users[0].id
-                elif getattr(r, "chats", None):
-                    await user_client.storage.update_peers(r.chats)
-                    c = r.chats[0]
-                    source_id = int(f"-100{c.id}") if getattr(c, "broadcast", False) or getattr(c, "megagroup", False) else int(f"-{c.id}")
-            except Exception:
-                pass
+        # 🟢 Safely resolve and cache peer without crashing storage.update_peers
+        source_id, peer_kind = await resolve_and_cache_peer(user_client, target_ref)
+        if peer_kind in ("bot", "user") or (isinstance(source_id, int) and source_id > 0):
+            is_restricted = True
 
+        chat = None
         try:
             chat = await user_client.get_chat(source_id)
             source_id = chat.id
             source_title = chat.title or getattr(chat, "first_name", None) or str(source_id)
-            if parsed.get("topic_id"): 
-                source_title += await get_topic_title(user_client, source_id, parsed["topic_id"])
+            if getattr(chat, "last_name", None):
+                source_title += f" {chat.last_name}"
         except Exception:
-            # 🟢 THE "TRY BOTH" ENGINE
-            if isinstance(source_id, int) and source_id > 0:
+            if isinstance(source_id, int) and source_id > 0 and peer_kind not in ("bot", "user"):
                 try:
                     alt_id = int(f"-100{source_id}")
                     chat = await user_client.get_chat(alt_id)
                     source_id = chat.id  
                     source_title = chat.title or getattr(chat, "first_name", None) or str(source_id)
-                    if parsed.get("topic_id"): 
-                        source_title += await get_topic_title(user_client, source_id, parsed["topic_id"])
                 except Exception:
                     pass
             
             if not isinstance(source_id, int) and not (isinstance(source_id, str) and str(source_id).lstrip('-').isdigit()):
                 return web.json_response({"status": "error", "message": f"Could not extract numeric ID for username '{target_ref}'."}, status=400)
+            source_id = int(source_id)
+
+        # 🟢 Ensure Bot/User DMs never treat a message ID as a forum topic ID
+        chat_type = getattr(chat, "type", None) if chat else None
+        is_private_source = (
+            peer_kind in ("bot", "user")
+            or str(chat_type) in ["ChatType.PRIVATE", "ChatType.BOT"]
+            or (isinstance(source_id, int) and source_id > 0)
+        )
+        if is_private_source:
+            is_restricted = True
+            source_thread = None
+        elif source_thread:
+            source_title += await get_topic_title(user_client, source_id, source_thread)
             
         dest_title = "Saved Messages" if dest_chat_id == user_id else str(dest_chat_id)
         if dest_chat_id != user_id:
             try:
-                try: await user_client.resolve_peer(dest_chat_id)
-                except Exception: pass
+                await resolve_and_cache_peer(user_client, dest_chat_id)
                 d_chat = await user_client.get_chat(dest_chat_id)
                 dest_title = d_chat.title or d_chat.first_name or str(dest_chat_id)
                 if dest_thread_id: 
                     dest_title += await get_topic_title(user_client, dest_chat_id, dest_thread_id)
             except: pass
 
-        # 🟢 NEW: Check Worker Bots access and warn via PM if missing!
         worker_bots = USER_TASK_BOTS.get(user_id, [])
         is_dm = str(dest_chat_id).lstrip("-").isdigit() and not str(dest_chat_id).startswith("-100") and int(dest_chat_id) > 0
         if worker_bots and not is_dm:
@@ -868,24 +867,15 @@ async def _api_add_watcher(request):
                 try: await app.send_message(user_id, f"⚠️ **Worker Bot Warning:** You just started a Live Watcher to `{dest_title}` via the Web UI, but your Worker Bots are not Admins there!\n\nI will fallback to your User Session. Add your worker bots as Admins for maximum forwarding speed.")
                 except Exception: pass
 
-        if user_id not in USER_CLIENTS:
-            user_session = await db.get_session(user_id)
-            if user_session:
-                u_api = await db.get_api_id(user_id) or API_ID
-                u_hash = await db.get_api_hash(user_id) or API_HASH
-                # 🟢 FIX: Increased workers to 100
-                new_client = Client(f"User_{user_id}", session_string=user_session, api_id=u_api, api_hash=u_hash, workers=100, ipv6=False)
-                new_client.add_handler(MessageHandler(user_watcher_handler, is_watched_chat))
-                await new_client.start()
-                USER_CLIENTS[user_id] = new_client
-
         last_msg_id = 0
         try:
-            async for m in USER_CLIENTS.get(user_id, app).get_chat_history(source_id, limit=1):
+            async for m in user_client.get_chat_history(source_id, limit=1):
                 last_msg_id = m.id
-        except: pass
+        except Exception:
+            if parsed.get("msg_id"):
+                last_msg_id = int(parsed["msg_id"])
 
-        await db.add_watcher(
+        wid = await db.add_watcher(
             user_id=user_id,
             source_id=source_id,
             dest_id=dest_chat_id,
@@ -898,11 +888,14 @@ async def _api_add_watcher(request):
             allowed_types=allowed_types,
             include_keywords=include_keywords,
             exclude_keywords=exclude_keywords,
-            cleanup_keywords=cleanup_keywords, # 🟢 ADDED THIS
+            cleanup_keywords=cleanup_keywords,
             thumb_b64=thumb_b64,
             last_msg_id=last_msg_id
         )
-        GLOBAL_WATCHER_SOURCES.add(source_id) # 🟢 UPDATE CACHE
+        GLOBAL_WATCHER_SOURCES.add(source_id)
+        if "start_watcher_worker" in globals() and wid:
+            try: await start_watcher_worker(str(wid))
+            except Exception: pass
         return web.json_response({"status": "success"})
     except Exception as e:
         return web.json_response({"status": "error", "message": str(e)}, status=500)
