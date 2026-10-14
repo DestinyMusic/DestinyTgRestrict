@@ -370,21 +370,15 @@ async def check_link_restriction(user_id, link):
             logger.info("DEBUG: Woke up temporary User Session from DB for validation.")
 
     try:
-        # 1. Resolve String Usernames if applicable
+        # 1. 🟢 SEED CACHE ONLY (Do NOT mutate string usernames to raw integers)
         if isinstance(chat_id, str) and not str(chat_id).lstrip('-').isdigit():
             clean_user = chat_id.replace("@", "")
             try:
-                r = await test_client.invoke(ResolveUsername(username=clean_user))
-                if r.chats:
-                    rid = r.chats[0].id
-                    is_channel = getattr(r.chats[0], "broadcast", False) or getattr(r.chats[0], "megagroup", False)
-                    chat_id = int(f"-100{rid}") if is_channel else rid
-                elif r.users:
-                    chat_id = r.users[0].id
+                await test_client.invoke(ResolveUsername(username=clean_user))
             except Exception as raw_e:
                 logger.error(f"DEBUG: ResolveUsername FAILED: {raw_e}")
 
-        # 2. 🟢 THE NEW "TRY BOTH" FETCH ENGINE
+        # 2. 🟢 THE "TRY BOTH" FETCH ENGINE
         async def smart_fetch(c, target_id):
             try:
                 m = await c.get_messages(target_id, msg_id)
@@ -413,6 +407,11 @@ async def check_link_restriction(user_id, link):
             test_client = Client(f"temp_chk2_{user_id}_{uuid.uuid4().hex[:8]}", in_memory=True, session_string=user_session, api_id=api_id, api_hash=api_hash, no_updates=True, ipv6=False)
             await test_client.start()
             is_temp_client = True
+            
+            if isinstance(chat_id, str) and not str(chat_id).lstrip('-').isdigit():
+                clean_user = chat_id.replace("@", "")
+                try: await test_client.invoke(ResolveUsername(username=clean_user))
+                except Exception: pass
             
             msg, chat_id, bot_err = await smart_fetch(test_client, chat_id)
 
