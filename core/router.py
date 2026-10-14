@@ -106,7 +106,6 @@ async def handle_private(client: Client, acc, message: Message, chatid, msgid: i
     is_source_dm = isinstance(chatid, int) and chatid > 0
     is_content_protected = (
         is_restricted
-        or is_source_dm
         or getattr(msg, "has_protected_content", False)
         or getattr(msg.chat, "has_protected_content", False)
     )
