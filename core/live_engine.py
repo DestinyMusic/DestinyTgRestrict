@@ -79,8 +79,7 @@ async def watcher_worker_loop(wid_str):
 
             is_source_dm = isinstance(source_id, int) and source_id > 0
             is_content_protected = (
-                is_source_dm
-                or getattr(msg, "has_protected_content", False)
+                getattr(msg, "has_protected_content", False)
                 or getattr(msg.chat, "has_protected_content", False)
             )
 
@@ -137,27 +136,30 @@ async def watcher_worker_loop(wid_str):
 
             has_custom_thumb = bool(watcher.get("thumb_file_id") or watcher.get("thumb_b64"))
             has_cleanup_tags = bool(watcher.get("cleanup_keywords"))
-            needs_reupload = bool(is_restricted or is_content_protected or has_custom_thumb or has_cleanup_tags)
+            needs_reupload = bool((is_restricted and not is_source_dm) or is_content_protected or has_custom_thumb or has_cleanup_tags)
 
             # 🟢 Determine Uploader accurately
             is_dest_dm = isinstance(dest_id, int) and dest_id > 0
-            upload_client = owner_client if (is_dest_dm and owner_client) else app
-            worker_bots = USER_TASK_BOTS.get(owner_id, [])
-            if worker_bots and not is_dest_dm:
-                connected_workers = [wb for wb in worker_bots if getattr(wb, "is_connected", False)]
-                if connected_workers:
-                    cand_worker = connected_workers[int(time.time()) % len(connected_workers)]
-                    if needs_reupload:
-                        # For download+upload, Worker Bot only needs access to Destination
-                        upload_client = cand_worker
-                    else:
-                        # For direct fast-copy, Worker Bot MUST have access to Source too!
-                        try:
-                            await resolve_and_cache_peer(cand_worker, source_id)
-                            await cand_worker.get_chat(source_id)
+            if (is_dest_dm or (is_source_dm and not needs_reupload)) and owner_client:
+                upload_client = owner_client
+            else:
+                upload_client = app
+                worker_bots = USER_TASK_BOTS.get(owner_id, [])
+                if worker_bots and not is_dest_dm:
+                    connected_workers = [wb for wb in worker_bots if getattr(wb, "is_connected", False)]
+                    if connected_workers:
+                        cand_worker = connected_workers[int(time.time()) % len(connected_workers)]
+                        if needs_reupload:
+                            # For download+upload, Worker Bot only needs access to Destination
                             upload_client = cand_worker
-                        except Exception:
-                            upload_client = owner_client if owner_client else app
+                        else:
+                            # For direct fast-copy, Worker Bot MUST have access to Source too!
+                            try:
+                                await resolve_and_cache_peer(cand_worker, source_id)
+                                await cand_worker.get_chat(source_id)
+                                upload_client = cand_worker
+                            except Exception:
+                                upload_client = owner_client if owner_client else app
 
             # 🟢 Inject fetcher/uploader into DB for UI rendering
             await db.db.watchers.update_one(
