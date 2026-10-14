@@ -96,9 +96,10 @@ from pyrogram.types import (
     BotCommand, BotCommandScopeDefault, BotCommandScopeChat, CallbackQuery
 )
 from pyrogram.storage.sqlite_storage import SQLiteStorage
+from pyrogram.storage.memory_storage import MemoryStorage
 from concurrent.futures import ThreadPoolExecutor
 
-# 🟢 FIX: Patch Pyrogram SQLite storage for Python 3.11+ collectible usernames
+# 🟢 FIX: Patch Pyrogram SQLite & Memory storage for Python 3.11+ collectible usernames
 _orig_update_usernames = SQLiteStorage.update_usernames
 async def _safe_update_usernames(self, parsed_usernames):
     if not parsed_usernames:
@@ -114,6 +115,23 @@ async def _safe_update_usernames(self, parsed_usernames):
     except Exception:
         pass
 SQLiteStorage.update_usernames = _safe_update_usernames
+
+if hasattr(MemoryStorage, "update_usernames"):
+    _orig_mem_update_usernames = MemoryStorage.update_usernames
+    async def _safe_mem_update_usernames(self, parsed_usernames):
+        if not parsed_usernames:
+            return
+        try:
+            sanitized = [
+                (int(p[0]), str(p[1]))
+                for p in parsed_usernames
+                if isinstance(p, (tuple, list)) and len(p) >= 2 and p[0] is not None and p[1] is not None
+            ]
+            if sanitized:
+                await _orig_mem_update_usernames(self, sanitized)
+        except Exception:
+            pass
+    MemoryStorage.update_usernames = _safe_mem_update_usernames
 import traceback                        
 import html
 import math
@@ -574,7 +592,7 @@ async def main():
     except Exception as e:
         logger.error(f"⚠️ Failed to set commands: {e}", exc_info=True)
     
-    logger.info("🔄 Loading Sessions for Active Watchers...")
+    logger.info("🔄 Loading User Sessions & Active Watchers...")
     
     active_watcher_users = set()
     cursor = await db.get_all_watchers()
@@ -582,13 +600,19 @@ async def main():
         active_watcher_users.add(w['user_id'])
         GLOBAL_WATCHER_SOURCES.add(w['source_id'])
 
+    # 🟢 FIX: Also load all logged-in user sessions from DB so DL & Watch work immediately on boot
+    async for u_doc in db.col.find({"session": {"$exists": True, "$ne": None}}):
+        if u_doc.get("id") and u_doc.get("session"):
+            active_watcher_users.add(int(u_doc["id"]))
+
     async def _init_single_watcher(user_id):
         user_session = await db.get_session(user_id)
         if not user_session or user_id in USER_CLIENTS:
             return
             
+        user_client = None
         try:
-            logger.info(f"👤 Starting Watcher Session for: {user_id}")
+            logger.info(f"👤 Starting User Session for: {user_id}")
             
             u_api = await db.get_api_id(user_id) or API_ID
             u_hash = await db.get_api_hash(user_id) or API_HASH
@@ -599,11 +623,13 @@ async def main():
                 api_id=u_api, 
                 api_hash=u_hash, 
                 workers=100,
+                sleep_threshold=120,
                 ipv6=False,
                 no_updates=False,
                 device_model="DestinyTgRestrict",
                 app_version="DestinyTgRestrict 1.0",
-                system_version="Linux"
+                system_version="Linux",
+                **get_transmission_kwargs(workers=100, is_bot=False)
             )
             
             user_client.add_handler(MessageHandler(user_watcher_handler, is_watched_chat))
