@@ -332,47 +332,64 @@ async def get_topic_title(client, chat_id, topic_id):
 import traceback
 from pyrogram.raw.functions.contacts import ResolveUsername
 
+USER_CLIENT_LOCKS = defaultdict(asyncio.Lock)
+
 async def ensure_user_client(user_id: int):
     """Wakes up and keeps the persistent User Session alive in USER_CLIENTS."""
     if not user_id:
         return None
+    user_id = int(user_id)
     uclient = USER_CLIENTS.get(user_id)
     if uclient and getattr(uclient, "is_connected", False):
         return uclient
 
-    user_session = await db.get_session(user_id)
-    if not user_session:
-        return None
+    async with USER_CLIENT_LOCKS[user_id]:
+        uclient = USER_CLIENTS.get(user_id)
+        if uclient and getattr(uclient, "is_connected", False):
+            return uclient
 
-    try:
-        from pyrogram import Client
-        from pyrogram.handlers import MessageHandler
-        api_id = await db.get_api_id(user_id) or API_ID
-        api_hash = await db.get_api_hash(user_id) or API_HASH
-        uclient = Client(
-            f"User_{user_id}",
-            session_string=user_session,
-            api_id=api_id,
-            api_hash=api_hash,
-            workers=100,
-            sleep_threshold=120,
-            ipv6=False,
-            no_updates=False,
-            device_model="DestinyTgRestrict",
-            app_version="DestinyTgRestrict 1.0",
-            system_version="Linux",
-            **get_transmission_kwargs(workers=100, is_bot=False)
-        )
-        if "user_watcher_handler" in globals() and "is_watched_chat" in globals():
-            uclient.add_handler(MessageHandler(user_watcher_handler, is_watched_chat))
-        await uclient.start()
-        USER_CLIENTS[user_id] = uclient
-        logger.info(f"✅ Woke up persistent User Session for user {user_id}")
-        return uclient
-    except Exception as e:
-        logger.error(f"Failed to wake up User Session for {user_id}: {e}")
-        return None
+        user_session = await db.get_session(user_id)
+        if not user_session:
+            return None
 
+        try:
+            if uclient:
+                try:
+                    await uclient.stop()
+                except Exception:
+                    pass
+            from pyrogram import Client
+            from pyrogram.handlers import MessageHandler
+            api_id = await db.get_api_id(user_id) or API_ID
+            api_hash = await db.get_api_hash(user_id) or API_HASH
+            uclient = Client(
+                f"User_{user_id}",
+                session_string=user_session,
+                in_memory=True,
+                api_id=api_id,
+                api_hash=api_hash,
+                workers=100,
+                sleep_threshold=120,
+                ipv6=False,
+                no_updates=False,
+                device_model="DestinyTgRestrict",
+                app_version="DestinyTgRestrict 1.0",
+                system_version="Linux",
+                **get_transmission_kwargs(workers=100, is_bot=False)
+            )
+            if "user_watcher_handler" in globals() and "is_watched_chat" in globals():
+                uclient.add_handler(MessageHandler(user_watcher_handler, is_watched_chat))
+            await uclient.start()
+            USER_CLIENTS[user_id] = uclient
+            logger.info(f"✅ Woke up persistent User Session for user {user_id}")
+            return uclient
+        except Exception as e:
+            if "AUTH_KEY_DUPLICATED" in str(e) or "AuthKeyDuplicated" in type(e).__name__:
+                logger.error(f"🚨 Session duplicated/invalidated for {user_id}. Auto-wiping...")
+                await auto_wipe_dead_session(uclient, user_id)
+            else:
+                logger.error(f"Failed to wake up User Session for {user_id}: {e}")
+            return None
 
 async def _safe_store_peer(client, peer_id, access_hash, peer_type, username=None, phone=None):
     """Safely writes peer to Pyrogram/Kurigram storage regardless of 4-tuple or 5-tuple signature."""
