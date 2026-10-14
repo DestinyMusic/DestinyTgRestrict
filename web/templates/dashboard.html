@@ -2852,7 +2852,10 @@
         function openTaskModal() {
             document.getElementById('task-include-keywords').value = '';
             document.getElementById('task-exclude-keywords').value = '';
+            document.getElementById('task-cleanup-keywords').value = '';
             document.getElementById('task-custom-thumbnail').value = '';
+            const removeThumbCheckbox = document.getElementById('task-remove-thumbnail');
+            if (removeThumbCheckbox) removeThumbCheckbox.checked = false;
             document.getElementById('taskModal').classList.add('show');
         }
         function closeTaskModal() { document.getElementById('taskModal').classList.remove('show'); }
@@ -3021,11 +3024,11 @@
                     }
                 } else {
                     document.getElementById('cd-loading').innerText = "❌ " + data.message;
-                    alert("⚠️ Backend Error:\\n" + data.message);
+                    alert("⚠️ Backend Error:\n" + data.message);
                 }
             } catch (err) {
                 document.getElementById('cd-loading').innerText = "❌ Network Error or Invalid JSON.";
-                alert("⚠️ Fetch Error:\\n" + err.message);
+                alert("⚠️ Fetch Error:\n" + err.message);
             }
         }
         async function fetchChatsList() {
@@ -3047,15 +3050,14 @@
                 else if (type.includes('user')) users.push(c);
             });
 
-            // 🟢 FIX: Added double backslashes so Python doesn't break the JS string!
-            let txt = "DESTINY TG FORWARDER - CHATS & IDs EXPORT\\n";
-            txt += "=========================================\\n\\n";
+            let txt = "DESTINY TG FORWARDER - CHATS & IDs EXPORT\n";
+            txt += "=========================================\n\n";
 
             const appendSection = (title, items) => {
                 if (items.length === 0) return;
-                txt += `--- ${title} (${items.length}) ---\\n`;
-                items.forEach(i => txt += `${i.name.replace(/\\[.*?\\]\\s*/, '')} | ID: ${i.id}\\n`);
-                txt += "\\n";
+                txt += `--- ${title} (${items.length}) ---\n`;
+                items.forEach(i => txt += `${i.name.replace(/\[.*?\]\s*/, '')} | ID: ${i.id}\n`);
+                txt += "\n";
             };
 
             appendSection("GROUPS & SUPERGROUPS", groups);
@@ -6107,7 +6109,7 @@
                 // tzStr is usually like "UTC+05:30" or "UTC-04:00"
                 let offsetMs = 0;
                 if (tzStr && tzStr !== "UTC") {
-                    const match = tzStr.match(/UTC([+-])(\\d{2}):?(\\d{2})?/);
+                    const match = tzStr.match(/UTC([+-])(\d{2}):?(\d{2})?/);
                     if (match) {
                         const sign = match[1] === '+' ? 1 : -1;
                         const hours = parseInt(match[2], 10);
