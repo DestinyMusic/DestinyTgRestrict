@@ -447,71 +447,41 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
 
             try:
                 source_ref = parsed_source.get("chat_id")
+                ACTUAL_CHAT_ID = source_ref
                 
-                # 🟢 THE PYROFORK BYPASS & DEBUG LOGGER
+                # 🟢 THE PYROFORK BYPASS (Seeding the Cache)
                 if isinstance(source_ref, str) and not str(source_ref).lstrip('-').isdigit():
                     from pyrogram.raw.functions.contacts import ResolveUsername
                     clean_user = source_ref.replace("@", "")
-                    
-                    async def _force_resolve(cl):
-                        r = await cl.invoke(ResolveUsername(username=clean_user))
-                        if r.chats:
-                            rid = r.chats[0].id
-                            is_chan = getattr(r.chats[0], "broadcast", False) or getattr(r.chats[0], "megagroup", False)
-                            return int(f"-100{rid}") if is_chan else rid
-                        elif r.users:
-                            return r.users[0].id
-                        return source_ref
+                    try: await fetcher.invoke(ResolveUsername(username=clean_user))
+                    except: pass
+                    if fetcher != client:
+                        try: await client.invoke(ResolveUsername(username=clean_user))
+                        except: pass
 
-                    try:
-                        logger.info(f"DEBUG Batch: Invoking ResolveUsername on fetcher for {clean_user}")
-                        numeric_id = await _force_resolve(fetcher)
-                        ACTUAL_CHAT_ID = numeric_id
-                        logger.info(f"DEBUG Batch: Extracted NUMERIC ID: {ACTUAL_CHAT_ID}")
-                    except Exception as e:
-                        logger.error(f"DEBUG Batch: fetcher resolve failed: {e}")
-                        if fetcher != client:
-                            try:
-                                logger.info(f"DEBUG Batch: Falling back to main client resolve...")
-                                numeric_id = await _force_resolve(client)
-                                ACTUAL_CHAT_ID = numeric_id
-                            except Exception as e2:
-                                logger.error(f"DEBUG Batch: main client resolve failed: {e2}")
-                                ACTUAL_CHAT_ID = source_ref
-                        else:
-                            ACTUAL_CHAT_ID = source_ref
-
-                    # Now that we have the numeric ID, safely get the title
-                    try:
-                        source_chat = await fetcher.get_chat(ACTUAL_CHAT_ID)
-                        source_title = source_chat.title or source_chat.first_name or str(source_ref)
-                        if getattr(source_chat, "last_name", None):
-                            source_title += f" {source_chat.last_name}"
-                    except Exception as title_err:
+                # Now get_chat will handle strings (from cache) and integers perfectly
+                try:
+                    source_chat = await fetcher.get_chat(ACTUAL_CHAT_ID)
+                    ACTUAL_CHAT_ID = source_chat.id # Pyrogram returns the exact integer ID
+                    source_title = source_chat.title or source_chat.first_name or str(source_ref)
+                    if getattr(source_chat, "last_name", None):
+                        source_title += f" {source_chat.last_name}"
+                except Exception as title_err:
+                    # 🟢 THE "TRY BOTH" ENGINE: If a raw positive integer fails, try -100!
+                    if isinstance(ACTUAL_CHAT_ID, int) and ACTUAL_CHAT_ID > 0:
+                        try:
+                            alt_id = int(f"-100{ACTUAL_CHAT_ID}")
+                            source_chat = await fetcher.get_chat(alt_id)
+                            ACTUAL_CHAT_ID = alt_id  # Officially swap to the corrected ID
+                            source_title = source_chat.title or source_chat.first_name or str(alt_id)
+                            if getattr(source_chat, "last_name", None):
+                                source_title += f" {source_chat.last_name}"
+                        except Exception:
+                            logger.warning(f"DEBUG Batch: Fallback -100 ID failed too: {title_err}")
+                            source_title = str(source_ref)
+                    else:
                         logger.warning(f"DEBUG Batch: Could not fetch title for {ACTUAL_CHAT_ID}: {title_err}")
                         source_title = str(source_ref)
-                else:
-                    # It's already numeric
-                    ACTUAL_CHAT_ID = source_ref
-                    try:
-                        source_chat = await fetcher.get_chat(ACTUAL_CHAT_ID)
-                        source_title = source_chat.title or source_chat.first_name or str(source_ref)
-                        if getattr(source_chat, "last_name", None):
-                            source_title += f" {source_chat.last_name}"
-                    except Exception:
-                        # 🟢 THE "TRY BOTH" ENGINE: If raw positive ID fails, try -100!
-                        if isinstance(ACTUAL_CHAT_ID, int) and ACTUAL_CHAT_ID > 0:
-                            try:
-                                alt_id = int(f"-100{ACTUAL_CHAT_ID}")
-                                source_chat = await fetcher.get_chat(alt_id)
-                                ACTUAL_CHAT_ID = alt_id  # Officially swap to the corrected ID
-                                source_title = source_chat.title or source_chat.first_name or str(alt_id)
-                                if getattr(source_chat, "last_name", None):
-                                    source_title += f" {source_chat.last_name}"
-                            except Exception:
-                                source_title = str(source_ref)
-                        else:
-                            source_title = str(source_ref)
 
             except Exception as e: 
                 if not acc:
