@@ -499,7 +499,19 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
                         if getattr(source_chat, "last_name", None):
                             source_title += f" {source_chat.last_name}"
                     except Exception:
-                        source_title = str(source_ref)
+                        # 🟢 THE "TRY BOTH" ENGINE: If raw positive ID fails, try -100!
+                        if isinstance(ACTUAL_CHAT_ID, int) and ACTUAL_CHAT_ID > 0:
+                            try:
+                                alt_id = int(f"-100{ACTUAL_CHAT_ID}")
+                                source_chat = await fetcher.get_chat(alt_id)
+                                ACTUAL_CHAT_ID = alt_id  # Officially swap to the corrected ID
+                                source_title = source_chat.title or source_chat.first_name or str(alt_id)
+                                if getattr(source_chat, "last_name", None):
+                                    source_title += f" {source_chat.last_name}"
+                            except Exception:
+                                source_title = str(source_ref)
+                        else:
+                            source_title = str(source_ref)
 
             except Exception as e: 
                 if not acc:
