@@ -11,69 +11,147 @@ def parse_chat_topic(value):
         return int(chat_id), int(topic_id)
     return int(value), None
 
-def _parse_source_link(link: str):
-    if not link: return None
-    link = str(link).strip()
-    
-    msg_id_end = None
-    range_match = re.search(r"\s*-\s*(\d+)$", link)
-    if range_match:
-        msg_id_end = int(range_match.group(1))
-        link = link[:range_match.start()].strip()
+def _parse_chat_target(text: str):
+    text = text.strip()
+    if text.startswith("https://t.me/") or text.startswith("http://t.me/"):
+        text = text.replace("https://", "").replace("http://", "")
+        text = text.split("t.me/", 1)[-1].split("?", 1)[0].strip("/")
+    if text.startswith("@"):
+        return text, None
+    if "/" in text:
+        chat_part, topic_part = text.split("/", 1)
+        chat_part = chat_part.strip()
+        topic_part = topic_part.strip()
+        return int(chat_part), int(topic_part) if topic_part.isdigit() else None
+    if text.lstrip("-").isdigit():
+        return int(text), None
+    return text, None
 
-    link = link.split("?")[0].strip("/")
-    has_c_prefix = "/c/" in link.lower() or "?c=" in link.lower()
-    
-    cleaned_link = re.sub(r"https?://(?:www\.)?t\.me/(?:c/)?", "", link)
-    parts = cleaned_link.split("/")
-    if not parts or not parts[0]: return None
+def _parse_source_link(src_link: str):
+    raw = (src_link or "").strip()
+    msg_range = None
 
-    if parts[0] in ["joinchat", "+"]:
-        return {"kind": "invite", "join_target": link, "chat_id": None, "topic_id": None, "msg_id": None, "msg_id_end": None}
-
-    chat_id_raw = parts[0]
-    is_numeric = chat_id_raw.lstrip("-").isdigit()
-    
-    if is_numeric:
-        chat_id = int(chat_id_raw)
-        if chat_id > 0 and has_c_prefix:
-            chat_id = int(f"-100{chat_id}")
+    # 1. First, extract the range if it exists (e.g. 190171 - 192592)
+    if "," in raw:
+        links = [l.strip() for l in raw.split(",")]
+        raw = links[0] 
+        last_link = links[-1]
+        try:
+            start_id = int(re.search(r"(\d+)(?:\?|$)", raw.rstrip("/").split("/")[-1]).group(1))
+            end_id = int(re.search(r"(\d+)(?:\?|$)", last_link.rstrip("/").split("/")[-1]).group(1))
+            if start_id <= end_id:
+                msg_range = (start_id, end_id)
+        except: pass
     else:
-        chat_id = chat_id_raw 
+        # Catch formats like ...190171 - 192592
+        m = re.search(r"(?:/|=|%3D)(\d+)\s*(?:-|to)\s*(\d+)$", raw, re.IGNORECASE)
+        if m:
+            try:
+                start_id = int(m.group(1))
+                end_id = int(m.group(2))
+                if start_id <= end_id:
+                    msg_range = (start_id, end_id)
+                # Clean the tail so the base link works normally
+                if "=" in m.group(0):
+                    raw = raw[:m.start(0)] + f"={m.group(1)}"
+                else:
+                    raw = raw[:m.start(0)] + f"/{m.group(1)}"
+            except: pass
 
-    topic_id = int(parts[1]) if len(parts) >= 3 and parts[1].isdigit() else None
-    msg_id = int(parts[2]) if len(parts) >= 3 and parts[2].isdigit() else (int(parts[1]) if len(parts) == 2 and parts[1].isdigit() else None)
+    # 2. Handle native tg://openmessage?user_id=...&message_id=...
+    if raw.startswith("tg://openmessage") or raw.startswith("tg://resolve"):
+        from urllib.parse import urlparse, parse_qs
+        parsed_url = urlparse(raw)
+        qs = parse_qs(parsed_url.query)
+        chat_target = qs.get("user_id", qs.get("domain", [None]))[0]
+        msg_id = qs.get("message_id", qs.get("post", [None]))[0]
         
+        if chat_target and str(chat_target).lstrip("-").isdigit():
+            chat_target = int(chat_target)
+            
+        if msg_id and str(msg_id).isdigit():
+            msg_id = int(msg_id)
+            
+        return {
+            "kind": "private" if isinstance(chat_target, int) else "public",
+            "join_target": chat_target,
+            "chat_id": chat_target,
+            "topic_id": None,
+            "msg_id": msg_id,
+            "msg_range": msg_range,
+        }
+
+    # 3. Standard HTTP t.me links
+    if "t.me/" in raw:
+        raw = raw.split("t.me/")[-1]
+    elif "telegram.me/" in raw:
+        raw = raw.split("telegram.me/")[-1]
+        
+    if raw.startswith("s/"):
+        raw = raw[2:]
+        
+    raw = raw.split("?", 1)[0].strip("/")
+
+    # Handle Private /c/ links
+    is_private_c = raw.startswith("c/")
+    if is_private_c:
+        clean = raw[2:]
+        parts = clean.split("/")
+        source_id = int("-100" + parts[0])
+        topic_id = int(parts[1]) if len(parts) >= 3 and parts[1].isdigit() else None
+        
+        msg_id = None
+        last_segment = parts[-1].strip()
+        if last_segment.isdigit():
+            msg_id = int(last_segment)
+            
+        return {
+            "kind": "private_c",
+            "join_target": None,
+            "chat_id": source_id,
+            "topic_id": topic_id,
+            "msg_id": msg_id,
+            "msg_range": msg_range, 
+        }
+
+    parts = raw.split("/")
+    
+    # Catch alternative t.me/b/BotName links
+    if parts[0] == "b" and len(parts) > 1:
+        parts.pop(0)
+
+    username_or_id = parts[0]
+    topic_id = int(parts[1]) if len(parts) >= 3 and parts[1].isdigit() else None
+    
+    msg_id = None
+    last_segment = parts[-1].strip()
+    if last_segment.isdigit():
+        msg_id = int(last_segment)
+
+    # 🟢 CRITICAL FIX: Convert numeric strings to actual integers for User/Bot IDs
+    if str(username_or_id).lstrip("-").isdigit():
+        chat_target = int(username_or_id)
+    else:
+        chat_target = username_or_id
+
+    if str(username_or_id).startswith("+") or "joinchat" in str(username_or_id):
+        return {
+            "kind": "invite",
+            "join_target": f"https://t.me/{raw}",
+            "chat_id": None,
+            "topic_id": topic_id,
+            "msg_id": msg_id,
+            "msg_range": msg_range,
+        }
+
     return {
-        "kind": "private_c" if is_numeric else "public",
-        "chat_id": chat_id,
-        "join_target": chat_id,
+        "kind": "public",
+        "join_target": chat_target,
+        "chat_id": chat_target,
         "topic_id": topic_id,
         "msg_id": msg_id,
-        "msg_id_end": msg_id_end
+        "msg_range": msg_range,
     }
-
-def _parse_chat_target(dest_str: str):
-    if not dest_str: return None, None
-    dest_str = str(dest_str).strip()
-    
-    has_c_prefix = "/c/" in dest_str.lower()
-    cleaned = re.sub(r"https?://(?:www\.)?t\.me/(?:c/)?", "", dest_str)
-    parts = cleaned.split("/")
-    
-    chat_id_raw = parts[0]
-    thread_id = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None
-    
-    if chat_id_raw.lstrip("-").isdigit():
-        chat_id = int(chat_id_raw)
-        if chat_id > 0 and has_c_prefix:
-            chat_id = int(f"-100{chat_id}")
-        return chat_id, thread_id
-        
-    if not chat_id_raw.startswith("@") and not chat_id_raw.lstrip("-").isdigit():
-        chat_id_raw = f"@{chat_id_raw}"
-        
-    return chat_id_raw, thread_id
 
 def _pretty_bytes(n: float) -> str:
     try:
@@ -329,6 +407,8 @@ async def get_topic_title(client, chat_id, topic_id):
 
     return f" (Topic {topic_id})"
 
+from pyrogram.raw.functions.contacts import ResolveUsername
+
 import traceback
 from pyrogram.raw.functions.contacts import ResolveUsername
 
@@ -338,9 +418,6 @@ async def check_link_restriction(user_id, link):
     logger.info(f"Target Link: {link}")
     
     parsed = _parse_source_link(link)
-    if not parsed:
-        return None, "⚠️ **Could not analyze link format.**"
-        
     chat_id = parsed.get("chat_id")
     msg_id = parsed.get("msg_id")
     logger.info(f"Parsed -> chat_id: {chat_id} (Type: {type(chat_id)}), msg_id: {msg_id}")
@@ -349,81 +426,68 @@ async def check_link_restriction(user_id, link):
         logger.error("DEBUG: Invalid link parsed.")
         return None, "Invalid Telegram link."
 
-    # 1. Determine who should test the link
-    test_client = app
-    is_temp_client = False
-    user_session = await db.get_session(user_id)
-    
-    # 🟢 AUTO-WAKEUP: If the server restarted, boot up the User Session dynamically
-    if isinstance(chat_id, int) or user_session:
-        if user_id in USER_CLIENTS and USER_CLIENTS[user_id].is_connected:
-            test_client = USER_CLIENTS[user_id]
-            logger.info("DEBUG: Using active persistent User Session.")
-        elif user_session:
-            import uuid
-            from pyrogram import Client
-            api_id = await db.get_api_id(user_id) or API_ID
-            api_hash = await db.get_api_hash(user_id) or API_HASH
-            test_client = Client(f"temp_chk_{user_id}_{uuid.uuid4().hex[:8]}", in_memory=True, session_string=user_session, api_id=api_id, api_hash=api_hash, no_updates=True, ipv6=False)
-            await test_client.start()
-            is_temp_client = True
-            logger.info("DEBUG: Woke up temporary User Session from DB for validation.")
+    test_client = USER_CLIENTS.get(user_id)
+    if not test_client or not test_client.is_connected:
+        logger.info("DEBUG: User session missing/disconnected. Using App (Main Bot).")
+        test_client = app
+    else:
+        logger.info("DEBUG: Using active User Session.")
 
     try:
-        # 1. 🟢 SEED CACHE ONLY (Do NOT mutate string usernames to raw integers)
+        # 🟢 THE ULTIMATE PYROFORK BYPASS
         if isinstance(chat_id, str) and not str(chat_id).lstrip('-').isdigit():
             clean_user = chat_id.replace("@", "")
-            try:
-                await test_client.invoke(ResolveUsername(username=clean_user))
-            except Exception as raw_e:
-                logger.error(f"DEBUG: ResolveUsername FAILED: {raw_e}")
-
-        # 2. 🟢 THE "TRY BOTH" FETCH ENGINE
-        async def smart_fetch(c, target_id):
-            try:
-                m = await c.get_messages(target_id, msg_id)
-                if m and not getattr(m, "empty", True): return m, target_id, None
-            except Exception as e: err = e
+            logger.info(f"DEBUG: Detected string username '{clean_user}'. Initiating RAW API Resolution...")
             
-            # If it failed and it's a positive number, try appending -100
-            if isinstance(target_id, int) and target_id > 0:
-                alt_id = int(f"-100{target_id}")
-                try:
-                    m = await c.get_messages(alt_id, msg_id)
-                    if m and not getattr(m, "empty", True): return m, alt_id, None
-                except Exception as e: err = e
+            try:
+                r = await test_client.invoke(ResolveUsername(username=clean_user))
+                logger.info(f"DEBUG: ResolveUsername Raw Response received!")
                 
-            return None, target_id, locals().get('err', Exception("Message missing"))
+                # EXTRACT THE NUMERIC ID MANUALLY
+                if r.chats:
+                    raw_id = r.chats[0].id
+                    is_channel = getattr(r.chats[0], "broadcast", False) or getattr(r.chats[0], "megagroup", False)
+                    chat_id = int(f"-100{raw_id}") if is_channel else raw_id
+                    logger.info(f"DEBUG: Successfully extracted NUMERIC CHAT ID: {chat_id}")
+                elif r.users:
+                    chat_id = r.users[0].id
+                    logger.info(f"DEBUG: Successfully extracted NUMERIC USER ID: {chat_id}")
+                else:
+                    logger.error("DEBUG: ResolveUsername returned no chats or users!")
+                    
+            except Exception as raw_e:
+                logger.error(f"DEBUG: ResolveUsername FAILED: {type(raw_e).__name__} -> {raw_e}")
 
-        msg, chat_id, bot_err = await smart_fetch(test_client, chat_id)
-
-        # 3. Fallback to User Session if Main Bot failed
-        if not msg and test_client == app and user_session:
-            logger.info("DEBUG: Main bot failed. Booting User Session fallback...")
-            import uuid
-            from pyrogram import Client
-            api_id = await db.get_api_id(user_id) or API_ID
-            api_hash = await db.get_api_hash(user_id) or API_HASH
-            test_client = Client(f"temp_chk2_{user_id}_{uuid.uuid4().hex[:8]}", in_memory=True, session_string=user_session, api_id=api_id, api_hash=api_hash, no_updates=True, ipv6=False)
-            await test_client.start()
-            is_temp_client = True
+        logger.info(f"DEBUG: Firing get_messages with Target ID: {chat_id} (Type: {type(chat_id)})")
+        msg = await test_client.get_messages(chat_id, msg_id)
+        
+        # Fallback to User Session if the Main Bot was blocked/blind
+        if (not msg or msg.empty) and test_client == app and user_id in USER_CLIENTS:
+            logger.info("DEBUG: Main bot returned empty message. Trying User Session...")
+            test_client = USER_CLIENTS[user_id]
             
             if isinstance(chat_id, str) and not str(chat_id).lstrip('-').isdigit():
                 clean_user = chat_id.replace("@", "")
-                try: await test_client.invoke(ResolveUsername(username=clean_user))
-                except Exception: pass
-            
-            msg, chat_id, bot_err = await smart_fetch(test_client, chat_id)
+                try:
+                    r = await test_client.invoke(ResolveUsername(username=clean_user))
+                    if r.chats:
+                        raw_id = r.chats[0].id
+                        is_channel = getattr(r.chats[0], "broadcast", False) or getattr(r.chats[0], "megagroup", False)
+                        chat_id = int(f"-100{raw_id}") if is_channel else raw_id
+                    elif r.users:
+                        chat_id = r.users[0].id
+                except Exception as e:
+                    logger.error(f"DEBUG: User Session ResolveUsername FAILED: {e}")
+                    
+            logger.info(f"DEBUG: Firing User Session get_messages with Target ID: {chat_id}")
+            msg = await test_client.get_messages(chat_id, msg_id)
 
-        if bot_err:
-            raise bot_err
-
-        if not msg or getattr(msg, "empty", True):
-            logger.error("DEBUG: get_messages returned empty!")
+        if not msg or msg.empty:
+            logger.error("DEBUG: get_messages returned completely empty!")
             return None, "Message is missing, deleted, or inaccessible."
             
         is_content_protected = getattr(msg, "has_protected_content", False) or getattr(msg.chat, "has_protected_content", False)
-        logger.info(f"DEBUG: Message found! Protected: {is_content_protected}")
+        logger.info(f"DEBUG: Message found! Protected Content: {is_content_protected}")
         
         status_text = "🔒 **Restricted Content**" if is_content_protected else "🔓 **Unrestricted Content**"
         logger.info("========== DEBUG: VALIDATION SUCCESS ==========")
@@ -431,20 +495,8 @@ async def check_link_restriction(user_id, link):
         
     except Exception as e:
         logger.error(f"========== DEBUG: VALIDATION CRASH ==========\n{traceback.format_exc()}")
-        err_str = str(e).lower()
-        if "channel_invalid" in err_str or "channel_private" in err_str or "user_not_participant" in err_str:
-            return None, "⚠️ **Private Chat:** I cannot access this. Please run `/login` so I can use your account to read it."
-        elif "username_not_found" in err_str or "peer_id_invalid" in err_str:
-            return None, "❌ **Access Blocked:** Telegram cannot find this chat. It may be geo-blocked, deleted, or you are not a member."
-        
-        # 🟢 FIX: Removed the backslash and separated the string logic to satisfy Python 3.11 syntax rules
-        clean_err = str(e).replace("KeyError:", "").replace('"', '').strip()
-        return None, clean_err
-        
-    finally:
-        if is_temp_client:
-            try: await test_client.stop()
-            except: pass
+        err_str = str(e).replace("KeyError:", "").replace("'", "").strip()
+        return None, f"{err_str}"
 
 async def split_file_python(file_path, chunk_size=2000*1024*1024):
     loop = asyncio.get_running_loop()
