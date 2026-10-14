@@ -825,6 +825,18 @@ async def _api_add_watcher(request):
             if parsed.get("topic_id"): 
                 source_title += await get_topic_title(user_client, source_id, parsed["topic_id"])
         except Exception:
+            # 🟢 THE "TRY BOTH" ENGINE: If raw positive ID fails, try -100!
+            if isinstance(source_id, int) and source_id > 0:
+                try:
+                    alt_id = int(f"-100{source_id}")
+                    chat = await user_client.get_chat(alt_id)
+                    source_id = chat.id  # Officially swap to the corrected ID
+                    source_title = chat.title or getattr(chat, "first_name", None) or str(source_id)
+                    if parsed.get("topic_id"): 
+                        source_title += await get_topic_title(user_client, source_id, parsed["topic_id"])
+                except Exception:
+                    pass
+            
             if not isinstance(source_id, int) and not (isinstance(source_id, str) and str(source_id).lstrip('-').isdigit()):
                 return web.json_response({"status": "error", "message": f"Could not extract numeric ID for username '{target_ref}'."}, status=400)
             
