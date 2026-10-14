@@ -449,38 +449,47 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
                 source_ref = parsed_source.get("chat_id")
                 ACTUAL_CHAT_ID = source_ref
                 
-                # 🟢 THE PYROFORK BYPASS (Seeding the Cache)
+                # 🟢 INTELLIGENT CACHE INJECTION
                 if isinstance(source_ref, str) and not str(source_ref).lstrip('-').isdigit():
                     from pyrogram.raw.functions.contacts import ResolveUsername
                     clean_user = source_ref.replace("@", "")
-                    try: await fetcher.invoke(ResolveUsername(username=clean_user))
-                    except: pass
-                    if fetcher != client:
-                        try: await client.invoke(ResolveUsername(username=clean_user))
+                    
+                    async def inject_peer(cl):
+                        try:
+                            r = await cl.invoke(ResolveUsername(username=clean_user))
+                            if getattr(r, "users", None):
+                                await cl.storage.update_peers(r.users) # Force-feed memory
+                                return r.users[0].id
+                            if getattr(r, "chats", None):
+                                await cl.storage.update_peers(r.chats) # Force-feed memory
+                                c = r.chats[0]
+                                return int(f"-100{c.id}") if getattr(c, "broadcast", False) or getattr(c, "megagroup", False) else int(f"-{c.id}")
                         except: pass
+                        return source_ref
 
-                # Now get_chat will handle strings (from cache) and integers perfectly
+                    ACTUAL_CHAT_ID = await inject_peer(fetcher)
+                    if fetcher != client:
+                        await inject_peer(client)
+
                 try:
                     source_chat = await fetcher.get_chat(ACTUAL_CHAT_ID)
-                    ACTUAL_CHAT_ID = source_chat.id # Pyrogram returns the exact integer ID
+                    ACTUAL_CHAT_ID = source_chat.id 
                     source_title = source_chat.title or source_chat.first_name or str(source_ref)
                     if getattr(source_chat, "last_name", None):
                         source_title += f" {source_chat.last_name}"
                 except Exception as title_err:
-                    # 🟢 THE "TRY BOTH" ENGINE: If a raw positive integer fails, try -100!
+                    # 🟢 THE "TRY BOTH" ENGINE
                     if isinstance(ACTUAL_CHAT_ID, int) and ACTUAL_CHAT_ID > 0:
                         try:
                             alt_id = int(f"-100{ACTUAL_CHAT_ID}")
                             source_chat = await fetcher.get_chat(alt_id)
-                            ACTUAL_CHAT_ID = alt_id  # Officially swap to the corrected ID
+                            ACTUAL_CHAT_ID = alt_id
                             source_title = source_chat.title or source_chat.first_name or str(alt_id)
                             if getattr(source_chat, "last_name", None):
                                 source_title += f" {source_chat.last_name}"
                         except Exception:
-                            logger.warning(f"DEBUG Batch: Fallback -100 ID failed too: {title_err}")
                             source_title = str(source_ref)
                     else:
-                        logger.warning(f"DEBUG Batch: Could not fetch title for {ACTUAL_CHAT_ID}: {title_err}")
                         source_title = str(source_ref)
 
             except Exception as e: 
