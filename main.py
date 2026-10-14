@@ -88,7 +88,7 @@ from pyrogram.errors import (
     FloodWait, UserIsBlocked, InputUserDeactivated, UserAlreadyParticipant,
     InviteHashExpired, UsernameNotOccupied, FileReferenceExpired, UserNotParticipant,
     ApiIdInvalid, PhoneNumberInvalid, PhoneCodeInvalid, PhoneCodeExpired,
-    SessionPasswordNeeded, PasswordHashInvalid, PeerIdInvalid, AuthKeyUnregistered, UserDeactivated
+    SessionPasswordNeeded, PasswordHashInvalid, PeerIdInvalid, AuthKeyUnregistered, AuthKeyDuplicated, UserDeactivated
 )
 from pyrogram import StopPropagation
 from pyrogram.types import (
@@ -613,33 +613,11 @@ async def main():
         user_client = None
         try:
             logger.info(f"👤 Starting User Session for: {user_id}")
-            
-            u_api = await db.get_api_id(user_id) or API_ID
-            u_hash = await db.get_api_hash(user_id) or API_HASH
-            
-            user_client = Client(
-                f"User_{user_id}", 
-                session_string=user_session, 
-                api_id=u_api, 
-                api_hash=u_hash, 
-                workers=100,
-                sleep_threshold=120,
-                ipv6=False,
-                no_updates=False,
-                device_model="DestinyTgRestrict",
-                app_version="DestinyTgRestrict 1.0",
-                system_version="Linux",
-                **get_transmission_kwargs(workers=100, is_bot=False)
-            )
-            
-            user_client.add_handler(MessageHandler(user_watcher_handler, is_watched_chat))
-            
-            await user_client.start()
-            USER_CLIENTS[user_id] = user_client
-            logger.info(f"✅ Active: {user_id}")
-            
-        except (AuthKeyUnregistered, UserDeactivated):
-            logger.warning(f"❌ Session {user_id} was revoked. Auto-deleting...")
+            user_client = await ensure_user_client(user_id)
+            if user_client:
+                logger.info(f"✅ Active: {user_id}")
+        except (AuthKeyUnregistered, AuthKeyDuplicated, UserDeactivated):
+            logger.warning(f"❌ Session {user_id} was revoked or duplicated. Auto-deleting...")
             await auto_wipe_dead_session(user_client, user_id)
         except Exception as e:
             logger.error(f"❌ Failed to load {user_id}: {e}")
