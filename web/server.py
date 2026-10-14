@@ -802,12 +802,19 @@ async def _api_add_watcher(request):
 
         source_id = target_ref
         
-        # 🟢 THE PYROFORK BYPASS (Seeding the Cache, DO NOT Mutate the String)
+        # 🟢 INTELLIGENT CACHE INJECTION
         if isinstance(target_ref, str) and not str(target_ref).lstrip('-').isdigit():
             from pyrogram.raw.functions.contacts import ResolveUsername
             clean_user = target_ref.replace("@", "")
             try:
-                await user_client.invoke(ResolveUsername(username=clean_user))
+                r = await user_client.invoke(ResolveUsername(username=clean_user))
+                if getattr(r, "users", None):
+                    await user_client.storage.update_peers(r.users)
+                    source_id = r.users[0].id
+                elif getattr(r, "chats", None):
+                    await user_client.storage.update_peers(r.chats)
+                    c = r.chats[0]
+                    source_id = int(f"-100{c.id}") if getattr(c, "broadcast", False) or getattr(c, "megagroup", False) else int(f"-{c.id}")
             except Exception:
                 pass
 
@@ -818,12 +825,12 @@ async def _api_add_watcher(request):
             if parsed.get("topic_id"): 
                 source_title += await get_topic_title(user_client, source_id, parsed["topic_id"])
         except Exception:
-            # 🟢 THE "TRY BOTH" ENGINE: If a raw positive integer fails, try -100!
+            # 🟢 THE "TRY BOTH" ENGINE
             if isinstance(source_id, int) and source_id > 0:
                 try:
                     alt_id = int(f"-100{source_id}")
                     chat = await user_client.get_chat(alt_id)
-                    source_id = chat.id  # Officially swap to the corrected ID
+                    source_id = chat.id  
                     source_title = chat.title or getattr(chat, "first_name", None) or str(source_id)
                     if parsed.get("topic_id"): 
                         source_title += await get_topic_title(user_client, source_id, parsed["topic_id"])
