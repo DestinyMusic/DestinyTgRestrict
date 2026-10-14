@@ -135,14 +135,29 @@ async def watcher_worker_loop(wid_str):
 
             processed_successfully = False
 
-            # 🟢 Determine Uploader early so we can show it in the UI even if restricted
+            has_custom_thumb = bool(watcher.get("thumb_file_id") or watcher.get("thumb_b64"))
+            has_cleanup_tags = bool(watcher.get("cleanup_keywords"))
+            needs_reupload = bool(is_restricted or is_content_protected or has_custom_thumb or has_cleanup_tags)
+
+            # 🟢 Determine Uploader accurately
             is_dest_dm = isinstance(dest_id, int) and dest_id > 0
             upload_client = owner_client if (is_dest_dm and owner_client) else app
             worker_bots = USER_TASK_BOTS.get(owner_id, [])
             if worker_bots and not is_dest_dm:
                 connected_workers = [wb for wb in worker_bots if getattr(wb, "is_connected", False)]
                 if connected_workers:
-                    upload_client = connected_workers[int(time.time()) % len(connected_workers)]
+                    cand_worker = connected_workers[int(time.time()) % len(connected_workers)]
+                    if needs_reupload:
+                        # For download+upload, Worker Bot only needs access to Destination
+                        upload_client = cand_worker
+                    else:
+                        # For direct fast-copy, Worker Bot MUST have access to Source too!
+                        try:
+                            await resolve_and_cache_peer(cand_worker, source_id)
+                            await cand_worker.get_chat(source_id)
+                            upload_client = cand_worker
+                        except Exception:
+                            upload_client = owner_client if owner_client else app
 
             # 🟢 Inject fetcher/uploader into DB for UI rendering
             await db.db.watchers.update_one(
@@ -150,10 +165,7 @@ async def watcher_worker_loop(wid_str):
                 {"$set": {"fetcher": _get_client_label(fetcher), "uploader": _get_client_label(upload_client)}}
             )
 
-            has_custom_thumb = bool(watcher.get("thumb_file_id") or watcher.get("thumb_b64"))
-            has_cleanup_tags = bool(watcher.get("cleanup_keywords"))
-
-            if not is_restricted and not is_content_protected and not has_custom_thumb and not has_cleanup_tags:
+            if not needs_reupload:
                 if getattr(msg, "media_group_id", None):
                     group_cache_key = f"{owner_id}_{source_id}_{msg.media_group_id}_{dest_id}_{dest_thread}"
                     if WATCHER_MEDIA_GROUPS.get(group_cache_key):
@@ -338,7 +350,16 @@ async def watcher_worker_loop(wid_str):
                         allowed_types=allowed_types
                     )
                 finally:
-                    result_reason = ACTIVE_PROCESSES.get(owner_id, {}).get(task_uuid, {}).get("last_result_reason")
+                    t_state = ACTIVE_PROCESSES.get(owner_id, {}).get(task_uuid, {})
+                    result_reason = t_state.get("last_result_reason")
+                    actual_f = t_state.get("fetcher")
+                    actual_u = t_state.get("uploader")
+                    if actual_f or actual_u:
+                        upd = {}
+                        if actual_f: upd["fetcher"] = actual_f
+                        if actual_u and "Pending" not in actual_u: upd["uploader"] = actual_u
+                        if upd:
+                            await db.db.watchers.update_one({"_id": watcher_db_id}, {"$set": upd})
                     cleanup_task_memory(owner_id, task_uuid)
 
                 if result == "SUCCESS" or result is True:
