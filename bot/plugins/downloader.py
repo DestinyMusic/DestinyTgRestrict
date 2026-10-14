@@ -1640,8 +1640,6 @@ async def finalize_watcher_setup(client, message, data, delay, user_id=None):
             or str(chat_type) in ["ChatType.PRIVATE", "ChatType.BOT"]
             or (isinstance(source_id, int) and source_id > 0)
         )
-        if is_private_source:
-            data["is_restricted"] = True
 
         # 🟢 Preserve specific group topic ID for Forum Supergroups
         final_source_thread = None if is_private_source else (data.get("source_thread_id") or parsed.get("topic_id"))
