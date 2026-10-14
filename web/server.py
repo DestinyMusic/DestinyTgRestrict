@@ -804,8 +804,6 @@ async def _api_add_watcher(request):
 
         # 🟢 Safely resolve and cache peer without crashing storage.update_peers
         source_id, peer_kind = await resolve_and_cache_peer(user_client, target_ref)
-        if peer_kind in ("bot", "user") or (isinstance(source_id, int) and source_id > 0):
-            is_restricted = True
 
         chat = None
         try:
@@ -836,7 +834,6 @@ async def _api_add_watcher(request):
             or (isinstance(source_id, int) and source_id > 0)
         )
         if is_private_source:
-            is_restricted = True
             source_thread = None
         elif source_thread:
             source_title += await get_topic_title(user_client, source_id, source_thread)
