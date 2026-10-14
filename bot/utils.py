@@ -332,119 +332,252 @@ async def get_topic_title(client, chat_id, topic_id):
 import traceback
 from pyrogram.raw.functions.contacts import ResolveUsername
 
-async def check_link_restriction(user_id, link):
+async def ensure_user_client(user_id: int):
+    """Wakes up and keeps the persistent User Session alive in USER_CLIENTS."""
+    if not user_id:
+        return None
+    uclient = USER_CLIENTS.get(user_id)
+    if uclient and getattr(uclient, "is_connected", False):
+        return uclient
+
+    user_session = await db.get_session(user_id)
+    if not user_session:
+        return None
+
+    try:
+        from pyrogram import Client
+        from pyrogram.handlers import MessageHandler
+        api_id = await db.get_api_id(user_id) or API_ID
+        api_hash = await db.get_api_hash(user_id) or API_HASH
+        uclient = Client(
+            f"User_{user_id}",
+            session_string=user_session,
+            api_id=api_id,
+            api_hash=api_hash,
+            workers=100,
+            sleep_threshold=120,
+            ipv6=False,
+            no_updates=False,
+            device_model="DestinyTgRestrict",
+            app_version="DestinyTgRestrict 1.0",
+            system_version="Linux",
+            **get_transmission_kwargs(workers=100, is_bot=False)
+        )
+        if "user_watcher_handler" in globals() and "is_watched_chat" in globals():
+            uclient.add_handler(MessageHandler(user_watcher_handler, is_watched_chat))
+        await uclient.start()
+        USER_CLIENTS[user_id] = uclient
+        logger.info(f"✅ Woke up persistent User Session for user {user_id}")
+        return uclient
+    except Exception as e:
+        logger.error(f"Failed to wake up User Session for {user_id}: {e}")
+        return None
+
+
+async def _safe_store_peer(client, peer_id, access_hash, peer_type, username=None, phone=None):
+    """Safely writes peer to Pyrogram/Kurigram storage regardless of 4-tuple or 5-tuple signature."""
+    for tuple_cand in (
+        [(peer_id, access_hash, peer_type, username, phone)],
+        [(peer_id, access_hash, peer_type, phone)],
+    ):
+        try:
+            await client.storage.update_peers(tuple_cand)
+            return
+        except Exception:
+            continue
+
+
+async def resolve_and_cache_peer(client, target_ref):
+    """
+    Resolves a username or ID and caches its access_hash into Pyrogram storage
+    without crashing. Returns (numeric_id, peer_kind).
+    """
+    if not client or target_ref is None:
+        return target_ref, "unknown"
+
+    if isinstance(target_ref, str) and not target_ref.lstrip("-").isdigit():
+        clean_user = target_ref.replace("@", "").strip()
+
+        # 1. Try native resolve_peer first (uses local cache if known)
+        try:
+            peer = await client.resolve_peer(clean_user)
+            if hasattr(peer, "channel_id"):
+                return int(f"-100{peer.channel_id}"), "channel"
+            elif hasattr(peer, "user_id"):
+                p_type = "bot" if clean_user.lower().endswith("bot") else "user"
+                return int(peer.user_id), p_type
+            elif hasattr(peer, "chat_id"):
+                return int(f"-{peer.chat_id}"), "group"
+        except Exception:
+            pass
+
+        # 2. Fallback to Raw ResolveUsername + safe tuple storage injection
+        try:
+            r = await client.invoke(ResolveUsername(username=clean_user))
+            if getattr(r, "users", None):
+                u = r.users[0]
+                p_type = "bot" if getattr(u, "bot", False) else "user"
+                await _safe_store_peer(
+                    client, int(u.id), getattr(u, "access_hash", 0),
+                    p_type, getattr(u, "username", None) or clean_user.lower(), getattr(u, "phone", None)
+                )
+                return int(u.id), p_type
+            elif getattr(r, "chats", None):
+                c = r.chats[0]
+                is_ch = getattr(c, "broadcast", False) or getattr(c, "megagroup", False) or hasattr(c, "access_hash")
+                full_id = int(f"-100{c.id}") if is_ch else int(f"-{c.id}")
+                p_type = "channel" if getattr(c, "broadcast", False) else ("supergroup" if is_ch else "group")
+                await _safe_store_peer(
+                    client, full_id, getattr(c, "access_hash", 0),
+                    p_type, getattr(c, "username", None) or clean_user.lower(), None
+                )
+                return full_id, p_type
+        except Exception as raw_e:
+            logger.warning(f"DEBUG: ResolveUsername failed on {getattr(client, 'name', 'client')} for {clean_user}: {raw_e}")
+
+    if isinstance(target_ref, str) and target_ref.lstrip("-").isdigit():
+        target_ref = int(target_ref)
+
+    if isinstance(target_ref, int):
+        if target_ref > 0:
+            return target_ref, "user"
+        elif str(target_ref).startswith("-100"):
+            return target_ref, "channel"
+        else:
+            return target_ref, "group"
+
+    return target_ref, "unknown"
+
+
+async def check_link_restriction(user_id, link, is_watcher=False):
     """Returns (is_restricted, status_text_or_error_message)."""
-    logger.info(f"========== DEBUG: INTELLIGENT LINK VALIDATION START ==========")
-    logger.info(f"Target Link: {link}")
-    
+    logger.info("========== DEBUG: LINK VALIDATION START ==========")
+    logger.info(f"Target Link: {link} (is_watcher={is_watcher})")
+
     parsed = _parse_source_link(link)
     if not parsed:
         return None, "⚠️ **Could not analyze link format.**"
-        
-    chat_id = parsed.get("chat_id")
-    msg_id = parsed.get("msg_id")
-    logger.info(f"Parsed -> Target: {chat_id} (Type: {type(chat_id)}), Msg: {msg_id}")
 
-    if not chat_id or not msg_id:
+    raw_chat_id = parsed.get("chat_id")
+    msg_id = parsed.get("msg_id")
+    is_range = bool(parsed.get("msg_id_end"))
+    logger.info(f"Parsed -> chat_id: {raw_chat_id} (Type: {type(raw_chat_id)}), msg_id: {msg_id}")
+
+    if not raw_chat_id or (not msg_id and not is_watcher):
+        logger.error("DEBUG: Invalid link parsed.")
         return None, "Invalid Telegram link."
 
-    # 1. ALWAYS PREFER USER SESSION FIRST (Because it has access to DMs, Private Chats, and Joined Channels)
-    test_client = app
-    is_temp_client = False
-    user_session = await db.get_session(user_id)
-    
-    if user_id in USER_CLIENTS and getattr(USER_CLIENTS[user_id], "is_connected", False):
-        test_client = USER_CLIENTS[user_id]
-        logger.info("DEBUG: Using active persistent User Session.")
-    elif user_session:
-        import uuid
-        from pyrogram import Client
-        api_id = await db.get_api_id(user_id) or API_ID
-        api_hash = await db.get_api_hash(user_id) or API_HASH
-        test_client = Client(f"temp_chk_{user_id}_{uuid.uuid4().hex[:8]}", in_memory=True, session_string=user_session, api_id=api_id, api_hash=api_hash, no_updates=True, ipv6=False)
-        await test_client.start()
-        is_temp_client = True
-        logger.info("DEBUG: Woke up temporary User Session from DB.")
-    else:
-        logger.info("DEBUG: No User Session found. Using Main Bot.")
+    # 1. Always wake up and prefer the persistent User Session first!
+    uclient = await ensure_user_client(user_id)
+    primary_client = uclient if uclient else app
+    logger.info(f"DEBUG: Primary validation client -> {getattr(primary_client, 'name', 'App')} (User Session Active: {bool(uclient)})")
 
     try:
-        # 2. INTELLIGENT CACHE INJECTION (Resolves & Memorizes String Usernames)
-        if isinstance(chat_id, str) and not str(chat_id).lstrip('-').isdigit():
-            clean_user = chat_id.replace("@", "")
-            logger.info(f"DEBUG: Resolving string username: {clean_user}")
-            try:
-                r = await test_client.invoke(ResolveUsername(username=clean_user))
-                if getattr(r, "users", None):
-                    await test_client.storage.update_peers(r.users) # Force-feed memory
-                    chat_id = r.users[0].id
-                elif getattr(r, "chats", None):
-                    await test_client.storage.update_peers(r.chats) # Force-feed memory
-                    c = r.chats[0]
-                    chat_id = int(f"-100{c.id}") if getattr(c, "broadcast", False) or getattr(c, "megagroup", False) else int(f"-{c.id}")
-                logger.info(f"DEBUG: Successfully resolved to ID: {chat_id}")
-            except Exception as raw_e:
-                logger.error(f"DEBUG: ResolveUsername FAILED: {raw_e}")
+        # 2. Resolve and properly cache the peer in storage
+        chat_id, peer_kind = await resolve_and_cache_peer(primary_client, raw_chat_id)
+        if primary_client != app and isinstance(raw_chat_id, str) and not str(raw_chat_id).lstrip("-").isdigit():
+            await resolve_and_cache_peer(app, raw_chat_id)
 
-        # 3. THE "TRY BOTH" FETCH ENGINE
+        logger.info(f"DEBUG: Resolved Target ID: {chat_id} (Kind: {peer_kind})")
+
+        # 3. Bot DM / Private User DM handling (e.g. https://t.me/justsagaraf2bot/222151)
+        is_dm_source = peer_kind in ("bot", "user") or (isinstance(chat_id, int) and chat_id > 0)
+        if is_dm_source:
+            if not uclient:
+                return None, "⚠️ **Bot/Private DM:** Please connect your Telegram Session in Settings so I can read messages from your private/bot chat."
+            if msg_id:
+                try:
+                    msg = await uclient.get_messages(chat_id, msg_id)
+                    if msg and not getattr(msg, "empty", True):
+                        logger.info(f"DEBUG: Bot/User DM message {msg_id} verified via User Session!")
+                        return True, "🔒 **Bot/Private DM (User Session Routed)**"
+                except Exception as dm_e:
+                    logger.warning(f"DEBUG: DM get_messages error: {dm_e}")
+
+            if is_watcher or is_range:
+                try:
+                    await uclient.get_chat(chat_id)
+                    logger.info("DEBUG: Bot/User DM chat verified for Watcher/Range!")
+                    return True, "🔒 **Bot/Private DM (User Session Routed)**"
+                except Exception as e:
+                    return None, f"❌ **Cannot access Bot/User DM:** {e}"
+
+            return None, "Message is missing, deleted, or inaccessible in this Bot/User DM."
+
+        # 4. Channel / Supergroup / Group Fetch Helper
         async def smart_fetch(c, target_id):
+            if not msg_id:
+                return None, target_id, None
+            try:
+                await c.get_chat(target_id)
+            except Exception:
+                pass
             try:
                 m = await c.get_messages(target_id, msg_id)
-                if m and not getattr(m, "empty", True): return m, target_id, None
-            except Exception as e: err = e
-            
-            # If it failed and it's a positive number, try appending -100
+                if m and not getattr(m, "empty", True):
+                    return m, target_id, None
+            except Exception as e:
+                err = e
+
             if isinstance(target_id, int) and target_id > 0:
                 alt_id = int(f"-100{target_id}")
                 try:
-                    m = await c.get_messages(alt_id, msg_id)
-                    if m and not getattr(m, "empty", True): return m, alt_id, None
-                except Exception as e: err = e
-                
-            return None, target_id, locals().get('err', Exception("Message missing"))
-
-        msg, chat_id, bot_err = await smart_fetch(test_client, chat_id)
-
-        # 4. Fallback to User Session if Main Bot failed
-        if (not msg or getattr(msg, "empty", True)) and test_client == app and user_session:
-            logger.info("DEBUG: Main bot failed to read. Booting User Session fallback...")
-            import uuid
-            from pyrogram import Client
-            api_id = await db.get_api_id(user_id) or API_ID
-            api_hash = await db.get_api_hash(user_id) or API_HASH
-            test_client = Client(f"temp_chk2_{user_id}_{uuid.uuid4().hex[:8]}", in_memory=True, session_string=user_session, api_id=api_id, api_hash=api_hash, no_updates=True, ipv6=False)
-            await test_client.start()
-            is_temp_client = True
-            
-            if isinstance(chat_id, str) and not str(chat_id).lstrip('-').isdigit():
-                clean_user = chat_id.replace("@", "")
+                    await c.get_chat(alt_id)
+                except Exception:
+                    pass
                 try:
-                    r = await test_client.invoke(ResolveUsername(username=clean_user))
-                    if getattr(r, "users", None):
-                        await test_client.storage.update_peers(r.users)
-                        chat_id = r.users[0].id
-                    elif getattr(r, "chats", None):
-                        await test_client.storage.update_peers(r.chats)
-                        c = r.chats[0]
-                        chat_id = int(f"-100{c.id}") if getattr(c, "broadcast", False) or getattr(c, "megagroup", False) else int(f"-{c.id}")
-                except Exception: pass
-            
-            msg, chat_id, bot_err = await smart_fetch(test_client, chat_id)
+                    m = await c.get_messages(alt_id, msg_id)
+                    if m and not getattr(m, "empty", True):
+                        return m, alt_id, None
+                except Exception as e:
+                    err = e
 
-        if bot_err:
-            raise bot_err
+            return None, target_id, locals().get("err", None)
 
-        if not msg or getattr(msg, "empty", True):
-            logger.error("DEBUG: get_messages returned empty!")
-            return None, "Message is missing, deleted, or inaccessible."
-            
-        is_content_protected = getattr(msg, "has_protected_content", False) or getattr(msg.chat, "has_protected_content", False)
-        logger.info(f"DEBUG: Message found! Protected Content: {is_content_protected}")
-        
-        status_text = "🔒 **Restricted Content**" if is_content_protected else "🔓 **Unrestricted Content**"
-        logger.info("========== DEBUG: VALIDATION SUCCESS ==========")
-        return is_content_protected, status_text
-        
+        msg, chat_id, fetch_err = await smart_fetch(primary_client, chat_id)
+
+        # Fallback to User Session if Main Bot failed
+        if not msg and primary_client != uclient and uclient:
+            chat_id, _ = await resolve_and_cache_peer(uclient, raw_chat_id)
+            msg, chat_id, fetch_err = await smart_fetch(uclient, chat_id)
+
+        # Fallback to Main Bot if User Session returned empty on a public chat
+        if not msg and primary_client != app:
+            msg, chat_id, _ = await smart_fetch(app, chat_id)
+
+        if msg and not getattr(msg, "empty", True):
+            is_content_protected = (
+                getattr(msg, "has_protected_content", False)
+                or getattr(msg.chat, "has_protected_content", False)
+            )
+            logger.info(f"DEBUG: Message {msg.id} found! Protected: {is_content_protected}")
+            status_text = "🔒 **Restricted Content**" if is_content_protected else "🔓 **Unrestricted Content**"
+            logger.info("========== DEBUG: VALIDATION SUCCESS ==========")
+            return is_content_protected, status_text
+
+        # 5. If the sample msg_id was deleted, still allow Watchers & Batch Ranges if the Chat itself is accessible
+        if is_watcher or is_range:
+            chat_obj = None
+            for c in ([uclient, app] if uclient else [app]):
+                try:
+                    chat_obj = await c.get_chat(chat_id)
+                    if chat_obj:
+                        break
+                except Exception:
+                    continue
+
+            if chat_obj:
+                is_content_protected = getattr(chat_obj, "has_protected_content", False)
+                logger.info(f"DEBUG: Sample msg_id {msg_id} was deleted, but Chat {chat_id} is valid! Protected: {is_content_protected}")
+                status_text = "🔒 **Restricted Content**" if is_content_protected else "🔓 **Unrestricted Content**"
+                return is_content_protected, status_text
+
+        if fetch_err:
+            raise fetch_err
+
+        logger.error("DEBUG: get_messages returned completely empty!")
+        return None, "Message is missing, deleted, or inaccessible."
+
     except Exception as e:
         logger.error(f"========== DEBUG: VALIDATION CRASH ==========\n{traceback.format_exc()}")
         err_str = str(e).lower()
@@ -452,14 +585,9 @@ async def check_link_restriction(user_id, link):
             return None, "⚠️ **Private Chat:** I cannot access this. Please run `/login` so I can use your account to read it."
         elif "username_not_found" in err_str or "peer_id_invalid" in err_str:
             return None, "❌ **Access Blocked:** Telegram cannot find this chat. It may be geo-blocked, deleted, or you are not a member."
-        
+
         clean_err = str(e).replace("KeyError:", "").replace('"', '').strip()
         return None, clean_err
-        
-    finally:
-        if is_temp_client:
-            try: await test_client.stop()
-            except: pass
 
 async def split_file_python(file_path, chunk_size=2000*1024*1024):
     loop = asyncio.get_running_loop()
@@ -527,17 +655,26 @@ async def resolve_task_clients(user_id, source_link, dest_chat_id, needs_reuploa
     Accurately identifies In (fetcher) and Out (forwarder/uploader) without 
     triggering failing API attempts or breaking delays.
     """
-    user_client = USER_CLIENTS.get(user_id)
+    user_client = await ensure_user_client(user_id)
     worker_bots = USER_TASK_BOTS.get(user_id, [])
     parsed = _parse_source_link(source_link)
-    
-    is_private_src = parsed.get("kind") in ["private_c", "private"] or (isinstance(parsed.get("chat_id"), int) and parsed.get("chat_id") > 0)
-    
+
+    raw_src = parsed.get("chat_id")
+    src_id, peer_kind = await resolve_and_cache_peer(user_client or app, raw_src)
+
+    is_private_src = (
+        parsed.get("kind") in ["private_c", "private"]
+        or peer_kind in ["bot", "user"]
+        or (isinstance(src_id, int) and src_id > 0)
+    )
+
+    if is_private_src and peer_kind in ["bot", "user"]:
+        needs_reupload = True
+
     # 1. Resolve Fetcher (In)
-    fetcher = user_client if (is_private_src and user_client) else app
-    
+    fetcher = user_client if user_client else app
+
     # 2. Resolve Forwarder/Uploader (Out)
-    # If content needs physical re-upload (restricted / custom thumb / cleanup keywords):
     if needs_reupload:
         uploader = user_client or app
         for wb in worker_bots:
@@ -551,26 +688,21 @@ async def resolve_task_clients(user_id, source_link, dest_chat_id, needs_reuploa
         return fetcher, uploader
 
     # 3. Direct Fast Forwarding (Unrestricted & No Metadata Cleaning):
-    # The client MUST have access to BOTH source and destination!
     forwarder = None
-    
-    # Check if a Worker Bot can access BOTH Source AND Destination
     if not is_private_src and worker_bots:
         for wb in worker_bots:
             try:
                 if not getattr(wb, "is_connected", False): await wb.connect()
                 dest_mb = await wb.get_chat_member(dest_chat_id, "me")
                 if dest_mb.status in [enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER]:
-                    # Test source access
-                    await wb.get_chat(parsed.get("chat_id") or parsed.get("join_target"))
+                    await wb.get_chat(raw_src)
                     forwarder = wb
                     break
             except Exception: pass
-            
-    # If source is private OR worker bots cannot access source: MUST use User Session!
+
     if not forwarder:
         forwarder = user_client if user_client else app
-        
+
     return forwarder, forwarder
         
 def progress(current, total, typ, task_uuid=None):
