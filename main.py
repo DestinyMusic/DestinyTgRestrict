@@ -616,8 +616,8 @@ async def main():
             user_client = await ensure_user_client(user_id)
             if user_client:
                 logger.info(f"✅ Active: {user_id}")
-        except (AuthKeyUnregistered, AuthKeyDuplicated, UserDeactivated):
-            logger.warning(f"❌ Session {user_id} was revoked or duplicated. Auto-deleting...")
+        except (AuthKeyUnregistered, UserDeactivated):
+            logger.warning(f"❌ Session {user_id} was revoked. Auto-deleting...")
             await auto_wipe_dead_session(user_client, user_id)
         except Exception as e:
             logger.error(f"❌ Failed to load {user_id}: {e}")
