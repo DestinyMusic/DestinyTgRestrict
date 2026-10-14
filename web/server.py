@@ -1236,29 +1236,9 @@ async def _api_chats_handler(request):
     if not session_str:
         return web.json_response({"status": "error", "message": "Not connected to Telegram. Please login."})
 
-    uclient = USER_CLIENTS.get(uid)
-    
-    # 🟢 DYNAMIC WAKE-UP: Keep the main user session alive so we don't lose Access Hashes!
-    if not uclient or not uclient.is_connected:
-        try:
-            api_id = await db.get_api_id(uid) or API_ID
-            api_hash = await db.get_api_hash(uid) or API_HASH
-            uclient = Client(
-                 f"User_{uid}", 
-                 session_string=session_str, 
-                 api_id=api_id, 
-                 api_hash=api_hash, 
-                 workers=100, 
-                 ipv6=False,
-                 device_model="DestinyTgRestrict",
-                 app_version="DestinyTgRestrict 1.0",
-                 system_version="Linux"
-            )
-            uclient.add_handler(MessageHandler(user_watcher_handler, is_watched_chat))
-            await uclient.start()
-            USER_CLIENTS[uid] = uclient
-        except Exception as e:
-            return web.json_response({"status": "error", "message": f"Session invalid: {e}"})
+    uclient = await ensure_user_client(uid)
+    if not uclient:
+        return web.json_response({"status": "error", "message": "Session invalid or expired. Please log in again."})
 
     dialog_collection = []
 
@@ -1583,20 +1563,9 @@ async def _api_chat_details_handler(request):
     if not session_str:
         return web.json_response({"status": "error", "message": "Not logged in."})
 
-    uclient = USER_CLIENTS.get(uid)
-    
-    # Wake up routine to prevent locks
-    if not uclient or not uclient.is_connected:
-        try:
-            api_id = await db.get_api_id(uid) or API_ID
-            api_hash = await db.get_api_hash(uid) or API_HASH
-            uclient = Client(f"User_{uid}", session_string=session_str, api_id=api_id, api_hash=api_hash, workers=100, ipv6=False)
-            uclient.add_handler(MessageHandler(user_watcher_handler, is_watched_chat))
-            await uclient.start()
-            USER_CLIENTS[uid] = uclient
-        except Exception as e:
-            logger.error(f"[CHAT DETAILS] Client connection failed: {e}")
-            return web.json_response({"status": "error", "message": f"Session invalid: {e}"})
+    uclient = await ensure_user_client(uid)
+    if not uclient:
+        return web.json_response({"status": "error", "message": "Session invalid or expired. Please log in again."})
 
     try:
         # 🟢 FIX 1: Safely resolve ALL chat types (Users, Bots, Channels, Groups)
