@@ -42,7 +42,6 @@ async def watch_setup(client: Client, message: Message):
         target_id, peer_kind = await resolve_and_cache_peer(uclient, parsed.get("chat_id"))
         if peer_kind in ("bot", "user") or (isinstance(target_id, int) and target_id > 0):
             source_thread_id = None
-            is_restricted = True
         else:
             chat_obj = await uclient.get_chat(target_id)
             if not getattr(chat_obj, "is_forum", False):
