@@ -1141,9 +1141,8 @@ async def _api_tg_send_code(request):
         ":memory:",
         api_id=API_ID,
         api_hash=API_HASH,
-        device_model="DestinyTgRestrict",
-        app_version="DestinyTgRestrict 1.0",
-        system_version="Linux"
+        in_memory=True,
+        ipv6=False
     )
     await client.connect()
     try:
