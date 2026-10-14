@@ -25,7 +25,7 @@ async def watch_setup(client: Client, message: Message):
         logger.warning(f"Silently blocked /watch init due to FloodWait: {e.value}s")
         return
         
-    is_restricted, status_text = await check_link_restriction(user_id, link_text)
+    is_restricted, status_text = await check_link_restriction(user_id, link_text, is_watcher=True)
     try: await wait_msg.delete()
     except Exception: pass
 
@@ -34,6 +34,35 @@ async def watch_setup(client: Client, message: Message):
     
     parsed = _parse_source_link(link_text)
     source_thread_id = parsed.get("topic_id")
+
+    # 🟢 Smart Forum Topic Detector: Handles 2-part topic links (e.g. t.me/forum/5)
+    # while ensuring normal channels and Bot/User DMs never treat msg_id as a topic.
+    try:
+        uclient = (await ensure_user_client(user_id)) or client
+        target_id, peer_kind = await resolve_and_cache_peer(uclient, parsed.get("chat_id"))
+        if peer_kind in ("bot", "user") or (isinstance(target_id, int) and target_id > 0):
+            source_thread_id = None
+            is_restricted = True
+        else:
+            chat_obj = await uclient.get_chat(target_id)
+            if not getattr(chat_obj, "is_forum", False):
+                source_thread_id = None
+            elif source_thread_id is None and parsed.get("msg_id"):
+                # Check if the 2-part link points to a forum topic or a message inside a topic
+                try:
+                    sample_msg = await uclient.get_messages(chat_obj.id, int(parsed["msg_id"]))
+                    if sample_msg and not getattr(sample_msg, "empty", True):
+                        source_thread_id = (
+                            getattr(sample_msg, "message_thread_id", None)
+                            or getattr(sample_msg, "reply_to_top_message_id", None)
+                            or int(parsed["msg_id"])
+                        )
+                    else:
+                        source_thread_id = int(parsed["msg_id"])
+                except Exception:
+                    source_thread_id = int(parsed["msg_id"])
+    except Exception:
+        pass
     
     PENDING_TASKS[user_id] = {
         "mode": "WATCHER", 
@@ -137,52 +166,37 @@ async def list_watchers(client, message):
         dest_id = w['dest_id']
         dst_display = w.get('dest_title') or str(dest_id)
         
-        # 🟢 FIX: AUTO-RESOLVE SOURCE NAME (Fixes Bot DMs showing as raw numbers)
+        owner_client = await ensure_user_client(w.get("user_id", user_id))
+
+        # 🟢 FIX: AUTO-RESOLVE SOURCE NAME (Fixes Bot DMs & Private Channels showing as raw numbers)
         if src_display == str(src_id) or str(src_display).lstrip("-").isdigit():
-            try:
-                try: await client.resolve_peer(src_id)
-                except Exception: pass
-                chat_info = await client.get_chat(src_id)
-                src_display = chat_info.title or chat_info.first_name or getattr(chat_info, "username", None) or "Source Chat"
-            except Exception:
-                owner_client = USER_CLIENTS.get(user_id) if "USER_CLIENTS" in globals() else None
-                if owner_client and getattr(owner_client, "is_connected", False):
-                    try:
-                        try: await owner_client.resolve_peer(src_id)
-                        except Exception: pass
-                        chat_info = await owner_client.get_chat(src_id)
-                        src_display = chat_info.title or chat_info.first_name or getattr(chat_info, "username", None) or "Source Chat"
-                    except Exception: pass
+            for cand in ([owner_client, client] if owner_client else [client]):
+                try:
+                    await resolve_and_cache_peer(cand, src_id)
+                    chat_info = await cand.get_chat(src_id)
+                    src_display = chat_info.title or chat_info.first_name or getattr(chat_info, "username", None) or "Source Chat"
+                    if src_display and src_display != str(src_id):
+                        break
+                except Exception:
+                    continue
             
-            # Silently update DB so the name stays cached for Web UI
             await db.db.watchers.update_one({"_id": w["_id"]}, {"$set": {"source_title": src_display}})
 
         # 🟢 AUTO-RESOLVE DESTINATION NAME IF IT'S JUST A NUMERIC ID
         if dst_display == str(dest_id) or str(dst_display).lstrip("-").isdigit():
-            if dest_id == user_id:
+            if dest_id == w.get("user_id", user_id):
                 dst_display = "Saved Messages"
             else:
-                try:
-                    # 🟢 FIX: Force peer resolution so the /watchers menu doesn't break after restart
-                    try: await client.resolve_peer(dest_id)
-                    except Exception: pass
-                    
-                    chat_info = await client.get_chat(dest_id)
-                    dst_display = chat_info.title or chat_info.first_name or "Target Chat"
-                except Exception:
-                    # 🟢 FIX: If Main Bot is blind to the private group, ask the User Session!
-                    owner_client = USER_CLIENTS.get(user_id)
-                    if owner_client and getattr(owner_client, "is_connected", False):
-                        try:
-                            try: await owner_client.resolve_peer(dest_id)
-                            except Exception: pass
+                for cand in ([owner_client, client] if owner_client else [client]):
+                    try:
+                        await resolve_and_cache_peer(cand, dest_id)
+                        chat_info = await cand.get_chat(dest_id)
+                        dst_display = chat_info.title or chat_info.first_name or "Target Chat"
+                        if dst_display and dst_display != str(dest_id):
+                            break
+                    except Exception:
+                        continue
                             
-                            chat_info = await owner_client.get_chat(dest_id)
-                            dst_display = chat_info.title or chat_info.first_name or "Target Chat"
-                        except Exception:
-                            pass
-                            
-                # Silently update DB so the name stays cached (Moved outside the try/except blocks)
                 await db.db.watchers.update_one({"_id": w["_id"]}, {"$set": {"dest_title": dst_display}})
         
         if len(src_display) > 15: src_display = src_display[:12] + "..."
