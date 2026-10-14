@@ -969,15 +969,6 @@ async def _api_tg_qr_start(request):
         )
         await temp_client.connect()
         
-        scanned_event = asyncio.Event()
-
-        async def _on_raw_update(client, update, users, chats):
-            if isinstance(update, raw.types.UpdateLoginToken):
-                scanned_event.set()
-
-        temp_client.add_handler(RawUpdateHandler(_on_raw_update))
-        await temp_client.dispatcher.start()
-        
         res = await temp_client.invoke(raw.functions.auth.ExportLoginToken(api_id=API_ID, api_hash=API_HASH, except_ids=[]))
         
         if isinstance(res, raw.types.auth.LoginToken):
@@ -987,8 +978,8 @@ async def _api_tg_qr_start(request):
             TG_QR_LOGIN_SESSIONS[qr_key] = {
                 "user_id": user_id, 
                 "client": temp_client, 
-                "expires": res.expires, 
-                "scanned_event": scanned_event
+                "expires": res.expires,
+                "last_poll": 0
             }
             
             return web.json_response({
@@ -1012,9 +1003,10 @@ async def _api_tg_qr_check(request):
     temp_client = session_data["client"]
     user_id = session_data["user_id"]
     
-    # 🟢 1. Do NOT touch Telegram servers until phone actually scans the QR
-    if not session_data["scanned_event"].is_set():
+    now = time.time()
+    if now - session_data.get("last_poll", 0) < 2.0:
         return web.json_response({"status": "pending"})
+    session_data["last_poll"] = now
         
     try:
         res = await temp_client.invoke(raw.functions.auth.ExportLoginToken(api_id=API_ID, api_hash=API_HASH, except_ids=[]))
@@ -1138,11 +1130,14 @@ async def _api_tg_send_code(request):
             pass
 
     client = Client(
-        ":memory:",
+        f"phone_login_{uid}",
         api_id=API_ID,
         api_hash=API_HASH,
         in_memory=True,
-        ipv6=False
+        ipv6=False,
+        device_model="DestinyTgRestrict",
+        app_version="DestinyTgRestrict 1.0",
+        system_version="Linux"
     )
     await client.connect()
     try:
@@ -1220,6 +1215,21 @@ async def _api_tg_verify_2fa(request):
     except Exception as e:
         return web.json_response({"status": "error", "message": str(e)})
 
+async def _api_tg_resend_code(request):
+    data = await request.json()
+    uid = int(data.get("user_id"))
+    cache = WEB_AUTH_CACHE.get(uid)
+    if not cache:
+        return web.json_response({"status": "error", "message": "Session expired. Enter phone number again."})
+        
+    client = cache["client"]
+    try:
+        resend = await client.resend_code(cache["phone"], cache["hash"])
+        cache["hash"] = resend.phone_code_hash
+        return web.json_response({"status": "success", "delivery": str(resend.type)})
+    except Exception as e:
+        return web.json_response({"status": "error", "message": str(e)})
+        
 async def _api_tg_logout(request):
     data = await request.json()
     uid = int(data.get("user_id", 0))
@@ -3229,6 +3239,7 @@ async def start_koyeb_health_check(host: str = "0.0.0.0"):
     # Telegram Connect
     app_web.router.add_post("/api/tg_qr/start", _api_tg_qr_start)
     app_web.router.add_get("/api/tg_qr/check", _api_tg_qr_check)
+    app_web.router.add_post("/api/tg/resend_code", _api_tg_resend_code)
     app_web.router.add_post("/api/tg_qr/verify_2fa", _api_tg_qr_verify_2fa)
     app_web.router.add_post("/api/tg/send_code", _api_tg_send_code)
     app_web.router.add_post("/api/tg/verify", _api_tg_verify_code)
