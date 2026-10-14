@@ -103,7 +103,13 @@ async def handle_private(client: Client, acc, message: Message, chatid, msgid: i
     }
 
     # 3. Route the task
-    is_content_protected = is_restricted or getattr(msg, "has_protected_content", False) or getattr(msg.chat, "has_protected_content", False)
+    is_source_dm = isinstance(chatid, int) and chatid > 0
+    is_content_protected = (
+        is_restricted
+        or is_source_dm
+        or getattr(msg, "has_protected_content", False)
+        or getattr(msg.chat, "has_protected_content", False)
+    )
     task_info = ACTIVE_PROCESSES.get(user_id, {}).get(task_uuid, {})
     has_custom_thumb = bool(task_info.get("thumb_file_id") or task_info.get("thumb_b64"))
     has_cleanup_tags = bool(task_info.get("cleanup_keywords"))
@@ -113,11 +119,16 @@ async def handle_private(client: Client, acc, message: Message, chatid, msgid: i
     
     if not is_content_protected:
         if is_live_watch:
-            return await handle_unrestricted_live(client, acc, chatid, msgid, **kwargs)
+            copy_ok = await handle_unrestricted_live(client, acc, chatid, msgid, **kwargs)
         elif is_public:
-            return await handle_unrestricted_public(client, acc, chatid, msgid, **kwargs)
+            copy_ok = await handle_unrestricted_public(client, acc, chatid, msgid, **kwargs)
         else:
-            return await handle_unrestricted_private(client, acc, chatid, msgid, **kwargs)
+            copy_ok = await handle_unrestricted_private(client, acc, chatid, msgid, **kwargs)
+        if copy_ok:
+            return True
+        # 🟢 Seamless Fallback: If direct copy failed (e.g., private source where Worker Bot isn't a member,
+        # or hidden forward restriction), automatically download via User Session & upload!
+        return await _execute_restricted_download_upload(client, acc, chatid, msgid, **kwargs)
     else:
         if is_live_watch:
             return await handle_restricted_live(client, acc, chatid, msgid, **kwargs)
@@ -133,7 +144,7 @@ async def handle_private(client: Client, acc, message: Message, chatid, msgid: i
 def _get_client_label(c):
     if not c: return "Unknown"
     name = getattr(c, "name", "")
-    if name.startswith("worker_bot_"):
+    if name.startswith(("worker_bot_", "task_bot_", "stream_bot_")):
         return f"🤖 Worker {name.split('_')[-1]}"
     elif name.startswith("User_") or name.startswith("temp_acc_"):
         try:
@@ -737,6 +748,10 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
     # 🟢 DYNAMIC SPLIT LIMIT: Calculates 4GB vs 2GB buffers cleanly
     split_limit = (3980 * 1024 * 1024) if is_premium else (1980 * 1024 * 1024)
 
+    # 🟢 Pre-define upload_client so large-file split uploads (>2GB) never hit UnboundLocalError
+    is_dest_dm = isinstance(dest_chat_id, int) and dest_chat_id > 0
+    upload_client = acc if (is_dest_dm and acc) else get_dynamic_upload_client(client, acc, user_id, task_uuid, index)
+
     # 🟢 Define the watcher shield variable
     is_w_task = False
     if user_id in ACTIVE_PROCESSES and task_uuid in ACTIVE_PROCESSES[user_id]:
@@ -1111,3 +1126,4 @@ async def _execute_restricted_download_upload(client, acc, chatid, msgid, dest_c
                 shutil.rmtree(task_folder_path)
         except Exception: pass
         gc.collect()
+
