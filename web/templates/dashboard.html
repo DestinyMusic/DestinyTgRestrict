@@ -2078,7 +2078,6 @@
                                     <input type="text" id="tg-code" placeholder="12345">
                                 </div>
                                 <button type="button" class="primary-btn" style="padding: 12px; background: #10b981;" onclick="tgVerifyCode()">Verify Code</button>
-                                <button type="button" id="tg-resend-btn" class="primary-btn" style="padding: 10px; background: #475569; margin-top: 8px;" onclick="tgResendCode()" disabled>Resend Code via SMS</button>
                             </div>
 
                             <div id="tg-login-step3" style="display: none;">
@@ -2674,16 +2673,11 @@
                                 document.getElementById('qr-loading-box').style.display = 'none';
                                 document.getElementById('qr-2fa-box').style.display = 'block';
                                 document.getElementById('tg-qr-2fa').focus();
-                            } else if (checkData.status === 'expired') {
+                            } else if (checkData.status === 'error' || checkData.status === 'expired') {
                                 clearInterval(qrPollTimer);
                                 clearInterval(qrExpiryTimer);
-                                console.log("QR Session Expired, refreshing...");
+                                alert("❌ " + (checkData.message || "QR Session Expired"));
                                 startTelegramQR();
-                            } else if (checkData.status === 'error') {
-                                clearInterval(qrPollTimer);
-                                clearInterval(qrExpiryTimer);
-                                alert("❌ " + (checkData.message || "QR Error"));
-                                document.getElementById('qr-loading-box').innerText = "QR Error: " + checkData.message;
                             }
                         } catch (e) {
                             console.warn("QR Poll error:", e);
@@ -2712,7 +2706,7 @@
                     body: JSON.stringify({qr_key: currentQrKey, password: pwd})
                 });
                 const data = await res.json();
-                if (data.status === 'success' || data.status === 'authorized') {
+                if (data.status === 'success') {
                     alert("✅ Telegram Logged In Successfully!");
                     window.location.reload();
                 } else {
@@ -2858,10 +2852,7 @@
         function openTaskModal() {
             document.getElementById('task-include-keywords').value = '';
             document.getElementById('task-exclude-keywords').value = '';
-            document.getElementById('task-cleanup-keywords').value = '';
             document.getElementById('task-custom-thumbnail').value = '';
-            const removeThumbCheckbox = document.getElementById('task-remove-thumbnail');
-            if (removeThumbCheckbox) removeThumbCheckbox.checked = false;
             document.getElementById('taskModal').classList.add('show');
         }
         function closeTaskModal() { document.getElementById('taskModal').classList.remove('show'); }
@@ -3030,11 +3021,11 @@
                     }
                 } else {
                     document.getElementById('cd-loading').innerText = "❌ " + data.message;
-                    alert("⚠️ Backend Error:\n" + data.message);
+                    alert("⚠️ Backend Error:\\n" + data.message);
                 }
             } catch (err) {
                 document.getElementById('cd-loading').innerText = "❌ Network Error or Invalid JSON.";
-                alert("⚠️ Fetch Error:\n" + err.message);
+                alert("⚠️ Fetch Error:\\n" + err.message);
             }
         }
         async function fetchChatsList() {
@@ -3056,14 +3047,15 @@
                 else if (type.includes('user')) users.push(c);
             });
 
-            let txt = "DESTINY TG FORWARDER - CHATS & IDs EXPORT\n";
-            txt += "=========================================\n\n";
+            // 🟢 FIX: Added double backslashes so Python doesn't break the JS string!
+            let txt = "DESTINY TG FORWARDER - CHATS & IDs EXPORT\\n";
+            txt += "=========================================\\n\\n";
 
             const appendSection = (title, items) => {
                 if (items.length === 0) return;
-                txt += `--- ${title} (${items.length}) ---\n`;
-                items.forEach(i => txt += `${i.name.replace(/\[.*?\]\s*/, '')} | ID: ${i.id}\n`);
-                txt += "\n";
+                txt += `--- ${title} (${items.length}) ---\\n`;
+                items.forEach(i => txt += `${i.name.replace(/\\[.*?\\]\\s*/, '')} | ID: ${i.id}\\n`);
+                txt += "\\n";
             };
 
             appendSection("GROUPS & SUPERGROUPS", groups);
@@ -3382,8 +3374,6 @@
             } catch(e) {}
         }
 
-        let resendTimerInterval = null;
-
         async function tgSendCode() {
             const phone = document.getElementById('tg-phone').value;
             const res = await fetch('/api/tg/send_code', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({user_id: currentUser, phone: phone}) });
@@ -3391,77 +3381,7 @@
             if (data.status === 'success') {
                 document.getElementById('tg-login-step1').style.display = 'none';
                 document.getElementById('tg-login-step2').style.display = 'block';
-                
-                const isApp = (data.delivery || "").toUpperCase().includes("APP");
-                if (isApp) {
-                    alert("Telegram sent the login code in a message from Telegram (not by SMS). Check the Telegram app on any device where you are already signed in, including its service notifications.");
-                } else {
-                    alert("Code sent via: " + (data.delivery || "SMS"));
-                }
-                
-                const resendBtn = document.getElementById('tg-resend-btn');
-                resendBtn.disabled = true;
-                
-                let remaining = data.timeout || 60;
-                const hasNextType = !!data.next_type;
-                
-                clearInterval(resendTimerInterval);
-                resendTimerInterval = setInterval(() => {
-                    remaining--;
-                    resendBtn.innerText = `Wait ${remaining}s before resend`;
-                    if (remaining <= 0) {
-                        clearInterval(resendTimerInterval);
-                        if (hasNextType) {
-                            resendBtn.disabled = false;
-                            resendBtn.innerText = "Resend Code";
-                        } else {
-                            resendBtn.innerText = "Resend Unavailable";
-                        }
-                    }
-                }, 1000);
-            } else {
-                alert("Error: " + data.message);
-            }
-        }
-
-        async function tgResendCode() {
-            const res = await fetch('/api/tg/resend_code', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({user_id: currentUser})
-            });
-            const data = await res.json();
-            if (data.status === 'success') {
-                const isApp = (data.delivery || "").toUpperCase().includes("APP");
-                alert(isApp
-                    ? "Telegram sent the new login code in a message from Telegram. Check the app on an already signed-in device."
-                    : "New code dispatched via: " + (data.delivery || "SMS"));
-                const resendBtn = document.getElementById('tg-resend-btn');
-                resendBtn.disabled = true;
-                let remaining = data.timeout || 60;
-                const hasNextType = !!data.next_type;
-                
-                clearInterval(resendTimerInterval);
-                resendTimerInterval = setInterval(() => {
-                    remaining--;
-                    resendBtn.innerText = `Wait ${remaining}s before resend`;
-                    if (remaining <= 0) {
-                        clearInterval(resendTimerInterval);
-                        if (hasNextType) {
-                            resendBtn.disabled = false;
-                            resendBtn.innerText = "Resend Code";
-                        } else {
-                            resendBtn.innerText = "Resend Unavailable";
-                        }
-                    }
-                }, 1000);
-            } else {
-                if (data.message && data.message.includes("SEND_CODE_UNAVAILABLE")) {
-                    alert("Another delivery method is currently unavailable. Please use the original code or wait before retrying.");
-                } else {
-                    alert("Resend failed: " + data.message);
-                }
-            }
+            } else alert("Error: " + data.message);
         }
 
         async function tgVerifyCode() {
@@ -6187,7 +6107,7 @@
                 // tzStr is usually like "UTC+05:30" or "UTC-04:00"
                 let offsetMs = 0;
                 if (tzStr && tzStr !== "UTC") {
-                    const match = tzStr.match(/UTC([+-])(\d{2}):?(\d{2})?/);
+                    const match = tzStr.match(/UTC([+-])(\\d{2}):?(\\d{2})?/);
                     if (match) {
                         const sign = match[1] === '+' ? 1 : -1;
                         const hours = parseInt(match[2], 10);
