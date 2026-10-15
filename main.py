@@ -574,7 +574,7 @@ async def main():
     except Exception as e:
         logger.error(f"⚠️ Failed to set commands: {e}", exc_info=True)
     
-    logger.info("🔄 Loading Sessions for Active Watchers...")
+    logger.info("🔄 Loading User Sessions & Active Watchers...")
     
     active_watcher_users = set()
     cursor = await db.get_all_watchers()
@@ -582,36 +582,25 @@ async def main():
         active_watcher_users.add(w['user_id'])
         GLOBAL_WATCHER_SOURCES.add(w['source_id'])
 
+    # 🟢 FIX: Also load ALL logged-in user sessions from DB so DL & Web UI work immediately on boot!
+    async for u_doc in db.col.find({"session": {"$exists": True, "$ne": None}}):
+        if u_doc.get("id") and u_doc.get("session"):
+            active_watcher_users.add(int(u_doc["id"]))
+
     async def _init_single_watcher(user_id):
         user_session = await db.get_session(user_id)
         if not user_session or user_id in USER_CLIENTS:
             return
             
+        user_client = None
         try:
-            logger.info(f"👤 Starting Watcher Session for: {user_id}")
+            logger.info(f"👤 Starting User Session for: {user_id}")
             
-            u_api = await db.get_api_id(user_id) or API_ID
-            u_hash = await db.get_api_hash(user_id) or API_HASH
-            
-            user_client = Client(
-                f"User_{user_id}", 
-                session_string=user_session, 
-                api_id=u_api, 
-                api_hash=u_hash, 
-                workers=100,
-                ipv6=False,
-                no_updates=False,
-                device_model="DestinyTgRestrict",
-                app_version="DestinyTgRestrict 1.0",
-                system_version="Linux"
-            )
-            
-            user_client.add_handler(MessageHandler(user_watcher_handler, is_watched_chat))
-            
-            await user_client.start()
-            USER_CLIENTS[user_id] = user_client
-            logger.info(f"✅ Active: {user_id}")
-            
+            # 🟢 FIX: Uses our unified smart helper to boot up the session flawlessly
+            user_client = await ensure_user_client(user_id)
+            if user_client:
+                logger.info(f"✅ Active: {user_id}")
+                
         except (AuthKeyUnregistered, UserDeactivated):
             logger.warning(f"❌ Session {user_id} was revoked. Auto-deleting...")
             await auto_wipe_dead_session(user_client, user_id)
