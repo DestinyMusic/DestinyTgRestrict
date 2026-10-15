@@ -25,7 +25,8 @@ async def watch_setup(client: Client, message: Message):
         logger.warning(f"Silently blocked /watch init due to FloodWait: {e.value}s")
         return
         
-    is_restricted, status_text = await check_link_restriction(user_id, link_text)
+    # 🟢 PASS is_watcher=True so deleted sample messages don't block Watcher creation
+    is_restricted, status_text = await check_link_restriction(user_id, link_text, is_watcher=True)
     try: await wait_msg.delete()
     except Exception: pass
 
@@ -34,6 +35,19 @@ async def watch_setup(client: Client, message: Message):
     
     parsed = _parse_source_link(link_text)
     source_thread_id = parsed.get("topic_id")
+
+    # 🟢 Topic Disambiguation: Ensure Bot DMs and standard channels never treat msg_id as a forum topic ID
+    try:
+        uclient = (await ensure_user_client(user_id)) or client
+        target_id, peer_kind = await resolve_and_cache_peer(uclient, parsed.get("chat_id"))
+        if peer_kind in ("bot", "user") or (isinstance(target_id, int) and target_id > 0):
+            source_thread_id = None
+        else:
+            chat_obj = await uclient.get_chat(target_id)
+            if not getattr(chat_obj, "is_forum", False):
+                source_thread_id = None
+    except Exception:
+        pass
     
     PENDING_TASKS[user_id] = {
         "mode": "WATCHER", 
