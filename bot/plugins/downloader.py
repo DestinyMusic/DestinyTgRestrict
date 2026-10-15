@@ -1420,15 +1420,38 @@ async def process_custom_destination(client: Client, message: Message):
         dest_chat_id, dest_thread_id = _parse_chat_target(text)
 
         try:
-            # 🟢 FIX: Resolve peer before fetching info so custom destinations work after restarts
-            try: await client.resolve_peer(dest_chat_id)
-            except Exception: pass
-            
-            # Resolve basic info
-            chat = await client.get_chat(dest_chat_id)
+            uclient = await ensure_user_client(user_id)
+            worker_bots = list(USER_TASK_BOTS.get(user_id, []))
+
+            # 🟢 1. Resolve chat info using whichever client has access (User Session -> Main Bot -> Worker Bots)
+            chat = None
+            info_client = None
+            for cand in ([uclient, client] if uclient else [client]) + worker_bots:
+                if not cand:
+                    continue
+                try:
+                    if not getattr(cand, "is_connected", False):
+                        await cand.connect()
+                    resolved_id, _ = await resolve_and_cache_peer(cand, dest_chat_id)
+                    chat = await cand.get_chat(resolved_id)
+                    if chat:
+                        dest_chat_id = chat.id
+                        info_client = cand
+                        break
+                except Exception:
+                    continue
+
+            if not chat:
+                await message.reply(
+                    "❌ **Could not access Destination.**\n"
+                    "Neither your User Session, Main Bot, nor Worker Bots can access this chat.\n"
+                    "Make sure your account or the bot is a member/admin of the destination chat!"
+                )
+                return
+
             title = chat.title or chat.first_name or "Target Chat"
-            if dest_thread_id: 
-                title += await get_topic_title(client, dest_chat_id, dest_thread_id)
+            if dest_thread_id:
+                title += await get_topic_title(info_client or client, chat.id, dest_thread_id)
 
             # 🟢 CHECK ACCESS ACROSS ALL CLIENTS (Main Bot, Workers, User)
             main_bot_access = False
