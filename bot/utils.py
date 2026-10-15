@@ -1,7 +1,7 @@
 # ==============================================================================
 # --- HELPERS ---
 # ==============================================================================
-
+import platform
 def parse_chat_topic(value):
     if not value:
         return None, None
@@ -365,13 +365,14 @@ async def ensure_user_client(user_id: int):
                     session_string=user_session,
                     api_id=api_id,
                     api_hash=api_hash,
+                    in_memory=True,  # 🟢 FIX: Bypasses locked SQLite files to stop the startup freeze
                     workers=100,
                     sleep_threshold=120,
                     ipv6=False,
                     no_updates=False,
                     device_model="DestinyTgRestrict",
-                    app_version="DestinyTgRestrict 1.0",
-                    system_version="Linux",
+                    app_version="1.0",
+                    system_version=f"{platform.system()} {platform.release()}", # 🟢 DYNAMIC OS
                     **get_transmission_kwargs(workers=100, is_bot=False)
                 )
                 if "user_watcher_handler" in globals() and "is_watched_chat" in globals():
