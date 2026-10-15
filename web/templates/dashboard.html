@@ -2674,11 +2674,16 @@
                                 document.getElementById('qr-loading-box').style.display = 'none';
                                 document.getElementById('qr-2fa-box').style.display = 'block';
                                 document.getElementById('tg-qr-2fa').focus();
-                            } else if (checkData.status === 'error' || checkData.status === 'expired') {
+                            } else if (checkData.status === 'expired') {
                                 clearInterval(qrPollTimer);
                                 clearInterval(qrExpiryTimer);
-                                alert("❌ " + (checkData.message || "QR Session Expired"));
+                                console.log("QR Session Expired, refreshing...");
                                 startTelegramQR();
+                            } else if (checkData.status === 'error') {
+                                clearInterval(qrPollTimer);
+                                clearInterval(qrExpiryTimer);
+                                alert("❌ " + (checkData.message || "QR Error"));
+                                document.getElementById('qr-loading-box').innerText = "QR Error: " + checkData.message;
                             }
                         } catch (e) {
                             console.warn("QR Poll error:", e);
@@ -3387,25 +3392,36 @@
                 document.getElementById('tg-login-step1').style.display = 'none';
                 document.getElementById('tg-login-step2').style.display = 'block';
                 
-                const isApp = data.delivery.includes("APP");
-                alert(isApp ? "Code sent to your official Telegram app!" : "Code sent via SMS!");
+                const isApp = data.delivery && data.delivery.includes("APP");
+                if (isApp) {
+                    alert("Code sent to your official Telegram app! Please check your service-notification chat on an already logged-in device.");
+                } else {
+                    alert("Code sent via: " + (data.delivery || "SMS"));
+                }
                 
-                // Start 60 second countdown for the Resend button
                 const resendBtn = document.getElementById('tg-resend-btn');
                 resendBtn.disabled = true;
-                let remaining = 60;
+                
+                let remaining = data.timeout || 60;
+                const hasNextType = !!data.next_type;
                 
                 clearInterval(resendTimerInterval);
                 resendTimerInterval = setInterval(() => {
                     remaining--;
-                    resendBtn.innerText = `Resend via SMS (${remaining}s)`;
+                    resendBtn.innerText = `Wait ${remaining}s before resend`;
                     if (remaining <= 0) {
                         clearInterval(resendTimerInterval);
-                        resendBtn.disabled = false;
-                        resendBtn.innerText = "Resend Code via SMS";
+                        if (hasNextType) {
+                            resendBtn.disabled = false;
+                            resendBtn.innerText = "Resend Code";
+                        } else {
+                            resendBtn.innerText = "Resend Unavailable";
+                        }
                     }
                 }, 1000);
-            } else alert("Error: " + data.message);
+            } else {
+                alert("Error: " + data.message);
+            }
         }
 
         async function tgResendCode() {
@@ -3416,9 +3432,32 @@
             });
             const data = await res.json();
             if (data.status === 'success') {
-                alert("New code dispatched via: " + data.delivery);
+                alert("New code dispatched via: " + (data.delivery || "SMS"));
+                const resendBtn = document.getElementById('tg-resend-btn');
+                resendBtn.disabled = true;
+                let remaining = data.timeout || 60;
+                const hasNextType = !!data.next_type;
+                
+                clearInterval(resendTimerInterval);
+                resendTimerInterval = setInterval(() => {
+                    remaining--;
+                    resendBtn.innerText = `Wait ${remaining}s before resend`;
+                    if (remaining <= 0) {
+                        clearInterval(resendTimerInterval);
+                        if (hasNextType) {
+                            resendBtn.disabled = false;
+                            resendBtn.innerText = "Resend Code";
+                        } else {
+                            resendBtn.innerText = "Resend Unavailable";
+                        }
+                    }
+                }, 1000);
             } else {
-                alert("Resend failed: " + data.message);
+                if (data.message && data.message.includes("SEND_CODE_UNAVAILABLE")) {
+                    alert("Another delivery method is currently unavailable. Please use the original code or wait before retrying.");
+                } else {
+                    alert("Resend failed: " + data.message);
+                }
             }
         }
 
