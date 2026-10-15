@@ -357,15 +357,18 @@ async def ensure_user_client(user_id: int):
         api_id = await db.get_api_id(user_id) or API_ID
         api_hash = await db.get_api_hash(user_id) or API_HASH
 
+        # Ensure correct types to prevent silent Pyrogram initialization crashes
+        safe_api_id = int(api_id) if api_id else None
+        safe_api_hash = str(api_hash) if api_hash else None
+
         for attempt in range(3):
             uclient = None
             try:
                 uclient = Client(
-                    f"User_{user_id}",
+                    ":memory:", # 🟢 Universal in-memory fix (Works on all Pyrogram forks without sqlite locks)
                     session_string=user_session,
-                    api_id=api_id,
-                    api_hash=api_hash,
-                    in_memory=True,  # 🟢 FIX: Bypasses locked SQLite files to stop the startup freeze
+                    api_id=safe_api_id,
+                    api_hash=safe_api_hash,
                     workers=100,
                     sleep_threshold=120,
                     ipv6=False,
@@ -395,7 +398,8 @@ async def ensure_user_client(user_id: int):
                     logger.warning(f"⏳ Old container still releasing session for {user_id}, retrying in 5s ({attempt + 1}/3)...")
                     await asyncio.sleep(5)
                     continue
-                logger.error(f"Failed to wake up User Session for {user_id}: {e}")
+                # Wrap e in repr() so silent errors are made visible in the logs
+                logger.error(f"Failed to wake up User Session for {user_id}: {repr(e) if not str(e) else e}")
                 return None
 
 async def _safe_store_peer(client, peer_id, access_hash, peer_type, username=None, phone=None):
