@@ -528,7 +528,13 @@ async def main():
     # Attach the listener to the main bot so it functions without a User Session!
     app.add_handler(MessageHandler(user_watcher_handler, is_watched_chat))
 
-    await app.start()
+    try:
+        await app.start()
+    except FloodWait as e:
+        logger.warning(f"⚠️ Telegram FloodWait during startup! Sleeping for {e.value} seconds before retrying...")
+        await asyncio.sleep(e.value + 5)
+        await app.start()
+        
     logger.info("🤖 Bot Started") 
 
     # 🟢 Auto-Restore saved Netscape cookies from MongoDB onto the local filesystem
