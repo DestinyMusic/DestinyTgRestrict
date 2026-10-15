@@ -417,38 +417,88 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
 
             total_count = max(1, toID - fromID + 1)
 
-            # 🟢 Reuse persistent User Session so cached access_hashes are never lost!
-            acc = await ensure_user_client(user_id)
+            user_data = await db.get_session(user_id)
+            acc = None
             is_temp_acc = False
+            
+            if user_data:
+                api_id = await db.get_api_id(user_id) or API_ID
+                api_hash = await db.get_api_hash(user_id) or API_HASH
+                
+                user_workers = 8
+                
+                acc = Client(
+                    name=f"temp_acc_{user_id}_{uuid.uuid4().hex}", 
+                    in_memory=True,
+                    session_string=user_data, 
+                    api_hash=api_hash, 
+                    api_id=api_id, 
+                    no_updates=True,
+                    workers=user_workers,
+                    sleep_threshold=120, # 🟢 Increased
+                    ipv6=False,
+                    **get_transmission_kwargs(workers=user_workers, is_bot=False) # 🟢 Force 1 concurrent
+                )
+                await acc.start()
+                is_temp_acc = True
 
             # 🟢 THE FIX: Define the fetcher variable BEFORE we try to use it!
             fetcher = acc if acc else client
 
             try:
                 source_ref = parsed_source.get("chat_id")
-                ACTUAL_CHAT_ID, peer_kind = await resolve_and_cache_peer(fetcher, source_ref)
-                if fetcher != client and isinstance(source_ref, str) and not str(source_ref).lstrip('-').isdigit():
-                    await resolve_and_cache_peer(client, source_ref)
+                
+                # 🟢 THE PYROFORK BYPASS & DEBUG LOGGER
+                if isinstance(source_ref, str) and not str(source_ref).lstrip('-').isdigit():
+                    from pyrogram.raw.functions.contacts import ResolveUsername
+                    clean_user = source_ref.replace("@", "")
+                    
+                    async def _force_resolve(cl):
+                        r = await cl.invoke(ResolveUsername(username=clean_user))
+                        if r.chats:
+                            rid = r.chats[0].id
+                            is_chan = getattr(r.chats[0], "broadcast", False) or getattr(r.chats[0], "megagroup", False)
+                            return int(f"-100{rid}") if is_chan else rid
+                        elif r.users:
+                            return r.users[0].id
+                        return source_ref
 
-                try:
-                    source_chat = await fetcher.get_chat(ACTUAL_CHAT_ID)
-                    ACTUAL_CHAT_ID = source_chat.id 
-                    source_title = source_chat.title or source_chat.first_name or str(source_ref)
-                    if getattr(source_chat, "last_name", None):
-                        source_title += f" {source_chat.last_name}"
-                except Exception as title_err:
-                    # 🟢 THE "TRY BOTH" ENGINE
-                    if isinstance(ACTUAL_CHAT_ID, int) and ACTUAL_CHAT_ID > 0:
-                        try:
-                            alt_id = int(f"-100{ACTUAL_CHAT_ID}")
-                            source_chat = await fetcher.get_chat(alt_id)
-                            ACTUAL_CHAT_ID = alt_id
-                            source_title = source_chat.title or source_chat.first_name or str(alt_id)
-                            if getattr(source_chat, "last_name", None):
-                                source_title += f" {source_chat.last_name}"
-                        except Exception:
-                            source_title = str(source_ref)
-                    else:
+                    try:
+                        logger.info(f"DEBUG Batch: Invoking ResolveUsername on fetcher for {clean_user}")
+                        numeric_id = await _force_resolve(fetcher)
+                        ACTUAL_CHAT_ID = numeric_id
+                        logger.info(f"DEBUG Batch: Extracted NUMERIC ID: {ACTUAL_CHAT_ID}")
+                    except Exception as e:
+                        logger.error(f"DEBUG Batch: fetcher resolve failed: {e}")
+                        if fetcher != client:
+                            try:
+                                logger.info(f"DEBUG Batch: Falling back to main client resolve...")
+                                numeric_id = await _force_resolve(client)
+                                ACTUAL_CHAT_ID = numeric_id
+                            except Exception as e2:
+                                logger.error(f"DEBUG Batch: main client resolve failed: {e2}")
+                                ACTUAL_CHAT_ID = source_ref
+                        else:
+                            ACTUAL_CHAT_ID = source_ref
+
+                    # Now that we have the numeric ID, safely get the title
+                    try:
+                        source_chat = await fetcher.get_chat(ACTUAL_CHAT_ID)
+                        source_title = source_chat.title or source_chat.first_name or str(source_ref)
+                        if getattr(source_chat, "last_name", None):
+                            source_title += f" {source_chat.last_name}"
+                    except Exception as title_err:
+                        logger.warning(f"DEBUG Batch: Could not fetch title for {ACTUAL_CHAT_ID}: {title_err}")
+                        source_title = str(source_ref)
+                else:
+                    # It's already numeric
+                    ACTUAL_CHAT_ID = source_ref
+                    try:
+                        source_chat = await fetcher.get_chat(ACTUAL_CHAT_ID)
+                        source_title = source_chat.title or source_chat.first_name or str(source_ref)
+                        if getattr(source_chat, "last_name", None):
+                            source_title += f" {source_chat.last_name}"
+                    except Exception:
                         source_title = str(source_ref)
 
             except Exception as e: 
@@ -644,8 +694,8 @@ async def process_links_logic(client: Client, message: Message, text: str, dest_
                         is_pub = isinstance(parsed_source.get("chat_id"), str) and not str(parsed_source.get("chat_id")).lstrip('-').isdigit()
                         original_username = parsed_source.get("chat_id") if is_pub else None
                         
-                        # 🟢 FIX: Bot PMs and User PMs (positive chat IDs) must NEVER use the public fast-path 
-                        is_bot_or_user_pm = isinstance(ACTUAL_CHAT_ID, int) and ACTUAL_CHAT_ID > 0
+                        # 🟢 FIX: Bot PMs and User PMs must NEVER use the public fast-path 
+                        is_bot_or_user_pm = False
                         if "source_chat" in locals():
                             chat_type_str = str(getattr(source_chat, "type", "")).upper()
                             if "BOT" in chat_type_str or "PRIVATE" in chat_type_str:
