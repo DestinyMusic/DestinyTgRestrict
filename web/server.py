@@ -961,15 +961,31 @@ async def _qr_raw_update_handler(client, update, users, chats):
 
 async def _qr_switch_dc(client, target_dc):
     test_mode = await client.storage.test_mode()
-    new_auth_key = await Auth(client, target_dc, test_mode).create()
+    
+    dc_option = await client.get_dc_option(target_dc, ipv6=client.ipv6)
+    server_address = dc_option.ip_address
+    port = dc_option.port
+    
+    new_auth_key = await Auth(
+        client, target_dc, test_mode,
+        server_address=server_address, port=port
+    ).create()
+    
     await client.session.stop()
+    
     if callable(getattr(client.storage, "dc_id", None)):
         await client.storage.dc_id(target_dc)
         await client.storage.auth_key(new_auth_key)
     else:
         client.storage.dc_id = target_dc
         client.storage.auth_key = new_auth_key
-    client.session = Session(client, target_dc, new_auth_key, test_mode)
+        
+    client.session = Session(
+        client, target_dc, new_auth_key, test_mode,
+        is_media=False, is_cdn=False,
+        server_address=server_address, port=port,
+        crypto_executor=client.crypto_executor
+    )
     await client.session.start()
     client.is_connected = True
 
@@ -1014,10 +1030,7 @@ async def _api_tg_qr_start(request):
             api_id=API_ID,
             api_hash=API_HASH,
             in_memory=True,
-            ipv6=False,
-            device_model="DestinyTgRestrict",
-            app_version="DestinyTgRestrict 1.0",
-            system_version="Linux"
+            ipv6=False
         )
         temp_client.add_handler(RawUpdateHandler(_qr_raw_update_handler), group=-100)
         await temp_client.connect()
@@ -1026,7 +1039,7 @@ async def _api_tg_qr_start(request):
         res = await temp_client.invoke(raw.functions.auth.ExportLoginToken(api_id=API_ID, api_hash=API_HASH, except_ids=[]))
         
         if isinstance(res, raw.types.auth.LoginToken):
-            b64_tok = base64.urlsafe_b64encode(res.token).decode("utf-8")
+            b64_tok = base64.urlsafe_b64encode(res.token).decode("utf-8").rstrip("=")
             tg_qr_url = f"tg://login?token={b64_tok}"
             
             TG_QR_LOGIN_SESSIONS[qr_key] = {
@@ -1128,10 +1141,7 @@ async def _api_tg_send_code(request):
         api_id=API_ID,
         api_hash=API_HASH,
         in_memory=True,
-        ipv6=False,
-        device_model="DestinyTgRestrict",
-        app_version="DestinyTgRestrict 1.0",
-        system_version="Linux"
+        ipv6=False
     )
     try:
         await client.connect()
