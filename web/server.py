@@ -941,11 +941,63 @@ async def _api_download_log_handler(request):
 
 import base64
 import uuid
+import time
+import asyncio
 from urllib.parse import quote
 from pyrogram import raw
+from pyrogram.session import Auth, Session
+from pyrogram.handlers import RawUpdateHandler
 
 TG_QR_LOGIN_SESSIONS = {}
 WEB_AUTH_CACHE = {}
+
+async def _qr_raw_update_handler(client, update, users, chats):
+    if not isinstance(update, raw.types.UpdateLoginToken):
+        return
+    for state in TG_QR_LOGIN_SESSIONS.values():
+        if state.get("client") is client:
+            state["update_event"].set()
+            break
+
+async def _qr_switch_dc(client, target_dc):
+    test_mode = await client.storage.test_mode()
+    new_auth_key = await Auth(client, target_dc, test_mode).create()
+    await client.session.stop()
+    if callable(getattr(client.storage, "dc_id", None)):
+        await client.storage.dc_id(target_dc)
+        await client.storage.auth_key(new_auth_key)
+    else:
+        client.storage.dc_id = target_dc
+        client.storage.auth_key = new_auth_key
+    client.session = Session(client, target_dc, new_auth_key, test_mode)
+    await client.session.start()
+    client.is_connected = True
+
+async def _save_qr_login(qr_key, client, user_id, tg_user):
+    if int(tg_user.id) != int(user_id):
+        return web.json_response({
+            "status": "error",
+            "message": "The scanned Telegram account does not match the dashboard account."
+        }, status=403)
+        
+    if callable(getattr(client.storage, "user_id", None)):
+        await client.storage.user_id(int(tg_user.id))
+    if callable(getattr(client.storage, "is_bot", None)):
+        await client.storage.is_bot(False)
+
+    session_string = await client.export_session_string()
+    await db.set_session(user_id, session_string)
+    await db.set_api_id(user_id, API_ID)
+    await db.set_api_hash(user_id, API_HASH)
+    
+    await client.disconnect()
+    TG_QR_LOGIN_SESSIONS.pop(qr_key, None)
+    
+    await ensure_user_client(user_id)
+    return web.json_response({
+        "status": "authorized",
+        "message": "Telegram session connected successfully!"
+    })
 
 # ==============================================================================
 # --- FIXED: TELEGRAM QR CODE LOGIN ENGINE (NO SELF-INVALIDATION & DC MIGRATION) ---
@@ -967,7 +1019,9 @@ async def _api_tg_qr_start(request):
             app_version="DestinyTgRestrict 1.0",
             system_version="Linux"
         )
+        temp_client.add_handler(RawUpdateHandler(_qr_raw_update_handler), group=-100)
         await temp_client.connect()
+        await temp_client.initialize()
         
         res = await temp_client.invoke(raw.functions.auth.ExportLoginToken(api_id=API_ID, api_hash=API_HASH, except_ids=[]))
         
@@ -979,7 +1033,8 @@ async def _api_tg_qr_start(request):
                 "user_id": user_id, 
                 "client": temp_client, 
                 "expires": res.expires,
-                "last_poll": 0
+                "update_event": asyncio.Event(),
+                "poll_lock": asyncio.Lock()
             }
             
             return web.json_response({
@@ -1003,84 +1058,35 @@ async def _api_tg_qr_check(request):
     temp_client = session_data["client"]
     user_id = session_data["user_id"]
     
-    now = time.time()
-    if now - session_data.get("last_poll", 0) < 2.0:
-        return web.json_response({"status": "pending"})
-    session_data["last_poll"] = now
-        
-    try:
-        res = await temp_client.invoke(raw.functions.auth.ExportLoginToken(api_id=API_ID, api_hash=API_HASH, except_ids=[]))
-        
-        # 🟢 Case 1: Account is on DC 2 without 2FA
-        if isinstance(res, raw.types.auth.LoginTokenSuccess):
-            auth_user = res.authorization.user
-            if callable(getattr(temp_client.storage, "user_id", None)):
-                await temp_client.storage.user_id(auth_user.id)
-            if callable(getattr(temp_client.storage, "is_bot", None)):
-                await temp_client.storage.is_bot(False)
-
-            session_str = await temp_client.export_session_string()
-            await db.set_session(user_id, session_str)
-            await db.set_api_id(user_id, API_ID)
-            await db.set_api_hash(user_id, API_HASH)
-            await temp_client.disconnect()
-            TG_QR_LOGIN_SESSIONS.pop(qr_key, None)
-            return web.json_response({"status": "authorized", "message": "Telegram session connected successfully!"})
+    async with session_data["poll_lock"]:
+        if not session_data["update_event"].is_set():
+            if time.time() > session_data["expires"]:
+                await temp_client.disconnect()
+                TG_QR_LOGIN_SESSIONS.pop(qr_key, None)
+                return web.json_response({"status": "expired", "message": "QR code expired"})
+            return web.json_response({"status": "pending"})
             
-        # 🟢 Case 2: Account is on DC 5 (India) / DC 4 / DC 1 -> Auto-Migrate!
-        elif isinstance(res, raw.types.auth.LoginTokenMigrateTo):
-            target_dc = res.dc_id
-            transfer_token = res.token
-            await temp_client.disconnect()
+        session_data["update_event"].clear()
+        
+        try:
+            res = await temp_client.invoke(raw.functions.auth.ExportLoginToken(api_id=API_ID, api_hash=API_HASH, except_ids=[]))
             
-            migrated_client = Client(
-                f"qr_dc{target_dc}_{qr_key[:8]}", 
-                api_id=API_ID, 
-                api_hash=API_HASH, 
-                in_memory=True, 
-                ipv6=False,
-                device_model="DestinyTgRestrict",
-                app_version="DestinyTgRestrict 1.0",
-                system_version="Linux"
-            )
-            if callable(getattr(migrated_client.storage, "dc_id", None)):
-                await migrated_client.storage.dc_id(target_dc)
-            else:
-                migrated_client.storage.dc_id = target_dc
+            if isinstance(res, raw.types.auth.LoginTokenSuccess):
+                return await _save_qr_login(qr_key, temp_client, user_id, res.authorization.user)
                 
-            await migrated_client.connect()
-            session_data["client"] = migrated_client
-            
-            try:
-                import_res = await migrated_client.invoke(raw.functions.auth.ImportLoginToken(token=transfer_token))
-                if isinstance(import_res, raw.types.auth.LoginTokenSuccess):
-                    auth_user = import_res.authorization.user
-                    if callable(getattr(migrated_client.storage, "user_id", None)):
-                        await migrated_client.storage.user_id(auth_user.id)
-                    if callable(getattr(migrated_client.storage, "is_bot", None)):
-                        await migrated_client.storage.is_bot(False)
-
-                    session_str = await migrated_client.export_session_string()
-                    await db.set_session(user_id, session_str)
-                    await db.set_api_id(user_id, API_ID)
-                    await db.set_api_hash(user_id, API_HASH)
-                    await migrated_client.disconnect()
-                    TG_QR_LOGIN_SESSIONS.pop(qr_key, None)
-                    return web.json_response({"status": "authorized", "message": "Telegram session connected successfully!"})
-            except Exception as import_err:
-                err_text = str(import_err).lower()
-                if "session_password_needed" in err_text or isinstance(import_err, SessionPasswordNeeded):
-                    return web.json_response({"status": "2fa_required", "message": "Two-Step Verification password required."})
-                logger.error(f"[QR IMPORT ERROR] {import_err}", exc_info=True)
-                return web.json_response({"status": "error", "message": str(import_err)})
-
-        return web.json_response({"status": "pending"})
-    except Exception as e:
-        err_text = str(e).lower()
-        if "session_password_needed" in err_text or isinstance(e, SessionPasswordNeeded):
-            return web.json_response({"status": "2fa_required", "message": "Two-Step Verification password required."})
-        logger.error(f"[QR CHECK ERROR] {e}", exc_info=True)
-        return web.json_response({"status": "pending"})
+            elif isinstance(res, raw.types.auth.LoginTokenMigrateTo):
+                await _qr_switch_dc(temp_client, res.dc_id)
+                res_import = await temp_client.invoke(raw.functions.auth.ImportLoginToken(token=res.token))
+                if isinstance(res_import, raw.types.auth.LoginTokenSuccess):
+                    return await _save_qr_login(qr_key, temp_client, user_id, res_import.authorization.user)
+                
+            return web.json_response({"status": "pending"})
+        except Exception as e:
+            err_text = str(e).lower()
+            if "session_password_needed" in err_text or isinstance(e, SessionPasswordNeeded):
+                return web.json_response({"status": "2fa_required", "message": "Two-Step Verification password required."})
+            logger.error(f"[QR CHECK ERROR] {e}", exc_info=True)
+            return web.json_response({"status": "error", "message": str(e)})
 
 async def _api_tg_qr_verify_2fa(request):
     """Verifies the Telegram Cloud Password for a QR login session."""
@@ -1097,15 +1103,7 @@ async def _api_tg_qr_verify_2fa(request):
     
     try:
         await temp_client.check_password(pwd)
-        
-        session_str = await temp_client.export_session_string()
-        await temp_client.disconnect()
-        TG_QR_LOGIN_SESSIONS.pop(qr_key, None)
-        
-        await db.set_session(user_id, session_str)
-        await db.set_api_id(user_id, API_ID)
-        await db.set_api_hash(user_id, API_HASH)
-        return web.json_response({"status": "success", "message": "Logged in successfully!"})
+        return await _save_qr_login(qr_key, temp_client, user_id, await temp_client.get_me())
     except (PasswordHashInvalid, SessionPasswordNeeded):
         return web.json_response({"status": "error", "message": "Incorrect 2FA password! Please try again."})
     except Exception as e:
@@ -1121,16 +1119,8 @@ async def _api_tg_send_code(request):
             "message": "Invalid phone number format. Include '+' and country code (e.g. +919876543210)."
         })
 
-    # Clean up any previous pending auth client for this user
-    old_cache = WEB_AUTH_CACHE.pop(uid, None)
-    if old_cache and old_cache.get("client"):
-        try:
-            await old_cache["client"].disconnect()
-        except Exception:
-            pass
-
     client = Client(
-        f"phone_login_{uid}",
+        f"phone_login_{uid}_{int(time.time())}",
         api_id=API_ID,
         api_hash=API_HASH,
         in_memory=True,
@@ -1139,15 +1129,36 @@ async def _api_tg_send_code(request):
         app_version="DestinyTgRestrict 1.0",
         system_version="Linux"
     )
-    await client.connect()
     try:
+        await client.connect()
         code = await client.send_code(phone)
+        timeout = int(getattr(code, "timeout", 0) or 0)
+        next_type = getattr(code, "next_type", None)
         delivery_type = str(getattr(code, "type", "unknown"))
         logger.info(f"📲 OTP requested for user {uid} ({phone[:4]}***) -> Delivery Type: {delivery_type}")
-        WEB_AUTH_CACHE[uid] = {"client": client, "phone": phone, "hash": code.phone_code_hash}
-        return web.json_response({"status": "success", "delivery": delivery_type})
+        
+        old_cache = WEB_AUTH_CACHE.get(uid)
+        if old_cache and old_cache.get("client"):
+            try: await old_cache["client"].disconnect()
+            except Exception: pass
+            
+        WEB_AUTH_CACHE[uid] = {
+            "client": client, 
+            "phone": phone, 
+            "hash": code.phone_code_hash,
+            "delivery": delivery_type,
+            "next_type": str(next_type) if next_type else None,
+            "resend_at": time.time() + timeout
+        }
+        return web.json_response({
+            "status": "success", 
+            "delivery": delivery_type,
+            "next_type": str(next_type) if next_type else None,
+            "timeout": timeout
+        })
     except Exception as e:
-        await client.disconnect()
+        try: await client.disconnect()
+        except: pass
         return web.json_response({"status": "error", "message": str(e)})
 
 async def _api_tg_verify_code(request):
@@ -1222,13 +1233,39 @@ async def _api_tg_resend_code(request):
     if not cache:
         return web.json_response({"status": "error", "message": "Session expired. Enter phone number again."})
         
+    remaining = int(cache.get("resend_at", 0) - time.time())
+    if remaining > 0:
+        return web.json_response({"status": "error", "message": f"Wait {remaining} seconds before retrying."})
+        
+    if not cache.get("next_type"):
+        return web.json_response({
+            "status": "error",
+            "message": "Telegram has not provided another delivery option. Use the code already sent or wait before retrying."
+        })
+        
     client = cache["client"]
     try:
         resend = await client.resend_code(cache["phone"], cache["hash"])
+        timeout = int(getattr(resend, "timeout", 0) or 0)
+        next_type = getattr(resend, "next_type", None)
         cache["hash"] = resend.phone_code_hash
-        return web.json_response({"status": "success", "delivery": str(resend.type)})
+        cache["delivery"] = str(resend.type)
+        cache["next_type"] = str(next_type) if next_type else None
+        cache["resend_at"] = time.time() + timeout
+        return web.json_response({
+            "status": "success", 
+            "delivery": str(resend.type),
+            "next_type": str(next_type) if next_type else None,
+            "timeout": timeout
+        })
     except Exception as e:
-        return web.json_response({"status": "error", "message": str(e)})
+        err_text = str(e)
+        if "SEND_CODE_UNAVAILABLE" in err_text:
+            return web.json_response({
+                "status": "error", 
+                "message": "Telegram rejected the resend request. Please use the original code sent to your app."
+            })
+        return web.json_response({"status": "error", "message": err_text})
         
 async def _api_tg_logout(request):
     data = await request.json()
