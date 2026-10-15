@@ -36,25 +36,25 @@ async def watcher_worker_loop(wid_str):
             exclude_keywords = watcher.get("exclude_keywords", [])
             cleanup_keywords = watcher.get("cleanup_keywords", []) # 🟢 NEW
 
-            # 🟢 Always wake up and prefer the owner's persistent User Session
-            owner_client = await ensure_user_client(owner_id)
-            fetcher = owner_client if owner_client else app
+            # Prefer the owner's connected user session for sources it can access;
+            # otherwise use the bot. This is only an access-selection fallback.
+            owner_client = USER_CLIENTS.get(owner_id)
+            fetcher = owner_client if (owner_client and owner_client.is_connected) else app
 
-            msg = None
             try:
-                await resolve_and_cache_peer(fetcher, source_id)
+                # 🟢 Force peer resolution to prevent PEER_ID_INVALID on numeric IDs
+                try: await fetcher.resolve_peer(source_id)
+                except Exception: pass
                 msg = await fetcher.get_messages(source_id, msg_id)
-                if (not msg or getattr(msg, "empty", True)) and fetcher != app and not (isinstance(source_id, int) and source_id > 0):
-                    await resolve_and_cache_peer(app, source_id)
-                    msg = await app.get_messages(source_id, msg_id)
             except Exception as fetch_err:
                 logger.warning(f"Watcher {wid_str}: could not fetch {source_id}/{msg_id}: {fetch_err}")
                 err_str = str(fetch_err).lower()
                 
+                # 🟢 Distinguish network/access errors from genuinely deleted messages
                 if "peer_id_invalid" in err_str or "username not found" in err_str or "flood" in err_str or "network" in err_str:
                     await asyncio.sleep(5)
-                    await WATCHER_QUEUES[wid_str].put(msg_id)
-                    continue
+                    await WATCHER_QUEUES[wid_str].put(msg_id) # Re-queue the ID safely
+                    continue # Do NOT advance the checkpoint
                     
                 msg = None
 
@@ -77,7 +77,6 @@ async def watcher_worker_loop(wid_str):
                 )
                 continue
 
-            is_source_dm = isinstance(source_id, int) and source_id > 0
             is_content_protected = (
                 getattr(msg, "has_protected_content", False)
                 or getattr(msg.chat, "has_protected_content", False)
@@ -103,26 +102,22 @@ async def watcher_worker_loop(wid_str):
                 )
                 continue
 
-            # 🟢 Canonical source-topic check (Ignores DMs & supports General Topic = 1)
-            chat_type_str = str(getattr(getattr(msg, "chat", None), "type", "")).upper()
-            is_private_dm = is_source_dm or "PRIVATE" in chat_type_str or "BOT" in chat_type_str
-            if source_thread is not None and not is_private_dm:
-                target_thread = int(source_thread)
+            # Canonical source-topic check. Telegram forum messages expose the
+            # thread through message_thread_id; reply fields are only fallbacks
+            # for clients/older message objects.
+            if source_thread is not None:
                 actual_thread = getattr(msg, "message_thread_id", None)
                 if actual_thread is None:
                     actual_thread = getattr(msg, "reply_to_top_message_id", None)
-
                 if actual_thread is None:
-                    # General Topic (1) messages have message_thread_id=None in Telegram
-                    if target_thread != 1 and getattr(msg, "reply_to_message_id", None) != target_thread and getattr(msg, "id", None) != target_thread:
-                        log_file_result("watcher", owner_id, wid_str, source_id, msg.id, media_filename(msg, msg.id), "SKIPPED", f"topic filter mismatch: expected {target_thread}, no topic ID found")
-                        await db.db.watchers.update_one(
-                            {"_id": watcher_db_id},
-                            {"$max": {"last_msg_id": int(msg.id)}, "$inc": {"stats.skipped": 1}}
-                        )
-                        continue
-                elif int(actual_thread) != target_thread:
-                    log_file_result("watcher", owner_id, wid_str, source_id, msg.id, media_filename(msg, msg.id), "SKIPPED", f"topic filter mismatch: expected {target_thread}, got {actual_thread}")
+                    actual_thread = getattr(msg, "reply_to_message_id", None)
+
+                # A topic service message can itself have the topic root ID.
+                if actual_thread is None and getattr(msg, "id", None) == int(source_thread):
+                    actual_thread = int(source_thread)
+
+                if actual_thread != int(source_thread):
+                    log_file_result("watcher", owner_id, wid_str, source_id, msg.id, media_filename(msg, msg.id), "SKIPPED", f"topic filter mismatch: expected {source_thread}, got {actual_thread}")
                     await db.db.watchers.update_one(
                         {"_id": watcher_db_id},
                         {"$max": {"last_msg_id": int(msg.id)}, "$inc": {"stats.skipped": 1}}
@@ -134,32 +129,13 @@ async def watcher_worker_loop(wid_str):
 
             processed_successfully = False
 
-            has_custom_thumb = bool(watcher.get("thumb_file_id") or watcher.get("thumb_b64"))
-            has_cleanup_tags = bool(watcher.get("cleanup_keywords"))
-            needs_reupload = bool((is_restricted and not is_source_dm) or is_content_protected or has_custom_thumb or has_cleanup_tags)
-
-            # 🟢 Determine Uploader accurately
-            is_dest_dm = isinstance(dest_id, int) and dest_id > 0
-            if (is_dest_dm or (is_source_dm and not needs_reupload)) and owner_client:
-                upload_client = owner_client
-            else:
-                upload_client = app
-                worker_bots = USER_TASK_BOTS.get(owner_id, [])
-                if worker_bots and not is_dest_dm:
-                    connected_workers = [wb for wb in worker_bots if getattr(wb, "is_connected", False)]
-                    if connected_workers:
-                        cand_worker = connected_workers[int(time.time()) % len(connected_workers)]
-                        if needs_reupload:
-                            # For download+upload, Worker Bot only needs access to Destination
-                            upload_client = cand_worker
-                        else:
-                            # For direct fast-copy, Worker Bot MUST have access to Source too!
-                            try:
-                                await resolve_and_cache_peer(cand_worker, source_id)
-                                await cand_worker.get_chat(source_id)
-                                upload_client = cand_worker
-                            except Exception:
-                                upload_client = owner_client if owner_client else app
+            # 🟢 Determine Uploader early so we can show it in the UI even if restricted
+            upload_client = app
+            worker_bots = USER_TASK_BOTS.get(owner_id, [])
+            if worker_bots:
+                connected_workers = [wb for wb in worker_bots if getattr(wb, "is_connected", False)]
+                if connected_workers:
+                    upload_client = connected_workers[int(time.time()) % len(connected_workers)]
 
             # 🟢 Inject fetcher/uploader into DB for UI rendering
             await db.db.watchers.update_one(
@@ -167,7 +143,10 @@ async def watcher_worker_loop(wid_str):
                 {"$set": {"fetcher": _get_client_label(fetcher), "uploader": _get_client_label(upload_client)}}
             )
 
-            if not needs_reupload:
+            has_custom_thumb = bool(watcher.get("thumb_file_id") or watcher.get("thumb_b64"))
+            has_cleanup_tags = bool(watcher.get("cleanup_keywords"))
+
+            if not is_restricted and not is_content_protected and not has_custom_thumb and not has_cleanup_tags:
                 if getattr(msg, "media_group_id", None):
                     group_cache_key = f"{owner_id}_{source_id}_{msg.media_group_id}_{dest_id}_{dest_thread}"
                     if WATCHER_MEDIA_GROUPS.get(group_cache_key):
@@ -352,16 +331,7 @@ async def watcher_worker_loop(wid_str):
                         allowed_types=allowed_types
                     )
                 finally:
-                    t_state = ACTIVE_PROCESSES.get(owner_id, {}).get(task_uuid, {})
-                    result_reason = t_state.get("last_result_reason")
-                    actual_f = t_state.get("fetcher")
-                    actual_u = t_state.get("uploader")
-                    if actual_f or actual_u:
-                        upd = {}
-                        if actual_f: upd["fetcher"] = actual_f
-                        if actual_u and "Pending" not in actual_u: upd["uploader"] = actual_u
-                        if upd:
-                            await db.db.watchers.update_one({"_id": watcher_db_id}, {"$set": upd})
+                    result_reason = ACTIVE_PROCESSES.get(owner_id, {}).get(task_uuid, {}).get("last_result_reason")
                     cleanup_task_memory(owner_id, task_uuid)
 
                 if result == "SUCCESS" or result is True:
@@ -405,11 +375,17 @@ async def process_watcher_message(client, message):
     topic_id = getattr(message, "message_thread_id", None)
     if topic_id is None:
         topic_id = getattr(message, "reply_to_top_message_id", None)
+    if topic_id is None:
+        topic_id = getattr(message, "reply_to_message_id", None)
 
-    # 🟢 Single query fetches all watchers for this chat_id (Whole-Chat, General Topic 1, and Specific Topics);
-    # watcher_worker_loop performs the exact source_thread filtering.
-    cursor = db.db.watchers.find({"source_id": chat_id})
+    cursor = await db.get_watchers_for_source(chat_id, topic_id)
     watchers = await cursor.to_list(length=100)
+
+    # 🟢 FIX: Always merge global chat watchers (source_thread = None)
+    # This prevents the bot from ignoring messages inside topics when the whole group is watched.
+    if topic_id is not None:
+        cursor_global = await db.get_watchers_for_source(chat_id, None)
+        watchers.extend(await cursor_global.to_list(length=100))
 
     # 🟢 Live Listener ONLY pushes IDs to the queue now!
     # Use a bounded recent-event cache rather than remembering only the last
