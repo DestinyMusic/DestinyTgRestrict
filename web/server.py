@@ -1039,10 +1039,9 @@ async def _api_tg_qr_start(request):
         qr_key = uuid.uuid4().hex
         
         temp_client = Client(
-            f"qr_{qr_key[:8]}",
+            ":memory:",
             api_id=API_ID,
             api_hash=API_HASH,
-            in_memory=True,
             ipv6=False,
             device_model="DestinyTgRestrict",
             app_version="1.0",
@@ -1153,10 +1152,9 @@ async def _api_tg_send_code(request):
         })
 
     client = Client(
-        f"phone_login_{uid}_{int(time.time())}",
+        ":memory:",
         api_id=API_ID,
         api_hash=API_HASH,
-        in_memory=True,
         ipv6=False,
         device_model="DestinyTgRestrict",
         app_version="1.0",
@@ -1592,25 +1590,9 @@ async def _api_topics_handler(request):
 
     # 🟢 DYNAMIC WAKE-UP
     if not uclient or not uclient.is_connected:
-        try:
-            api_id = await db.get_api_id(uid) or API_ID
-            api_hash = await db.get_api_hash(uid) or API_HASH
-            uclient = Client(
-                 f"User_{uid}", 
-                 session_string=session_str, 
-                 api_id=api_id, 
-                 api_hash=api_hash, 
-                 workers=100, 
-                 ipv6=False,
-                 device_model="DestinyTgRestrict",
-                 app_version="1.0",
-                 system_version=f"{platform.system()} {platform.release()}"
-            )
-            uclient.add_handler(MessageHandler(user_watcher_handler, is_watched_chat))
-            await uclient.start()
-            USER_CLIENTS[uid] = uclient
-        except Exception as e:
-            return web.json_response({"status": "error", "message": f"Session invalid: {e}"})
+        uclient = await ensure_user_client(uid)
+        if not uclient:
+            return web.json_response({"status": "error", "message": "Telegram session invalid or expired. Please log in again via Settings."})
     
     topics = []
     try:
@@ -1751,20 +1733,9 @@ async def _api_mediainfo_web_handler(request):
             msg_id = parsed.get("msg_id")
             
             # 🟢 DYNAMIC WAKE-UP: Automatically reconnect session if it fell asleep
-            uclient = USER_CLIENTS.get(uid)
-            if not uclient or not uclient.is_connected:
-                session_str = await db.get_session(uid)
-                if not session_str:
-                    return web.json_response({"status": "error", "message": "Telegram session not active. Connect in Settings."})
-                try:
-                    api_id = await db.get_api_id(uid) or API_ID
-                    api_hash = await db.get_api_hash(uid) or API_HASH
-                    uclient = Client(f"User_{uid}", session_string=session_str, api_id=api_id, api_hash=api_hash, workers=100, ipv6=False)
-                    uclient.add_handler(MessageHandler(user_watcher_handler, is_watched_chat))
-                    await uclient.start()
-                    USER_CLIENTS[uid] = uclient
-                except Exception as e:
-                    return web.json_response({"status": "error", "message": f"Session invalid: {e}"})
+            uclient = await ensure_user_client(uid)
+            if not uclient:
+                return web.json_response({"status": "error", "message": "Telegram session not active or expired. Connect in Settings."})
                 
             try:
                 msg = await uclient.get_messages(chat_id, msg_id)
@@ -2296,17 +2267,6 @@ async def _api_editor_active_tasks(request):
                 "uploader": state.get("uploader", "🤖 Pending")
             }
     return web.json_response({"status": "success", "tasks": active})
-    uid = int(request.query.get("user_id", 0))
-    active = {}
-    for t_uuid, t_info in list(EDITOR_ACTIVE_TASKS.items()):
-        if t_info.get("user_id") == uid:
-            state = EDITOR_UI_STATE.get(t_uuid, {})
-            active[t_uuid] = {
-                "file_name": state.get("file_name", "Media Task"),
-                "fetcher": state.get("fetcher", "🤖 Pending"),
-                "uploader": state.get("uploader", "🤖 Pending")
-            }
-    return web.json_response({"status": "success", "tasks": active})          
     
 async def _api_edit_media_handler(request):
     data = await request.json()
