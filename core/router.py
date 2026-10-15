@@ -185,8 +185,8 @@ def get_dynamic_upload_client(client, acc, user_id, task_uuid, msg_index):
     return my_slice[msg_index % len(my_slice)]
 
 async def _execute_unrestricted_copy(client, acc, chat_id, msgid, dest_chat_id, dest_thread_id, msg, msg_type, user_id, task_uuid, delay, index=1, source_username=None):
-    # 🟢 FIX: Force User Session for Bot DMs and Chat DMs because Worker Bots can't access them!
-    is_source_dm = isinstance(chat_id, int) and chat_id > 0
+    # 🟢 Comprehensive DM check: If either Source OR Destination is a Bot DM / User DM, force the User Session
+    is_source_dm = (isinstance(chat_id, int) and chat_id > 0) or str(getattr(getattr(msg, "chat", None), "type", "")).upper() in ["BOT", "PRIVATE"]
     is_dest_dm = isinstance(dest_chat_id, int) and dest_chat_id > 0
     
     if (is_source_dm or is_dest_dm) and acc:
