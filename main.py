@@ -642,6 +642,9 @@ async def main():
             continue
 
         try:
+            # 🟢 FIX: Safely resolve the peer BEFORE fetching history to prevent PEER_ID_INVALID
+            await resolve_and_cache_peer(fetcher, source_id)
+            
             # IMPORTANT: do not manufacture every integer message ID. Telegram
             # message IDs can have gaps (deleted messages, service messages, etc.).
             # Queue actual messages returned by history, oldest first.
