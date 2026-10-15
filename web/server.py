@@ -11,7 +11,6 @@ import hmac
 import json
 import secrets
 import re
-import platform
 from urllib.parse import urlencode
 
 WEB_AUTH_COOKIE = "web_auth"
@@ -40,7 +39,41 @@ API_SUCCESS_LOG_PATHS = {
     "/api/cookies/upload", "/api/cookies/delete", "/api/topics", "/api/chats",
 }
 
+async def ensure_user_client(user_id):
+    """Helper to wake up a user session dynamically."""
+    uclient = USER_CLIENTS.get(user_id)
+    if uclient and getattr(uclient, "is_connected", False):
+        return uclient
 
+    session_str = await db.get_session(user_id)
+    if not session_str:
+        return None
+
+    api_id = await db.get_api_id(user_id) or API_ID
+    api_hash = await db.get_api_hash(user_id) or API_HASH
+
+    from pyrogram import Client
+    from pyrogram.handlers import MessageHandler
+
+    uclient = Client(
+         f"User_{user_id}", 
+         session_string=session_str, 
+         api_id=api_id, 
+         api_hash=api_hash, 
+         workers=100, 
+         ipv6=False,
+         device_model="DestinyTgRestrict",
+         app_version="DestinyTgRestrict 1.0",
+         system_version="Linux"
+    )
+    
+    if "user_watcher_handler" in globals() and "is_watched_chat" in globals():
+        uclient.add_handler(MessageHandler(user_watcher_handler, is_watched_chat))
+        
+    await uclient.start()
+    USER_CLIENTS[user_id] = uclient
+    return uclient
+    
 def _diagnostic_safe_reason(value):
     text = str(value or "")
     text = re.sub(r"https?://[^\s\]\[<>'\"]+", "[url-redacted]", text)
@@ -657,9 +690,8 @@ async def _api_add_task(request):
         
         if dest_str:
             dest_chat_id, dest_thread_id = _parse_chat_target(dest_str)
-            uclient = (await ensure_user_client(user_id)) or app
+            uclient = USER_CLIENTS.get(user_id, app)
             try:
-                await resolve_and_cache_peer(uclient, dest_chat_id)
                 d_chat = await uclient.get_chat(dest_chat_id)
                 dest_title = d_chat.title or d_chat.first_name or str(dest_chat_id)
                 if dest_thread_id: 
@@ -779,7 +811,7 @@ async def _api_add_watcher(request):
         allowed_types = [t for t in allowed_types if t in ALL_MSG_TYPES]
         include_keywords = _normalize_keyword_list(data.get("include_keywords"))
         exclude_keywords = _normalize_keyword_list(data.get("exclude_keywords"))
-        cleanup_keywords = _normalize_keyword_list(data.get("cleanup_keywords"))
+        cleanup_keywords = _normalize_keyword_list(data.get("cleanup_keywords")) # 🟢 NEW
         try:
             thumb_b64 = _normalize_task_thumb_data(data.get("thumb_b64"))
         except ValueError as exc:
@@ -790,65 +822,58 @@ async def _api_add_watcher(request):
         if dest_str:
             dest_chat_id, dest_thread_id = _parse_chat_target(dest_str)
 
-        # 🟢 Pass is_watcher=True so deleted sample messages don't block Watcher creation
-        is_restricted, err_msg = await check_link_restriction(user_id, link, is_watcher=True)
+        is_restricted, err_msg = await check_link_restriction(user_id, link)
         if is_restricted is None: 
             return web.json_response({"status": "error", "message": err_msg or "Cannot access this link. Please ensure your account has access."})
 
         parsed = _parse_source_link(link)
         source_thread = parsed.get("topic_id")
         
-        # 🟢 Wake up persistent User Session FIRST
-        user_client = (await ensure_user_client(user_id)) or app
+        user_client = USER_CLIENTS.get(user_id, app)
         target_ref = parsed["join_target"] if parsed["kind"] == "public" else parsed["chat_id"]
+        source_id = None
         source_title = "Watched Source"
 
-        # 🟢 Safely resolve and cache peer without crashing storage.update_peers
-        source_id, peer_kind = await resolve_and_cache_peer(user_client, target_ref)
+        # 🟢 THE PYROFORK BYPASS: Extract the numeric ID via RAW API!
+        if isinstance(target_ref, str) and not str(target_ref).lstrip('-').isdigit():
+            from pyrogram.raw.functions.contacts import ResolveUsername
+            clean_user = target_ref.replace("@", "")
+            try:
+                r = await user_client.invoke(ResolveUsername(username=clean_user))
+                if r.chats:
+                    rid = r.chats[0].id
+                    is_chan = getattr(r.chats[0], "broadcast", False) or getattr(r.chats[0], "megagroup", False)
+                    source_id = int(f"-100{rid}") if is_chan else rid
+                elif r.users:
+                    source_id = r.users[0].id
+            except Exception:
+                pass
 
-        chat = None
+        if not source_id:
+            source_id = target_ref
+
         try:
             chat = await user_client.get_chat(source_id)
             source_id = chat.id
             source_title = chat.title or getattr(chat, "first_name", None) or str(source_id)
-            if getattr(chat, "last_name", None):
-                source_title += f" {chat.last_name}"
+            if parsed.get("topic_id"): 
+                source_title += await get_topic_title(user_client, source_id, parsed["topic_id"])
         except Exception:
-            if isinstance(source_id, int) and source_id > 0 and peer_kind not in ("bot", "user"):
-                try:
-                    alt_id = int(f"-100{source_id}")
-                    chat = await user_client.get_chat(alt_id)
-                    source_id = chat.id  
-                    source_title = chat.title or getattr(chat, "first_name", None) or str(source_id)
-                except Exception:
-                    pass
-            
             if not isinstance(source_id, int) and not (isinstance(source_id, str) and str(source_id).lstrip('-').isdigit()):
                 return web.json_response({"status": "error", "message": f"Could not extract numeric ID for username '{target_ref}'."}, status=400)
-            source_id = int(source_id)
-
-        # 🟢 Ensure Bot/User DMs never treat a message ID as a forum topic ID
-        chat_type = getattr(chat, "type", None) if chat else None
-        is_private_source = (
-            peer_kind in ("bot", "user")
-            or str(chat_type) in ["ChatType.PRIVATE", "ChatType.BOT"]
-            or (isinstance(source_id, int) and source_id > 0)
-        )
-        if is_private_source:
-            source_thread = None
-        elif source_thread:
-            source_title += await get_topic_title(user_client, source_id, source_thread)
             
         dest_title = "Saved Messages" if dest_chat_id == user_id else str(dest_chat_id)
         if dest_chat_id != user_id:
             try:
-                await resolve_and_cache_peer(user_client, dest_chat_id)
+                try: await user_client.resolve_peer(dest_chat_id)
+                except Exception: pass
                 d_chat = await user_client.get_chat(dest_chat_id)
                 dest_title = d_chat.title or d_chat.first_name or str(dest_chat_id)
                 if dest_thread_id: 
                     dest_title += await get_topic_title(user_client, dest_chat_id, dest_thread_id)
             except: pass
 
+        # 🟢 NEW: Check Worker Bots access and warn via PM if missing!
         worker_bots = USER_TASK_BOTS.get(user_id, [])
         is_dm = str(dest_chat_id).lstrip("-").isdigit() and not str(dest_chat_id).startswith("-100") and int(dest_chat_id) > 0
         if worker_bots and not is_dm:
@@ -865,15 +890,24 @@ async def _api_add_watcher(request):
                 try: await app.send_message(user_id, f"⚠️ **Worker Bot Warning:** You just started a Live Watcher to `{dest_title}` via the Web UI, but your Worker Bots are not Admins there!\n\nI will fallback to your User Session. Add your worker bots as Admins for maximum forwarding speed.")
                 except Exception: pass
 
+        if user_id not in USER_CLIENTS:
+            user_session = await db.get_session(user_id)
+            if user_session:
+                u_api = await db.get_api_id(user_id) or API_ID
+                u_hash = await db.get_api_hash(user_id) or API_HASH
+                # 🟢 FIX: Increased workers to 100
+                new_client = Client(f"User_{user_id}", session_string=user_session, api_id=u_api, api_hash=u_hash, workers=100, ipv6=False)
+                new_client.add_handler(MessageHandler(user_watcher_handler, is_watched_chat))
+                await new_client.start()
+                USER_CLIENTS[user_id] = new_client
+
         last_msg_id = 0
         try:
-            async for m in user_client.get_chat_history(source_id, limit=1):
+            async for m in USER_CLIENTS.get(user_id, app).get_chat_history(source_id, limit=1):
                 last_msg_id = m.id
-        except Exception:
-            if parsed.get("msg_id"):
-                last_msg_id = int(parsed["msg_id"])
+        except: pass
 
-        wid = await db.add_watcher(
+        await db.add_watcher(
             user_id=user_id,
             source_id=source_id,
             dest_id=dest_chat_id,
@@ -886,14 +920,11 @@ async def _api_add_watcher(request):
             allowed_types=allowed_types,
             include_keywords=include_keywords,
             exclude_keywords=exclude_keywords,
-            cleanup_keywords=cleanup_keywords,
+            cleanup_keywords=cleanup_keywords, # 🟢 ADDED THIS
             thumb_b64=thumb_b64,
             last_msg_id=last_msg_id
         )
-        GLOBAL_WATCHER_SOURCES.add(source_id)
-        if "start_watcher_worker" in globals() and wid:
-            try: await start_watcher_worker(str(wid))
-            except Exception: pass
+        GLOBAL_WATCHER_SOURCES.add(source_id) # 🟢 UPDATE CACHE
         return web.json_response({"status": "success"})
     except Exception as e:
         return web.json_response({"status": "error", "message": str(e)}, status=500)
@@ -942,91 +973,11 @@ async def _api_download_log_handler(request):
 
 import base64
 import uuid
-import time
-import asyncio
 from urllib.parse import quote
 from pyrogram import raw
-from pyrogram.session import Auth, Session
-from pyrogram.handlers import RawUpdateHandler
 
 TG_QR_LOGIN_SESSIONS = {}
 WEB_AUTH_CACHE = {}
-
-async def _qr_raw_update_handler(client, update, users, chats):
-    if not isinstance(update, raw.types.UpdateLoginToken):
-        return
-    for state in TG_QR_LOGIN_SESSIONS.values():
-        if state.get("client") is client:
-            state["update_event"].set()
-            break
-
-async def _qr_switch_dc(client, target_dc):
-    test_mode = await client.storage.test_mode()
-    
-    dc_option = await client.get_dc_option(target_dc, ipv6=client.ipv6)
-    server_address = dc_option.ip_address
-    port = dc_option.port
-    
-    new_auth_key = await Auth(
-        client, target_dc, test_mode,
-        server_address=server_address, port=port
-    ).create()
-    
-    await client.session.stop()
-    
-    if callable(getattr(client.storage, "dc_id", None)):
-        await client.storage.dc_id(target_dc)
-        await client.storage.auth_key(new_auth_key)
-    else:
-        client.storage.dc_id = target_dc
-        client.storage.auth_key = new_auth_key
-        
-    client.session = Session(
-        client, target_dc, new_auth_key, test_mode,
-        is_media=False, is_cdn=False,
-        server_address=server_address, port=port,
-        crypto_executor=client.crypto_executor
-    )
-    await client.session.start()
-    client.is_connected = True
-
-async def _safe_close_client(client):
-    """Safely closes Pyrogram clients whether initialized or merely connected."""
-    if not client:
-        return
-    try:
-        if getattr(client, "is_initialized", False):
-            await client.stop()
-        elif getattr(client, "is_connected", False):
-            await client.disconnect()
-    except Exception:
-        pass
-        
-async def _save_qr_login(qr_key, client, user_id, tg_user):
-    if int(tg_user.id) != int(user_id):
-        return web.json_response({
-            "status": "error",
-            "message": "The scanned Telegram account does not match the dashboard account."
-        }, status=403)
-        
-    if callable(getattr(client.storage, "user_id", None)):
-        await client.storage.user_id(int(tg_user.id))
-    if callable(getattr(client.storage, "is_bot", None)):
-        await client.storage.is_bot(False)
-
-    session_string = await client.export_session_string()
-    await db.set_session(user_id, session_string)
-    await db.set_api_id(user_id, API_ID)
-    await db.set_api_hash(user_id, API_HASH)
-    
-    await _safe_close_client(client)
-    TG_QR_LOGIN_SESSIONS.pop(qr_key, None)
-    
-    await ensure_user_client(user_id)
-    return web.json_response({
-        "status": "authorized",
-        "message": "Telegram session connected successfully!"
-    })
 
 # ==============================================================================
 # --- FIXED: TELEGRAM QR CODE LOGIN ENGINE (NO SELF-INVALIDATION & DC MIGRATION) ---
@@ -1039,17 +990,25 @@ async def _api_tg_qr_start(request):
         qr_key = uuid.uuid4().hex
         
         temp_client = Client(
-            ":memory:",
+            f"qr_{qr_key[:8]}",
             api_id=API_ID,
             api_hash=API_HASH,
+            in_memory=True,
             ipv6=False,
             device_model="DestinyTgRestrict",
-            app_version="1.0",
-            system_version=f"{platform.system()} {platform.release()}"
+            app_version="DestinyTgRestrict 1.0",
+            system_version="Linux"
         )
-        temp_client.add_handler(RawUpdateHandler(_qr_raw_update_handler), group=-100)
         await temp_client.connect()
-        await temp_client.initialize()
+        
+        scanned_event = asyncio.Event()
+
+        async def _on_raw_update(client, update, users, chats):
+            if isinstance(update, raw.types.UpdateLoginToken):
+                scanned_event.set()
+
+        temp_client.add_handler(RawUpdateHandler(_on_raw_update))
+        await temp_client.dispatcher.start()
         
         res = await temp_client.invoke(raw.functions.auth.ExportLoginToken(api_id=API_ID, api_hash=API_HASH, except_ids=[]))
         
@@ -1060,9 +1019,8 @@ async def _api_tg_qr_start(request):
             TG_QR_LOGIN_SESSIONS[qr_key] = {
                 "user_id": user_id, 
                 "client": temp_client, 
-                "expires": res.expires,
-                "update_event": asyncio.Event(),
-                "poll_lock": asyncio.Lock()
+                "expires": res.expires, 
+                "scanned_event": scanned_event
             }
             
             return web.json_response({
@@ -1086,35 +1044,83 @@ async def _api_tg_qr_check(request):
     temp_client = session_data["client"]
     user_id = session_data["user_id"]
     
-    async with session_data["poll_lock"]:
-        if not session_data["update_event"].is_set():
-            if time.time() > session_data["expires"]:
-                await temp_client.disconnect()
-                TG_QR_LOGIN_SESSIONS.pop(qr_key, None)
-                return web.json_response({"status": "expired", "message": "QR code expired"})
-            return web.json_response({"status": "pending"})
-            
-        session_data["update_event"].clear()
+    # 🟢 1. Do NOT touch Telegram servers until phone actually scans the QR
+    if not session_data["scanned_event"].is_set():
+        return web.json_response({"status": "pending"})
         
-        try:
-            res = await temp_client.invoke(raw.functions.auth.ExportLoginToken(api_id=API_ID, api_hash=API_HASH, except_ids=[]))
+    try:
+        res = await temp_client.invoke(raw.functions.auth.ExportLoginToken(api_id=API_ID, api_hash=API_HASH, except_ids=[]))
+        
+        # 🟢 Case 1: Account is on DC 2 without 2FA
+        if isinstance(res, raw.types.auth.LoginTokenSuccess):
+            auth_user = res.authorization.user
+            if callable(getattr(temp_client.storage, "user_id", None)):
+                await temp_client.storage.user_id(auth_user.id)
+            if callable(getattr(temp_client.storage, "is_bot", None)):
+                await temp_client.storage.is_bot(False)
+
+            session_str = await temp_client.export_session_string()
+            await db.set_session(user_id, session_str)
+            await db.set_api_id(user_id, API_ID)
+            await db.set_api_hash(user_id, API_HASH)
+            await temp_client.disconnect()
+            TG_QR_LOGIN_SESSIONS.pop(qr_key, None)
+            return web.json_response({"status": "authorized", "message": "Telegram session connected successfully!"})
             
-            if isinstance(res, raw.types.auth.LoginTokenSuccess):
-                return await _save_qr_login(qr_key, temp_client, user_id, res.authorization.user)
+        # 🟢 Case 2: Account is on DC 5 (India) / DC 4 / DC 1 -> Auto-Migrate!
+        elif isinstance(res, raw.types.auth.LoginTokenMigrateTo):
+            target_dc = res.dc_id
+            transfer_token = res.token
+            await temp_client.disconnect()
+            
+            migrated_client = Client(
+                f"qr_dc{target_dc}_{qr_key[:8]}", 
+                api_id=API_ID, 
+                api_hash=API_HASH, 
+                in_memory=True, 
+                ipv6=False,
+                device_model="DestinyTgRestrict",
+                app_version="DestinyTgRestrict 1.0",
+                system_version="Linux"
+            )
+            if callable(getattr(migrated_client.storage, "dc_id", None)):
+                await migrated_client.storage.dc_id(target_dc)
+            else:
+                migrated_client.storage.dc_id = target_dc
                 
-            elif isinstance(res, raw.types.auth.LoginTokenMigrateTo):
-                await _qr_switch_dc(temp_client, res.dc_id)
-                res_import = await temp_client.invoke(raw.functions.auth.ImportLoginToken(token=res.token))
-                if isinstance(res_import, raw.types.auth.LoginTokenSuccess):
-                    return await _save_qr_login(qr_key, temp_client, user_id, res_import.authorization.user)
-                
-            return web.json_response({"status": "pending"})
-        except Exception as e:
-            err_text = str(e).lower()
-            if "session_password_needed" in err_text or isinstance(e, SessionPasswordNeeded):
-                return web.json_response({"status": "2fa_required", "message": "Two-Step Verification password required."})
-            logger.error(f"[QR CHECK ERROR] {e}", exc_info=True)
-            return web.json_response({"status": "error", "message": str(e)})
+            await migrated_client.connect()
+            session_data["client"] = migrated_client
+            
+            try:
+                import_res = await migrated_client.invoke(raw.functions.auth.ImportLoginToken(token=transfer_token))
+                if isinstance(import_res, raw.types.auth.LoginTokenSuccess):
+                    auth_user = import_res.authorization.user
+                    if callable(getattr(migrated_client.storage, "user_id", None)):
+                        await migrated_client.storage.user_id(auth_user.id)
+                    if callable(getattr(migrated_client.storage, "is_bot", None)):
+                        await migrated_client.storage.is_bot(False)
+
+                    session_str = await migrated_client.export_session_string()
+                    await db.set_session(user_id, session_str)
+                    await db.set_api_id(user_id, API_ID)
+                    await db.set_api_hash(user_id, API_HASH)
+                    await migrated_client.disconnect()
+                    TG_QR_LOGIN_SESSIONS.pop(qr_key, None)
+                    return web.json_response({"status": "authorized", "message": "Telegram session connected successfully!"})
+            except Exception as import_err:
+                err_text = str(import_err).lower()
+                if "session_password_needed" in err_text or isinstance(import_err, SessionPasswordNeeded):
+                    return web.json_response({"status": "2fa_required", "message": "Two-Step Verification password required."})
+                logger.error(f"[QR IMPORT ERROR] {import_err}", exc_info=True)
+                return web.json_response({"status": "error", "message": str(import_err)})
+
+        return web.json_response({"status": "pending"})
+    except Exception as e:
+        err_text = str(e).lower()
+        if "session_password_needed" in err_text or isinstance(e, SessionPasswordNeeded):
+            return web.json_response({"status": "2fa_required", "message": "Two-Step Verification password required."})
+        logger.error(f"[QR CHECK ERROR] {e}", exc_info=True)
+        return web.json_response({"status": "pending"})
 
 async def _api_tg_qr_verify_2fa(request):
     """Verifies the Telegram Cloud Password for a QR login session."""
@@ -1131,7 +1137,18 @@ async def _api_tg_qr_verify_2fa(request):
     
     try:
         await temp_client.check_password(pwd)
-        return await _save_qr_login(qr_key, temp_client, user_id, await temp_client.get_me())
+        
+        session_str = await temp_client.export_session_string()
+        await temp_client.disconnect()
+        TG_QR_LOGIN_SESSIONS.pop(qr_key, None)
+        
+        await db.set_session(user_id, session_str)
+        await db.set_api_id(user_id, API_ID)
+        await db.set_api_hash(user_id, API_HASH)
+        
+        await ensure_user_client(user_id) # 🟢 Wakes up the session in memory
+        
+        return web.json_response({"status": "success", "message": "Logged in successfully!"})
     except (PasswordHashInvalid, SessionPasswordNeeded):
         return web.json_response({"status": "error", "message": "Incorrect 2FA password! Please try again."})
     except Exception as e:
@@ -1140,63 +1157,30 @@ async def _api_tg_qr_verify_2fa(request):
 async def _api_tg_send_code(request):
     data = await request.json()
     uid = int(data.get("user_id"))
-    phone = str(data.get("phone") or "").strip()
-    phone_digits = re.sub(r"\D", "", phone)
-    if phone_digits.startswith("00"):
-        phone_digits = phone_digits[2:]
-    phone = f"+{phone_digits}"
-    if not re.fullmatch(r"\+\d{8,15}", phone):
-        return web.json_response({
-            "status": "error",
-            "message": "Invalid phone number format. Include '+' and country code (e.g. +919876543210)."
-        })
-
+    phone = data.get("phone")
+    
     client = Client(
-        ":memory:",
-        api_id=API_ID,
+        f"web_auth_{uid}_{uuid.uuid4().hex}", 
+        in_memory=True, 
+        api_id=API_ID, 
         api_hash=API_HASH,
-        ipv6=False,
         device_model="DestinyTgRestrict",
-        app_version="1.0",
-        system_version=f"{platform.system()} {platform.release()}"
+        app_version="DestinyTgRestrict 1.0",
+        system_version="Linux"
     )
+    await client.connect()
     try:
-        await client.connect()
         code = await client.send_code(phone)
-        timeout = int(getattr(code, "timeout", 0) or 0)
-        next_type = getattr(code, "next_type", None)
-        code_type = getattr(code, "type", None)
-        delivery_type = getattr(code_type, "name", None) or str(code_type or "unknown")
-        logger.info(f"📲 OTP requested for user {uid} ({phone[:4]}***) -> Delivery Type: {delivery_type}")
-        
-        old_cache = WEB_AUTH_CACHE.get(uid)
-        if old_cache and old_cache.get("client"):
-            try: await old_cache["client"].disconnect()
-            except Exception: pass
-            
-        WEB_AUTH_CACHE[uid] = {
-            "client": client, 
-            "phone": phone, 
-            "hash": code.phone_code_hash,
-            "delivery": delivery_type,
-            "next_type": str(next_type) if next_type else None,
-            "resend_at": time.time() + timeout
-        }
-        return web.json_response({
-            "status": "success", 
-            "delivery": delivery_type,
-            "next_type": str(next_type) if next_type else None,
-            "timeout": timeout
-        })
+        WEB_AUTH_CACHE[uid] = {"client": client, "phone": phone, "hash": code.phone_code_hash}
+        return web.json_response({"status": "success"})
     except Exception as e:
-        try: await client.disconnect()
-        except: pass
+        await client.disconnect()
         return web.json_response({"status": "error", "message": str(e)})
 
 async def _api_tg_verify_code(request):
     data = await request.json()
     uid = int(data.get("user_id"))
-    code = str(data.get("code") or "").replace(" ", "").strip()
+    code = data.get("code")
     
     cache = WEB_AUTH_CACHE.get(uid)
     if not cache: return web.json_response({"status": "error", "message": "Session expired. Try again."})
@@ -1213,13 +1197,15 @@ async def _api_tg_verify_code(request):
             return web.json_response({"status": "error", "message": f"⚠️ ID Mismatch! You logged into the Web UI as {uid}, but this phone number belongs to {me.id}. Please use your own Telegram account."})
             
         session_str = await client.export_session_string()
-        await _safe_close_client(client)
+        await client.disconnect()
         del WEB_AUTH_CACHE[uid]
         
         await db.set_session(uid, session_str)
         await db.set_api_id(uid, API_ID)
         await db.set_api_hash(uid, API_HASH)
-        await ensure_user_client(uid)
+        
+        await ensure_user_client(uid) # 🟢 Wakes up the session in memory
+        
         return web.json_response({"status": "success"})
         
     except SessionPasswordNeeded:
@@ -1247,59 +1233,19 @@ async def _api_tg_verify_2fa(request):
             return web.json_response({"status": "error", "message": f"⚠️ ID Mismatch! You logged into the Web UI as {uid}, but this phone number belongs to {me.id}. Please use your own Telegram account."})
             
         session_str = await client.export_session_string()
-        await _safe_close_client(client)
+        await client.disconnect()
         del WEB_AUTH_CACHE[uid]
         
         await db.set_session(uid, session_str)
         await db.set_api_id(uid, API_ID)
         await db.set_api_hash(uid, API_HASH)
-        await ensure_user_client(uid)
+        
+        await ensure_user_client(uid) # 🟢 Wakes up the session in memory
+        
         return web.json_response({"status": "success"})
     except Exception as e:
         return web.json_response({"status": "error", "message": str(e)})
 
-async def _api_tg_resend_code(request):
-    data = await request.json()
-    uid = int(data.get("user_id"))
-    cache = WEB_AUTH_CACHE.get(uid)
-    if not cache:
-        return web.json_response({"status": "error", "message": "Session expired. Enter phone number again."})
-        
-    remaining = int(cache.get("resend_at", 0) - time.time())
-    if remaining > 0:
-        return web.json_response({"status": "error", "message": f"Wait {remaining} seconds before retrying."})
-        
-    if not cache.get("next_type"):
-        return web.json_response({
-            "status": "error",
-            "message": "Telegram has not provided another delivery option. Use the code already sent or wait before retrying."
-        })
-        
-    client = cache["client"]
-    try:
-        resend = await client.resend_code(cache["phone"], cache["hash"])
-        timeout = int(getattr(resend, "timeout", 0) or 0)
-        next_type = getattr(resend, "next_type", None)
-        cache["hash"] = resend.phone_code_hash
-        delivery_type = getattr(resend.type, "name", None) or str(resend.type)
-        cache["delivery"] = delivery_type
-        cache["next_type"] = str(next_type) if next_type else None
-        cache["resend_at"] = time.time() + timeout
-        return web.json_response({
-            "status": "success", 
-            "delivery": delivery_type,
-            "next_type": str(next_type) if next_type else None,
-            "timeout": timeout
-        })
-    except Exception as e:
-        err_text = str(e)
-        if "SEND_CODE_UNAVAILABLE" in err_text:
-            return web.json_response({
-                "status": "error", 
-                "message": "Telegram rejected the resend request. Please use the original code sent to your app."
-            })
-        return web.json_response({"status": "error", "message": err_text})
-        
 async def _api_tg_logout(request):
     data = await request.json()
     uid = int(data.get("user_id", 0))
@@ -1331,9 +1277,13 @@ async def _api_chats_handler(request):
     if not session_str:
         return web.json_response({"status": "error", "message": "Not connected to Telegram. Please login."})
 
-    uclient = await ensure_user_client(uid)
-    if not uclient:
-        return web.json_response({"status": "error", "message": "Session invalid or expired. Please log in again."})
+    # 🟢 DYNAMIC WAKE-UP: Call your new helper function
+    try:
+        uclient = await ensure_user_client(uid)
+        if not uclient:
+            return web.json_response({"status": "error", "message": "Session missing or invalid."})
+    except Exception as e:
+        return web.json_response({"status": "error", "message": f"Session invalid: {e}"})
 
     dialog_collection = []
 
@@ -1590,9 +1540,25 @@ async def _api_topics_handler(request):
 
     # 🟢 DYNAMIC WAKE-UP
     if not uclient or not uclient.is_connected:
-        uclient = await ensure_user_client(uid)
-        if not uclient:
-            return web.json_response({"status": "error", "message": "Telegram session invalid or expired. Please log in again via Settings."})
+        try:
+            api_id = await db.get_api_id(uid) or API_ID
+            api_hash = await db.get_api_hash(uid) or API_HASH
+            uclient = Client(
+                 f"User_{uid}", 
+                 session_string=session_str, 
+                 api_id=api_id, 
+                 api_hash=api_hash, 
+                 workers=100, 
+                 ipv6=False,
+                 device_model="DestinyTgRestrict",
+                 app_version="DestinyTgRestrict 1.0",
+                 system_version="Linux"
+            )
+            uclient.add_handler(MessageHandler(user_watcher_handler, is_watched_chat))
+            await uclient.start()
+            USER_CLIENTS[uid] = uclient
+        except Exception as e:
+            return web.json_response({"status": "error", "message": f"Session invalid: {e}"})
     
     topics = []
     try:
@@ -1642,9 +1608,20 @@ async def _api_chat_details_handler(request):
     if not session_str:
         return web.json_response({"status": "error", "message": "Not logged in."})
 
-    uclient = await ensure_user_client(uid)
-    if not uclient:
-        return web.json_response({"status": "error", "message": "Session invalid or expired. Please log in again."})
+    uclient = USER_CLIENTS.get(uid)
+    
+    # Wake up routine to prevent locks
+    if not uclient or not uclient.is_connected:
+        try:
+            api_id = await db.get_api_id(uid) or API_ID
+            api_hash = await db.get_api_hash(uid) or API_HASH
+            uclient = Client(f"User_{uid}", session_string=session_str, api_id=api_id, api_hash=api_hash, workers=100, ipv6=False)
+            uclient.add_handler(MessageHandler(user_watcher_handler, is_watched_chat))
+            await uclient.start()
+            USER_CLIENTS[uid] = uclient
+        except Exception as e:
+            logger.error(f"[CHAT DETAILS] Client connection failed: {e}")
+            return web.json_response({"status": "error", "message": f"Session invalid: {e}"})
 
     try:
         # 🟢 FIX 1: Safely resolve ALL chat types (Users, Bots, Channels, Groups)
@@ -1733,9 +1710,20 @@ async def _api_mediainfo_web_handler(request):
             msg_id = parsed.get("msg_id")
             
             # 🟢 DYNAMIC WAKE-UP: Automatically reconnect session if it fell asleep
-            uclient = await ensure_user_client(uid)
-            if not uclient:
-                return web.json_response({"status": "error", "message": "Telegram session not active or expired. Connect in Settings."})
+            uclient = USER_CLIENTS.get(uid)
+            if not uclient or not uclient.is_connected:
+                session_str = await db.get_session(uid)
+                if not session_str:
+                    return web.json_response({"status": "error", "message": "Telegram session not active. Connect in Settings."})
+                try:
+                    api_id = await db.get_api_id(uid) or API_ID
+                    api_hash = await db.get_api_hash(uid) or API_HASH
+                    uclient = Client(f"User_{uid}", session_string=session_str, api_id=api_id, api_hash=api_hash, workers=100, ipv6=False)
+                    uclient.add_handler(MessageHandler(user_watcher_handler, is_watched_chat))
+                    await uclient.start()
+                    USER_CLIENTS[uid] = uclient
+                except Exception as e:
+                    return web.json_response({"status": "error", "message": f"Session invalid: {e}"})
                 
             try:
                 msg = await uclient.get_messages(chat_id, msg_id)
@@ -1914,7 +1902,7 @@ async def init_worker_bots(user_id=None):
         for idx, token in enumerate(stream_tokens, start=1):
             try:
                 # 🟢 FIX: Increased workers to 100 to stop queue drops
-                bot_client = Client(f"stream_bot_{uid}_{idx}", api_id=API_ID, api_hash=API_HASH, bot_token=token.strip(), workers=100, no_updates=True, ipv6=False, device_model="DestinyTgRestrict", app_version="1.0", system_version=f"{platform.system()} {platform.release()}")
+                bot_client = Client(f"stream_bot_{uid}_{idx}", api_id=API_ID, api_hash=API_HASH, bot_token=token.strip(), workers=100, no_updates=True, ipv6=False)
                 await bot_client.start()
                 USER_STREAM_BOTS[uid].append(bot_client)
                 logger.info(f"🚀 Stream Bot {idx} active for user {uid}")
@@ -1925,7 +1913,7 @@ async def init_worker_bots(user_id=None):
         for idx, token in enumerate(task_tokens, start=1):
             try:
                 # 🟢 FIX: Increased workers to 100 to stop queue drops
-                bot_client = Client(f"task_bot_{uid}_{idx}", api_id=API_ID, api_hash=API_HASH, bot_token=token.strip(), workers=100, no_updates=True, ipv6=False, device_model="DestinyTgRestrict", app_version="1.0", system_version=f"{platform.system()} {platform.release()}")
+                bot_client = Client(f"task_bot_{uid}_{idx}", api_id=API_ID, api_hash=API_HASH, bot_token=token.strip(), workers=100, no_updates=True, ipv6=False)
                 await bot_client.start()
                 USER_TASK_BOTS[uid].append(bot_client)
                 logger.info(f"🚀 Task Bot {idx} active for user {uid}")
@@ -2267,6 +2255,17 @@ async def _api_editor_active_tasks(request):
                 "uploader": state.get("uploader", "🤖 Pending")
             }
     return web.json_response({"status": "success", "tasks": active})
+    uid = int(request.query.get("user_id", 0))
+    active = {}
+    for t_uuid, t_info in list(EDITOR_ACTIVE_TASKS.items()):
+        if t_info.get("user_id") == uid:
+            state = EDITOR_UI_STATE.get(t_uuid, {})
+            active[t_uuid] = {
+                "file_name": state.get("file_name", "Media Task"),
+                "fetcher": state.get("fetcher", "🤖 Pending"),
+                "uploader": state.get("uploader", "🤖 Pending")
+            }
+    return web.json_response({"status": "success", "tasks": active})          
     
 async def _api_edit_media_handler(request):
     data = await request.json()
@@ -3271,7 +3270,6 @@ async def start_koyeb_health_check(host: str = "0.0.0.0"):
     # Telegram Connect
     app_web.router.add_post("/api/tg_qr/start", _api_tg_qr_start)
     app_web.router.add_get("/api/tg_qr/check", _api_tg_qr_check)
-    app_web.router.add_post("/api/tg/resend_code", _api_tg_resend_code)
     app_web.router.add_post("/api/tg_qr/verify_2fa", _api_tg_qr_verify_2fa)
     app_web.router.add_post("/api/tg/send_code", _api_tg_send_code)
     app_web.router.add_post("/api/tg/verify", _api_tg_verify_code)
