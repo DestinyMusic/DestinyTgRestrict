@@ -990,6 +990,18 @@ async def _qr_switch_dc(client, target_dc):
     await client.session.start()
     client.is_connected = True
 
+async def _safe_close_client(client):
+    """Safely closes Pyrogram clients whether initialized or merely connected."""
+    if not client:
+        return
+    try:
+        if getattr(client, "is_initialized", False):
+            await client.stop()
+        elif getattr(client, "is_connected", False):
+            await client.disconnect()
+    except Exception:
+        pass
+        
 async def _save_qr_login(qr_key, client, user_id, tg_user):
     if int(tg_user.id) != int(user_id):
         return web.json_response({
@@ -1007,10 +1019,7 @@ async def _save_qr_login(qr_key, client, user_id, tg_user):
     await db.set_api_id(user_id, API_ID)
     await db.set_api_hash(user_id, API_HASH)
     
-    try:
-        await client.disconnect()
-    except Exception:
-        pass
+    await _safe_close_client(client)
     TG_QR_LOGIN_SESSIONS.pop(qr_key, None)
     
     await ensure_user_client(user_id)
@@ -1206,10 +1215,7 @@ async def _api_tg_verify_code(request):
             return web.json_response({"status": "error", "message": f"⚠️ ID Mismatch! You logged into the Web UI as {uid}, but this phone number belongs to {me.id}. Please use your own Telegram account."})
             
         session_str = await client.export_session_string()
-        try:
-            await client.disconnect()
-        except Exception:
-            pass
+        await _safe_close_client(client)
         del WEB_AUTH_CACHE[uid]
         
         await db.set_session(uid, session_str)
@@ -1243,10 +1249,7 @@ async def _api_tg_verify_2fa(request):
             return web.json_response({"status": "error", "message": f"⚠️ ID Mismatch! You logged into the Web UI as {uid}, but this phone number belongs to {me.id}. Please use your own Telegram account."})
             
         session_str = await client.export_session_string()
-        try:
-            await client.disconnect()
-        except Exception:
-            pass
+        await _safe_close_client(client)
         del WEB_AUTH_CACHE[uid]
         
         await db.set_session(uid, session_str)
