@@ -811,7 +811,7 @@ async def _api_add_watcher(request):
         allowed_types = [t for t in allowed_types if t in ALL_MSG_TYPES]
         include_keywords = _normalize_keyword_list(data.get("include_keywords"))
         exclude_keywords = _normalize_keyword_list(data.get("exclude_keywords"))
-        cleanup_keywords = _normalize_keyword_list(data.get("cleanup_keywords")) # 🟢 NEW
+        cleanup_keywords = _normalize_keyword_list(data.get("cleanup_keywords"))
         try:
             thumb_b64 = _normalize_task_thumb_data(data.get("thumb_b64"))
         except ValueError as exc:
@@ -822,17 +822,54 @@ async def _api_add_watcher(request):
         if dest_str:
             dest_chat_id, dest_thread_id = _parse_chat_target(dest_str)
 
-        is_restricted, err_msg = await check_link_restriction(user_id, link)
+        # 🟢 Pass is_watcher=True so deleted sample messages don't block Watcher creation
+        is_restricted, err_msg = await check_link_restriction(user_id, link, is_watcher=True)
         if is_restricted is None: 
             return web.json_response({"status": "error", "message": err_msg or "Cannot access this link. Please ensure your account has access."})
 
         parsed = _parse_source_link(link)
         source_thread = parsed.get("topic_id")
         
-        user_client = USER_CLIENTS.get(user_id, app)
+        # 🟢 Wake up persistent User Session FIRST
+        user_client = (await ensure_user_client(user_id)) or app
         target_ref = parsed["join_target"] if parsed["kind"] == "public" else parsed["chat_id"]
-        source_id = None
         source_title = "Watched Source"
+
+        # 🟢 Safely resolve and cache peer without crashing storage.update_peers
+        source_id, peer_kind = await resolve_and_cache_peer(user_client, target_ref)
+
+        chat = None
+        try:
+            chat = await user_client.get_chat(source_id)
+            source_id = chat.id
+            source_title = chat.title or getattr(chat, "first_name", None) or str(source_id)
+            if getattr(chat, "last_name", None):
+                source_title += f" {chat.last_name}"
+        except Exception:
+            if isinstance(source_id, int) and source_id > 0 and peer_kind not in ("bot", "user"):
+                try:
+                    alt_id = int(f"-100{source_id}")
+                    chat = await user_client.get_chat(alt_id)
+                    source_id = chat.id  
+                    source_title = chat.title or getattr(chat, "first_name", None) or str(source_id)
+                except Exception:
+                    pass
+            
+            if not isinstance(source_id, int) and not (isinstance(source_id, str) and str(source_id).lstrip('-').isdigit()):
+                return web.json_response({"status": "error", "message": f"Could not extract numeric ID for username '{target_ref}'."}, status=400)
+            source_id = int(source_id)
+
+        # 🟢 Ensure Bot/User DMs never treat a message ID as a forum topic ID
+        chat_type = getattr(chat, "type", None) if chat else None
+        is_private_source = (
+            peer_kind in ("bot", "user")
+            or str(chat_type) in ["ChatType.PRIVATE", "ChatType.BOT"]
+            or (isinstance(source_id, int) and source_id > 0)
+        )
+        if is_private_source:
+            source_thread = None
+        elif source_thread:
+            source_title += await get_topic_title(user_client, source_id, source_thread)
 
         # 🟢 THE PYROFORK BYPASS: Extract the numeric ID via RAW API!
         if isinstance(target_ref, str) and not str(target_ref).lstrip('-').isdigit():
@@ -1160,10 +1197,12 @@ async def _api_tg_send_code(request):
     phone = data.get("phone")
     
     client = Client(
-        f"web_auth_{uid}_{uuid.uuid4().hex}", 
+        f"web_auth_{uid}_{uuid.uuid4().hex[:8]}", 
         in_memory=True, 
         api_id=API_ID, 
         api_hash=API_HASH,
+        no_updates=True,  # 🟢 FIX: Disables background update listening during auth handshake
+        ipv6=False,
         device_model="DestinyTgRestrict",
         app_version="DestinyTgRestrict 1.0",
         system_version="Linux"
