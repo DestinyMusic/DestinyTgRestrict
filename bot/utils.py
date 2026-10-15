@@ -27,130 +27,76 @@ def _parse_chat_target(text: str):
         return int(text), None
     return text, None
 
-def _parse_source_link(src_link: str):
-    raw = (src_link or "").strip()
-    msg_range = None
+def _parse_source_link(link: str):
+    """Universal parser: handles t.me, telegram.me, tg://, /c/, /b/, /s/, batch ranges, and topics."""
+    if not link:
+        return None
+    raw = str(link).strip()
+    msg_id_end = None
 
-    # 1. First, extract the range if it exists (e.g. 190171 - 192592)
-    if "," in raw:
-        links = [l.strip() for l in raw.split(",")]
-        raw = links[0] 
-        last_link = links[-1]
-        try:
-            start_id = int(re.search(r"(\d+)(?:\?|$)", raw.rstrip("/").split("/")[-1]).group(1))
-            end_id = int(re.search(r"(\d+)(?:\?|$)", last_link.rstrip("/").split("/")[-1]).group(1))
-            if start_id <= end_id:
-                msg_range = (start_id, end_id)
-        except: pass
-    else:
-        # Catch formats like ...190171 - 192592
-        m = re.search(r"(?:/|=|%3D)(\d+)\s*(?:-|to)\s*(\d+)$", raw, re.IGNORECASE)
-        if m:
-            try:
-                start_id = int(m.group(1))
-                end_id = int(m.group(2))
-                if start_id <= end_id:
-                    msg_range = (start_id, end_id)
-                # Clean the tail so the base link works normally
-                if "=" in m.group(0):
-                    raw = raw[:m.start(0)] + f"={m.group(1)}"
-                else:
-                    raw = raw[:m.start(0)] + f"/{m.group(1)}"
-            except: pass
+    # 1. Extract Batch Ranges (e.g. 100-120 or 100 - 120)
+    range_match = re.search(r"\s*(?:-|to)\s*(\d+)$", raw, re.IGNORECASE)
+    if range_match:
+        msg_id_end = int(range_match.group(1))
+        raw = raw[:range_match.start()].strip()
 
-    # 2. Handle native tg://openmessage?user_id=...&message_id=...
+    # 2. Native tg:// links
     if raw.startswith("tg://openmessage") or raw.startswith("tg://resolve"):
         from urllib.parse import urlparse, parse_qs
-        parsed_url = urlparse(raw)
-        qs = parse_qs(parsed_url.query)
+        qs = parse_qs(urlparse(raw).query)
         chat_target = qs.get("user_id", qs.get("domain", [None]))[0]
         msg_id = qs.get("message_id", qs.get("post", [None]))[0]
-        
         if chat_target and str(chat_target).lstrip("-").isdigit():
             chat_target = int(chat_target)
-            
-        if msg_id and str(msg_id).isdigit():
-            msg_id = int(msg_id)
-            
         return {
             "kind": "private" if isinstance(chat_target, int) else "public",
-            "join_target": chat_target,
             "chat_id": chat_target,
+            "join_target": chat_target,
             "topic_id": None,
-            "msg_id": msg_id,
-            "msg_range": msg_range,
+            "msg_id": int(msg_id) if msg_id and str(msg_id).isdigit() else None,
+            "msg_id_end": msg_id_end
         }
 
-    # 3. Standard HTTP t.me links
-    if "t.me/" in raw:
-        raw = raw.split("t.me/")[-1]
-    elif "telegram.me/" in raw:
-        raw = raw.split("telegram.me/")[-1]
-        
-    if raw.startswith("s/"):
-        raw = raw[2:]
-        
-    raw = raw.split("?", 1)[0].strip("/")
+    # 3. Standard HTTP Telegram links
+    link_clean = raw.split("?")[0].strip("/")
+    has_c_prefix = "/c/" in link_clean.lower()
 
-    # Handle Private /c/ links
-    is_private_c = raw.startswith("c/")
-    if is_private_c:
-        clean = raw[2:]
-        parts = clean.split("/")
-        source_id = int("-100" + parts[0])
-        topic_id = int(parts[1]) if len(parts) >= 3 and parts[1].isdigit() else None
-        
-        msg_id = None
-        last_segment = parts[-1].strip()
-        if last_segment.isdigit():
-            msg_id = int(last_segment)
-            
-        return {
-            "kind": "private_c",
-            "join_target": None,
-            "chat_id": source_id,
-            "topic_id": topic_id,
-            "msg_id": msg_id,
-            "msg_range": msg_range, 
-        }
+    # Strip domain prefixes cleanly
+    cleaned = re.sub(r"https?://(?:www\.)?(?:telegram\.me|t\.me)/(?:s/|b/)?(?:c/)?", "", link_clean)
+    parts = cleaned.split("/")
+    if not parts or not parts[0]:
+        return None
 
-    parts = raw.split("/")
-    
-    # Catch alternative t.me/b/BotName links
-    if parts[0] == "b" and len(parts) > 1:
-        parts.pop(0)
-
-    username_or_id = parts[0]
-    topic_id = int(parts[1]) if len(parts) >= 3 and parts[1].isdigit() else None
-    
-    msg_id = None
-    last_segment = parts[-1].strip()
-    if last_segment.isdigit():
-        msg_id = int(last_segment)
-
-    # 🟢 CRITICAL FIX: Convert numeric strings to actual integers for User/Bot IDs
-    if str(username_or_id).lstrip("-").isdigit():
-        chat_target = int(username_or_id)
-    else:
-        chat_target = username_or_id
-
-    if str(username_or_id).startswith("+") or "joinchat" in str(username_or_id):
+    if parts[0] in ["joinchat", "+"]:
         return {
             "kind": "invite",
-            "join_target": f"https://t.me/{raw}",
+            "join_target": raw,
             "chat_id": None,
-            "topic_id": topic_id,
-            "msg_id": msg_id,
-            "msg_range": msg_range,
+            "topic_id": None,
+            "msg_id": None,
+            "msg_id_end": msg_id_end
         }
 
+    chat_id_raw = parts[0]
+    is_numeric = chat_id_raw.lstrip("-").isdigit()
+
+    if is_numeric:
+        chat_id = int(chat_id_raw)
+        if chat_id > 0 and has_c_prefix:
+            chat_id = int(f"-100{chat_id}")
+    else:
+        chat_id = chat_id_raw
+
+    topic_id = int(parts[1]) if len(parts) >= 3 and parts[1].isdigit() else None
+    msg_id = int(parts[2]) if len(parts) >= 3 and parts[2].isdigit() else (int(parts[1]) if len(parts) == 2 and parts[1].isdigit() else None)
+
     return {
-        "kind": "public",
-        "join_target": chat_target,
-        "chat_id": chat_target,
+        "kind": "private_c" if is_numeric else "public",
+        "chat_id": chat_id,
+        "join_target": chat_id,
         "topic_id": topic_id,
         "msg_id": msg_id,
-        "msg_range": msg_range,
+        "msg_id_end": msg_id_end
     }
 
 def _pretty_bytes(n: float) -> str:
@@ -407,129 +353,191 @@ async def get_topic_title(client, chat_id, topic_id):
 
     return f" (Topic {topic_id})"
 
+async def _safe_store_peer(client, peer_id, access_hash, peer_type, username=None, phone=None):
+    """Safely writes peer to storage across varying Pyrogram/fork storage signatures."""
+    for tuple_cand in (
+        [(peer_id, access_hash, peer_type, username, phone)],
+        [(peer_id, access_hash, peer_type, phone)],
+    ):
+        try:
+            await client.storage.update_peers(tuple_cand)
+            return
+        except Exception:
+            continue
+
+async def resolve_and_cache_peer(client, target_ref):
+    """
+    Resolves usernames or IDs and caches their access_hash to prevent PEER_ID_INVALID.
+    Returns (numeric_id, peer_kind).
+    """
+    if not client or target_ref is None:
+        return target_ref, "unknown"
+
+    if isinstance(target_ref, str) and not target_ref.lstrip("-").isdigit():
+        clean_user = target_ref.replace("@", "").strip()
+
+        # 1. Native resolve (hits local DB cache if already encountered)
+        try:
+            peer = await client.resolve_peer(clean_user)
+            if hasattr(peer, "channel_id"):
+                return int(f"-100{peer.channel_id}"), "channel"
+            elif hasattr(peer, "user_id"):
+                p_type = "bot" if clean_user.lower().endswith("bot") else "user"
+                return int(peer.user_id), p_type
+            elif hasattr(peer, "chat_id"):
+                return int(f"-{peer.chat_id}"), "group"
+        except Exception:
+            pass
+
+        # 2. Raw MTProto API ResolveUsername fallback
+        try:
+            r = await client.invoke(ResolveUsername(username=clean_user))
+            if getattr(r, "users", None):
+                u = r.users[0]
+                p_type = "bot" if getattr(u, "bot", False) else "user"
+                await _safe_store_peer(
+                    client, int(u.id), getattr(u, "access_hash", 0),
+                    p_type, getattr(u, "username", None) or clean_user.lower(), getattr(u, "phone", None)
+                )
+                return int(u.id), p_type
+            elif getattr(r, "chats", None):
+                c = r.chats[0]
+                is_ch = getattr(c, "broadcast", False) or getattr(c, "megagroup", False) or hasattr(c, "access_hash")
+                full_id = int(f"-100{c.id}") if is_ch else int(f"-{c.id}")
+                p_type = "channel" if getattr(c, "broadcast", False) else ("supergroup" if is_ch else "group")
+                await _safe_store_peer(
+                    client, full_id, getattr(c, "access_hash", 0),
+                    p_type, getattr(c, "username", None) or clean_user.lower(), None
+                )
+                return full_id, p_type
+        except Exception as e:
+            logger.debug(f"Raw ResolveUsername failed for {clean_user}: {e}")
+
+    if isinstance(target_ref, str) and target_ref.lstrip("-").isdigit():
+        target_ref = int(target_ref)
+
+    if isinstance(target_ref, int):
+        if target_ref > 0:
+            return target_ref, "user"
+        elif str(target_ref).startswith("-100"):
+            return target_ref, "channel"
+        else:
+            return target_ref, "group"
+
+    return target_ref, "unknown"
+    
 import traceback
 from pyrogram.raw.functions.contacts import ResolveUsername
 
-async def check_link_restriction(user_id, link):
-    """Returns (is_restricted, status_text_or_error_message)."""
-    logger.info(f"========== DEBUG: LINK VALIDATION START ==========")
-    logger.info(f"Target Link: {link}")
-    
+async def check_link_restriction(user_id, link, is_watcher=False):
+    """Accurately checks link restrictions with boolean safety and fallback handling."""
+    logger.info("========== DEBUG: LINK VALIDATION START ==========")
+    logger.info(f"Target Link: {link} (is_watcher={is_watcher})")
+
     parsed = _parse_source_link(link)
     if not parsed:
         return None, "⚠️ **Could not analyze link format.**"
-        
-    chat_id = parsed.get("chat_id")
-    msg_id = parsed.get("msg_id")
-    logger.info(f"Parsed -> chat_id: {chat_id} (Type: {type(chat_id)}), msg_id: {msg_id}")
 
-    if not chat_id or not msg_id:
-        logger.error("DEBUG: Invalid link parsed.")
+    raw_chat_id = parsed.get("chat_id")
+    msg_id = parsed.get("msg_id")
+    is_range = bool(parsed.get("msg_id_end"))
+
+    if not raw_chat_id or (not msg_id and not is_watcher):
         return None, "Invalid Telegram link."
 
-    # 1. Determine who should test the link
-    test_client = app
-    is_temp_client = False
-    user_session = await db.get_session(user_id)
-    
-    # 🟢 AUTO-WAKEUP: If the server restarted, boot up the User Session dynamically
-    if isinstance(chat_id, int) or user_session:
-        if user_id in USER_CLIENTS and USER_CLIENTS[user_id].is_connected:
-            test_client = USER_CLIENTS[user_id]
-            logger.info("DEBUG: Using active persistent User Session.")
-        elif user_session:
-            import uuid
-            from pyrogram import Client
-            api_id = await db.get_api_id(user_id) or API_ID
-            api_hash = await db.get_api_hash(user_id) or API_HASH
-            test_client = Client(f"temp_chk_{user_id}_{uuid.uuid4().hex[:8]}", in_memory=True, session_string=user_session, api_id=api_id, api_hash=api_hash, no_updates=True, ipv6=False)
-            await test_client.start()
-            is_temp_client = True
-            logger.info("DEBUG: Woke up temporary User Session from DB for validation.")
+    uclient = await ensure_user_client(user_id)
+    primary_client = uclient if uclient else app
 
     try:
-        # 🟢 THE PYROFORK BYPASS (Only for string usernames)
-        if isinstance(chat_id, str) and not str(chat_id).lstrip('-').isdigit():
-            clean_user = chat_id.replace("@", "")
-            logger.info(f"DEBUG: Detected string username '{clean_user}'. Initiating RAW API Resolution...")
-            try:
-                r = await test_client.invoke(ResolveUsername(username=clean_user))
-                if r.chats:
-                    rid = r.chats[0].id
-                    is_channel = getattr(r.chats[0], "broadcast", False) or getattr(r.chats[0], "megagroup", False)
-                    chat_id = int(f"-100{rid}") if is_channel else rid
-                    logger.info(f"DEBUG: Extracted NUMERIC CHAT ID: {chat_id}")
-                elif r.users:
-                    chat_id = r.users[0].id
-            except Exception as raw_e:
-                logger.error(f"DEBUG: ResolveUsername FAILED: {raw_e}")
+        chat_id, peer_kind = await resolve_and_cache_peer(primary_client, raw_chat_id)
+        if primary_client != app and isinstance(raw_chat_id, str) and not str(raw_chat_id).lstrip("-").isdigit():
+            await resolve_and_cache_peer(app, raw_chat_id)
 
-        logger.info(f"DEBUG: Firing get_messages with Target ID: {chat_id}")
-        msg = None
-        bot_err = None
+        is_dm_source = peer_kind in ("bot", "user") or (isinstance(chat_id, int) and chat_id > 0)
         
-        try:
-            msg = await test_client.get_messages(chat_id, msg_id)
-        except Exception as e:
-            bot_err = e
-            logger.warning(f"DEBUG: get_messages failed on primary client: {e}")
+        # 1. Handling Bot DMs / User DMs
+        if is_dm_source:
+            if not uclient:
+                return None, "⚠️ **Bot/Private DM:** Please connect your Telegram Session in Settings so I can read messages from your private/bot chat."
 
-        # 2. Fallback to User Session if Main Bot failed (e.g., Bot was blocked)
-        if (bot_err or not msg or msg.empty) and test_client == app and user_session:
-            logger.info("DEBUG: Main bot failed. Booting User Session fallback...")
-            import uuid
-            from pyrogram import Client
-            api_id = await db.get_api_id(user_id) or API_ID
-            api_hash = await db.get_api_hash(user_id) or API_HASH
-            test_client = Client(f"temp_chk2_{user_id}_{uuid.uuid4().hex[:8]}", in_memory=True, session_string=user_session, api_id=api_id, api_hash=api_hash, no_updates=True, ipv6=False)
-            await test_client.start()
-            is_temp_client = True
-            
-            if isinstance(chat_id, str) and not str(chat_id).lstrip('-').isdigit():
-                clean_user = chat_id.replace("@", "")
+            if is_watcher or is_range:
+                chat_obj = await uclient.get_chat(chat_id)
+                is_prot = bool(getattr(chat_obj, "has_protected_content", False))
+                return is_prot, "🔒 **Restricted Content**" if is_prot else "🔓 **Unrestricted Content**"
+
+            if msg_id:
                 try:
-                    r = await test_client.invoke(ResolveUsername(username=clean_user))
-                    if r.chats:
-                        rid = r.chats[0].id
-                        is_channel = getattr(r.chats[0], "broadcast", False) or getattr(r.chats[0], "megagroup", False)
-                        chat_id = int(f"-100{rid}") if is_channel else rid
-                    elif r.users:
-                        chat_id = r.users[0].id
-                except Exception: pass
-            
-            msg = await test_client.get_messages(chat_id, msg_id)
-            bot_err = None
+                    msg = await uclient.get_messages(chat_id, msg_id)
+                    if msg and not getattr(msg, "empty", True):
+                        is_prot = bool(getattr(msg, "has_protected_content", False)) or bool(getattr(getattr(msg, "chat", None), "has_protected_content", False))
+                        return is_prot, "🔒 **Restricted Content**" if is_prot else "🔓 **Unrestricted Content**"
+                except Exception:
+                    pass
 
-        if bot_err:
-            raise bot_err
+            return None, "Message is missing, deleted, or inaccessible in this Bot/User DM."
 
-        if not msg or msg.empty:
-            logger.error("DEBUG: get_messages returned empty!")
-            return None, "Message is missing, deleted, or inaccessible."
-            
-        is_content_protected = getattr(msg, "has_protected_content", False) or getattr(msg.chat, "has_protected_content", False)
-        logger.info(f"DEBUG: Message found! Protected: {is_content_protected}")
-        
-        status_text = "🔒 **Restricted Content**" if is_content_protected else "🔓 **Unrestricted Content**"
-        logger.info("========== DEBUG: VALIDATION SUCCESS ==========")
-        return is_content_protected, status_text
-        
+        # 2. Handling Channels / Groups
+        async def _fetch(c, cid):
+            if not msg_id:
+                return None, cid, None
+            try:
+                await c.get_chat(cid)
+            except Exception:
+                pass
+            try:
+                m = await c.get_messages(cid, msg_id)
+                if m and not getattr(m, "empty", True):
+                    return m, cid, None
+            except Exception as e:
+                err = e
+
+            if isinstance(cid, int) and cid > 0:
+                alt = int(f"-100{cid}")
+                try:
+                    m = await c.get_messages(alt, msg_id)
+                    if m and not getattr(m, "empty", True):
+                        return m, alt, None
+                except Exception:
+                    pass
+            return None, cid, locals().get("err", None)
+
+        msg, chat_id, err = await _fetch(primary_client, chat_id)
+        if not msg and primary_client != uclient and uclient:
+            chat_id, _ = await resolve_and_cache_peer(uclient, raw_chat_id)
+            msg, chat_id, err = await _fetch(uclient, chat_id)
+        if not msg and primary_client != app:
+            msg, chat_id, _ = await _fetch(app, chat_id)
+
+        # 🟢 CRITICAL FIX: Explicit boolean casting prevents 'None' from triggering false error returns
+        if msg and not getattr(msg, "empty", True):
+            is_prot = bool(getattr(msg, "has_protected_content", False)) or bool(getattr(getattr(msg, "chat", None), "has_protected_content", False))
+            return is_prot, "🔒 **Restricted Content**" if is_prot else "🔓 **Unrestricted Content**"
+
+        # Deleted sample message fallback for Watchers & Batch Ranges
+        if is_watcher or is_range:
+            chat_obj = None
+            for c in ([uclient, app] if uclient else [app]):
+                try:
+                    chat_obj = await c.get_chat(chat_id)
+                    if chat_obj:
+                        break
+                except Exception:
+                    continue
+            if chat_obj:
+                is_prot = bool(getattr(chat_obj, "has_protected_content", False))
+                return is_prot, "🔒 **Restricted Content**" if is_prot else "🔓 **Unrestricted Content**"
+
+        if err:
+            raise err
+        return None, "Message is missing, deleted, or inaccessible."
+
     except Exception as e:
-        logger.error(f"========== DEBUG: VALIDATION CRASH ==========\n{traceback.format_exc()}")
         err_str = str(e).lower()
         if "channel_invalid" in err_str or "channel_private" in err_str or "user_not_participant" in err_str:
             return None, "⚠️ **Private Chat:** I cannot access this. Please run `/login` so I can use your account to read it."
         elif "username_not_found" in err_str or "peer_id_invalid" in err_str:
             return None, "❌ **Access Blocked:** Telegram cannot find this chat. It may be geo-blocked, deleted, or you are not a member."
-        
-        # 🟢 FIX: Removed the backslash and separated the string logic to satisfy Python 3.11 syntax rules
-        clean_err = str(e).replace("KeyError:", "").replace('"', '').strip()
-        return None, clean_err
-        
-    finally:
-        if is_temp_client:
-            try: await test_client.stop()
-            except: pass
+        return None, str(e).replace("KeyError:", "").replace('"', '').strip()
 
 async def split_file_python(file_path, chunk_size=2000*1024*1024):
     loop = asyncio.get_running_loop()
