@@ -42,9 +42,8 @@ async def watcher_worker_loop(wid_str):
             fetcher = owner_client if (owner_client and owner_client.is_connected) else app
 
             try:
-                # 🟢 Force peer resolution to prevent PEER_ID_INVALID on numeric IDs
-                try: await fetcher.resolve_peer(source_id)
-                except Exception: pass
+                # 🟢 UNIVERSAL RESOLVER: Safely injects Access Hashes for live Watchers
+                source_id, peer_kind = await resolve_and_cache_peer(fetcher, source_id)
                 msg = await fetcher.get_messages(source_id, msg_id)
             except Exception as fetch_err:
                 logger.warning(f"Watcher {wid_str}: could not fetch {source_id}/{msg_id}: {fetch_err}")
