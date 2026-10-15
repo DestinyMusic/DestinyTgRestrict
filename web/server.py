@@ -11,6 +11,7 @@ import hmac
 import json
 import secrets
 import re
+import platform
 from urllib.parse import urlencode
 
 WEB_AUTH_COOKIE = "web_auth"
@@ -1006,14 +1007,7 @@ async def _save_qr_login(qr_key, client, user_id, tg_user):
     await db.set_api_id(user_id, API_ID)
     await db.set_api_hash(user_id, API_HASH)
     
-    try:
-        if getattr(client, "is_initialized", False):
-            await client.terminate()
-        else:
-            await client.disconnect()
-    except Exception:
-        pass
-        
+    await client.disconnect()
     TG_QR_LOGIN_SESSIONS.pop(qr_key, None)
     
     await ensure_user_client(user_id)
@@ -1037,7 +1031,10 @@ async def _api_tg_qr_start(request):
             api_id=API_ID,
             api_hash=API_HASH,
             in_memory=True,
-            ipv6=False
+            ipv6=False,
+            device_model="DestinyTgRestrict",
+            app_version="1.0",
+            system_version=f"{platform.system()} {platform.release()}"
         )
         temp_client.add_handler(RawUpdateHandler(_qr_raw_update_handler), group=-100)
         await temp_client.connect()
@@ -1148,7 +1145,10 @@ async def _api_tg_send_code(request):
         api_id=API_ID,
         api_hash=API_HASH,
         in_memory=True,
-        ipv6=False
+        ipv6=False,
+        device_model="DestinyTgRestrict",
+        app_version="1.0",
+        system_version=f"{platform.system()} {platform.release()}"
     )
     try:
         await client.connect()
@@ -1591,8 +1591,8 @@ async def _api_topics_handler(request):
                  workers=100, 
                  ipv6=False,
                  device_model="DestinyTgRestrict",
-                 app_version="DestinyTgRestrict 1.0",
-                 system_version="Linux"
+                 app_version="1.0",
+                 system_version=f"{platform.system()} {platform.release()}"
             )
             uclient.add_handler(MessageHandler(user_watcher_handler, is_watched_chat))
             await uclient.start()
@@ -1931,7 +1931,7 @@ async def init_worker_bots(user_id=None):
         for idx, token in enumerate(stream_tokens, start=1):
             try:
                 # 🟢 FIX: Increased workers to 100 to stop queue drops
-                bot_client = Client(f"stream_bot_{uid}_{idx}", api_id=API_ID, api_hash=API_HASH, bot_token=token.strip(), workers=100, no_updates=True, ipv6=False)
+                bot_client = Client(f"stream_bot_{uid}_{idx}", api_id=API_ID, api_hash=API_HASH, bot_token=token.strip(), workers=100, no_updates=True, ipv6=False, device_model="DestinyTgRestrict", app_version="1.0", system_version=f"{platform.system()} {platform.release()}")
                 await bot_client.start()
                 USER_STREAM_BOTS[uid].append(bot_client)
                 logger.info(f"🚀 Stream Bot {idx} active for user {uid}")
@@ -1942,7 +1942,7 @@ async def init_worker_bots(user_id=None):
         for idx, token in enumerate(task_tokens, start=1):
             try:
                 # 🟢 FIX: Increased workers to 100 to stop queue drops
-                bot_client = Client(f"task_bot_{uid}_{idx}", api_id=API_ID, api_hash=API_HASH, bot_token=token.strip(), workers=100, no_updates=True, ipv6=False)
+                bot_client = Client(f"task_bot_{uid}_{idx}", api_id=API_ID, api_hash=API_HASH, bot_token=token.strip(), workers=100, no_updates=True, ipv6=False, device_model="DestinyTgRestrict", app_version="1.0", system_version=f"{platform.system()} {platform.release()}")
                 await bot_client.start()
                 USER_TASK_BOTS[uid].append(bot_client)
                 logger.info(f"🚀 Task Bot {idx} active for user {uid}")
