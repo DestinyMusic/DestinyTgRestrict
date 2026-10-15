@@ -1026,7 +1026,7 @@ async def _api_tg_qr_start(request):
         res = await temp_client.invoke(raw.functions.auth.ExportLoginToken(api_id=API_ID, api_hash=API_HASH, except_ids=[]))
         
         if isinstance(res, raw.types.auth.LoginToken):
-            b64_tok = base64.urlsafe_b64encode(res.token).decode("utf-8").rstrip("=")
+            b64_tok = base64.urlsafe_b64encode(res.token).decode("utf-8")
             tg_qr_url = f"tg://login?token={b64_tok}"
             
             TG_QR_LOGIN_SESSIONS[qr_key] = {
@@ -1134,7 +1134,8 @@ async def _api_tg_send_code(request):
         code = await client.send_code(phone)
         timeout = int(getattr(code, "timeout", 0) or 0)
         next_type = getattr(code, "next_type", None)
-        delivery_type = str(getattr(code, "type", "unknown"))
+        code_type = getattr(code, "type", None)
+        delivery_type = getattr(code_type, "name", None) or str(code_type or "unknown")
         logger.info(f"📲 OTP requested for user {uid} ({phone[:4]}***) -> Delivery Type: {delivery_type}")
         
         old_cache = WEB_AUTH_CACHE.get(uid)
@@ -1249,12 +1250,13 @@ async def _api_tg_resend_code(request):
         timeout = int(getattr(resend, "timeout", 0) or 0)
         next_type = getattr(resend, "next_type", None)
         cache["hash"] = resend.phone_code_hash
-        cache["delivery"] = str(resend.type)
+        delivery_type = getattr(resend.type, "name", None) or str(resend.type)
+        cache["delivery"] = delivery_type
         cache["next_type"] = str(next_type) if next_type else None
         cache["resend_at"] = time.time() + timeout
         return web.json_response({
             "status": "success", 
-            "delivery": str(resend.type),
+            "delivery": delivery_type,
             "next_type": str(next_type) if next_type else None,
             "timeout": timeout
         })

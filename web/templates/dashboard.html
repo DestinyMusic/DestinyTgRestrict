@@ -2712,7 +2712,7 @@
                     body: JSON.stringify({qr_key: currentQrKey, password: pwd})
                 });
                 const data = await res.json();
-                if (data.status === 'success') {
+                if (data.status === 'success' || data.status === 'authorized') {
                     alert("✅ Telegram Logged In Successfully!");
                     window.location.reload();
                 } else {
@@ -3392,9 +3392,9 @@
                 document.getElementById('tg-login-step1').style.display = 'none';
                 document.getElementById('tg-login-step2').style.display = 'block';
                 
-                const isApp = data.delivery && data.delivery.includes("APP");
+                const isApp = (data.delivery || "").toUpperCase().includes("APP");
                 if (isApp) {
-                    alert("Code sent to your official Telegram app! Please check your service-notification chat on an already logged-in device.");
+                    alert("Telegram sent the login code in a message from Telegram (not by SMS). Check the Telegram app on any device where you are already signed in, including its service notifications.");
                 } else {
                     alert("Code sent via: " + (data.delivery || "SMS"));
                 }
@@ -3432,7 +3432,10 @@
             });
             const data = await res.json();
             if (data.status === 'success') {
-                alert("New code dispatched via: " + (data.delivery || "SMS"));
+                const isApp = (data.delivery || "").toUpperCase().includes("APP");
+                alert(isApp
+                    ? "Telegram sent the new login code in a message from Telegram. Check the app on an already signed-in device."
+                    : "New code dispatched via: " + (data.delivery || "SMS"));
                 const resendBtn = document.getElementById('tg-resend-btn');
                 resendBtn.disabled = true;
                 let remaining = data.timeout || 60;
