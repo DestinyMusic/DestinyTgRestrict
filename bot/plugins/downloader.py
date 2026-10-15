@@ -613,9 +613,6 @@ async def login_handler(bot: Client, message: Message):
         await db.set_session(user_id, session=string_session)
         await db.set_api_id(user_id, api_id=api_id)
         await db.set_api_hash(user_id, api_hash=api_hash)
-
-        # 🟢 Immediately start persistent User Session in RAM for /dl and /watch
-        await ensure_user_client(user_id)
         
         prem_text = "⭐ <b>Telegram Premium:</b> <code>Active (4GB Uploads Enabled)</code>" if is_prem else "🔹 <b>Account Type:</b> <code>Standard (2GB Upload Limit)</code>"
 
@@ -837,9 +834,15 @@ async def execute_remux_callback(client: Client, query):
         is_tg = _is_tg_link(task_data["link"])
         if is_tg:
             parsed = _parse_source_link(task_data["link"])
-            uclient = (await ensure_user_client(user_id)) or app
-            target_chat_id, _ = await resolve_and_cache_peer(uclient, parsed["chat_id"])
-            msg = await uclient.get_messages(target_chat_id, parsed["msg_id"])
+            uclient = USER_CLIENTS.get(user_id)
+            if not uclient or not uclient.is_connected:
+                session_str = await db.get_session(user_id)
+                u_api = await db.get_api_id(user_id) or API_ID
+                u_hash = await db.get_api_hash(user_id) or API_HASH
+                uclient = Client(f"User_{user_id}", session_string=session_str, api_id=u_api, api_hash=u_hash, ipv6=False)
+                await uclient.start()
+                USER_CLIENTS[user_id] = uclient
+            msg = await uclient.get_messages(parsed["chat_id"], parsed["msg_id"])
             await uclient.download_media(msg, file_name=str(input_file))
         else:
             await full_download_http(task_data["link"], str(input_file))
@@ -941,6 +944,14 @@ async def execute_remux_callback(client: Client, query):
         await status_msg.edit(f"❌ **Error:** {str(e)}")
     finally:
         shutil.rmtree(str(temp_dir), ignore_errors=True)
+
+    await message.reply(
+        f"✨ **Link Detected!**\n\n"
+        f"{status_text}\n\n"
+        "Where should I send the files?",
+        reply_markup=InlineKeyboardMarkup(buttons),
+        quote=True
+    )
 
 @app.on_message(filters.command(["chats"]) & filters.private)
 async def chats_cmd(client: Client, message: Message):
@@ -1312,40 +1323,39 @@ async def filter_keywords_cb(client, query):
         "`exclude: sample, trailer`\n\n"
         "Include matches any listed word. Exclude skips any listed word. Send `skip` for no rules."
     )
+    @app.on_callback_query(filters.regex("^filter_thumbnail$"))
+    async def filter_thumbnail_cb(client, query):
+        user_id = query.from_user.id
+        task_data = PENDING_TASKS.get(user_id)
+        if not task_data:
+            return await query.answer("Expired.", show_alert=True)
+        if task_data.get("thumb_file_id"):
+            task_data.pop("thumb_file_id", None)
+            await show_filter_menu(query, user_id)
+            return await query.answer("Custom thumbnail cleared.")
+        task_data["status"] = "waiting_task_thumbnail"
+        await query.message.edit_text(
+            "🖼 Send a photo to use as the thumbnail for this task.\n\n"
+            "It will be applied to files that are re-uploaded; normal fast-copied files keep their original thumbnail.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("Use original thumbnails", callback_data="filter_thumbnail_clear")],
+                [InlineKeyboardButton("❌ Cancel Setup", callback_data="cancel_setup")],
+            ]),
+        )
+        await query.answer()
+
+    @app.on_callback_query(filters.regex("^filter_thumbnail_clear$"))
+    async def filter_thumbnail_clear_cb(client, query):
+        user_id = query.from_user.id
+        if user_id not in PENDING_TASKS:
+            return await query.answer("Expired.", show_alert=True)
+        PENDING_TASKS[user_id].pop("thumb_file_id", None)
+        await show_filter_menu(query, user_id)
+        await query.answer("Using original thumbnails.")
     await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup([
         [InlineKeyboardButton("❌ Cancel Setup", callback_data="cancel_setup")]
     ]))
     await query.answer()
-
-@app.on_callback_query(filters.regex("^filter_thumbnail$"))
-async def filter_thumbnail_cb(client, query):
-    user_id = query.from_user.id
-    task_data = PENDING_TASKS.get(user_id)
-    if not task_data:
-        return await query.answer("Expired.", show_alert=True)
-    if task_data.get("thumb_file_id"):
-        task_data.pop("thumb_file_id", None)
-        await show_filter_menu(query, user_id)
-        return await query.answer("Custom thumbnail cleared.")
-    task_data["status"] = "waiting_task_thumbnail"
-    await query.message.edit_text(
-        "🖼 Send a photo to use as the thumbnail for this task.\n\n"
-        "It will be applied to files that are re-uploaded; normal fast-copied files keep their original thumbnail.",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("Use original thumbnails", callback_data="filter_thumbnail_clear")],
-            [InlineKeyboardButton("❌ Cancel Setup", callback_data="cancel_setup")],
-        ]),
-    )
-    await query.answer()
-
-@app.on_callback_query(filters.regex("^filter_thumbnail_clear$"))
-async def filter_thumbnail_clear_cb(client, query):
-    user_id = query.from_user.id
-    if user_id not in PENDING_TASKS:
-        return await query.answer("Expired.", show_alert=True)
-    PENDING_TASKS[user_id].pop("thumb_file_id", None)
-    await show_filter_menu(query, user_id)
-    await query.answer("Using original thumbnails.")
 
 @app.on_callback_query(filters.regex("^filter_toggle:(.+)"))
 async def filter_toggle_cb(client, query):
@@ -1410,79 +1420,50 @@ async def process_custom_destination(client: Client, message: Message):
         dest_chat_id, dest_thread_id = _parse_chat_target(text)
 
         try:
-            uclient = await ensure_user_client(user_id)
-            worker_bots = list(USER_TASK_BOTS.get(user_id, []))
-            import random
-            random.shuffle(worker_bots)
-
-            # 🟢 1. Resolve chat info using whichever client has access (User Session -> Main Bot -> Worker Bots)
-            chat = None
-            info_client = None
-            for cand in ([uclient, client] if uclient else [client]) + worker_bots:
-                if not cand:
-                    continue
-                try:
-                    if not getattr(cand, "is_connected", False):
-                        await cand.connect()
-                    resolved_id, _ = await resolve_and_cache_peer(cand, dest_chat_id)
-                    chat = await cand.get_chat(resolved_id)
-                    if chat:
-                        dest_chat_id = chat.id
-                        info_client = cand
-                        break
-                except Exception:
-                    continue
-
-            if not chat:
-                await message.reply(
-                    "❌ **Could not access Destination.**\n"
-                    "Neither your User Session, Main Bot, nor Worker Bots can find or access this chat.\n"
-                    "Make sure your account or the bot is a member/admin of the destination chat!"
-                )
-                return
-
+            # 🟢 FIX: Resolve peer before fetching info so custom destinations work after restarts
+            try: await client.resolve_peer(dest_chat_id)
+            except Exception: pass
+            
+            # Resolve basic info
+            chat = await client.get_chat(dest_chat_id)
             title = chat.title or chat.first_name or "Target Chat"
-            if dest_thread_id:
-                title += await get_topic_title(info_client or client, chat.id, dest_thread_id)
+            if dest_thread_id: 
+                title += await get_topic_title(client, dest_chat_id, dest_thread_id)
 
-            # 🟢 2. Check write/admin access across Main Bot, Worker Bots, and User Session
+            # 🟢 CHECK ACCESS ACROSS ALL CLIENTS (Main Bot, Workers, User)
             main_bot_access = False
             try:
-                await resolve_and_cache_peer(client, chat.id)
                 bot_member = await client.get_chat_member(chat.id, "me")
                 main_bot_access = bot_member.status in [enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER]
-            except Exception:
-                pass
+            except Exception: pass
 
+            # 🟢 FIX: Changed USER_WORKER_BOTS to USER_TASK_BOTS & Added Load Balancer
+            worker_bots = USER_TASK_BOTS.get(user_id, [])
+            import random
+            random.shuffle(worker_bots)
             worker_access_count = 0
-            valid_worker = None
             for wb in worker_bots:
                 try:
-                    if not getattr(wb, "is_connected", False):
-                        await wb.connect()
-                    await resolve_and_cache_peer(wb, chat.id)
+                    if not getattr(wb, "is_connected", False): await wb.connect()
                     wb_member = await wb.get_chat_member(chat.id, "me")
                     if wb_member.status in [enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER]:
                         worker_access_count += 1
-                        if not valid_worker:
-                            valid_worker = wb
-                except Exception:
-                    pass
+                except Exception: pass
 
             user_access = False
+            uclient = USER_CLIENTS.get(user_id)
             if uclient and getattr(uclient, "is_connected", False):
                 try:
-                    await resolve_and_cache_peer(uclient, chat.id)
                     await uclient.get_chat(chat.id)
                     user_access = True
-                except Exception:
-                    pass
+                except Exception: pass
 
-            is_dm = isinstance(chat.id, int) and chat.id > 0
-
+            # Failsafe: if it's a DM, bots/users can usually write to it without admin rights
+            is_dm = str(dest_chat_id).lstrip("-").isdigit() and not str(dest_chat_id).startswith("-100") and int(dest_chat_id) > 0
+            
             if not is_dm and not main_bot_access and worker_access_count == 0 and not user_access:
                 await message.reply(
-                    "❌ **Destination Error:** Neither I, your Worker Bots, nor your User Session have access to that chat!\n\n"
+                    "❌ **Destination Error:** Neither I, your Worker Bots, nor your User Session have admin access to that chat!\n\n"
                     "Please add us to the destination chat/channel and promote us to **Admin**."
                 )
                 return
@@ -1490,25 +1471,32 @@ async def process_custom_destination(client: Client, message: Message):
             if not is_dm and worker_bots and worker_access_count == 0:
                 await message.reply(
                     f"⚠️ **Worker Bot Warning:** You have `{len(worker_bots)}` Worker Bots configured, but **none** of them are Admins in the destination.\n\n"
-                    "I will automatically fallback to your User Session / Main Bot for uploads. To maximize speed, please add your Worker Bots to the destination and make them Admins."
+                    "I will automatically fallback to your User Session for uploads. To maximize speed, please add your Worker Bots to the destination and make them Admins."
                 )
 
             # --- ACTIVE DESTINATION TEST (using the best available client) ---
-            test_client = valid_worker or (client if main_bot_access else None) or (uclient if user_access else None)
+            test_client = None
+            if worker_access_count > 0:
+                for wb in worker_bots:
+                    if getattr(wb, "is_connected", False):
+                        test_client = wb
+                        break
+            if not test_client and main_bot_access: test_client = client
+            if not test_client and user_access: test_client = uclient
 
             if test_client:
                 try:
                     test_msg = await test_client.send_message(
-                        chat_id=chat.id,
+                        chat_id=dest_chat_id,
                         text="🔄 Testing Destination Accessibility...\n*(This message will self-destruct)*",
                         message_thread_id=dest_thread_id
                     )
                     await asyncio.sleep(1.5)
                     await test_msg.delete()
                 except Exception as e:
-                    await message.reply(f"❌ **Destination Write Error:** Access granted, but I cannot send messages to that specific topic/chat! (Check write/topic permissions)\nError: `{e}`")
+                    await message.reply(f"❌ **Destination Write Error:** Access granted, but I cannot send messages to that specific topic/chat! (Check topic permissions)\nError: `{e}`")
                     return
-
+            
         except Exception as e:
             await message.reply(f"❌ **Could not access Destination.**\nMake sure I am added to the chat and given admin rights.\nError: `{e}`")
             return
@@ -1586,71 +1574,89 @@ async def finalize_watcher_setup(client, message, data, delay, user_id=None):
         user_id = message.from_user.id if message.from_user else message.chat.id
     src_link = data["link"]
 
-    # 🟢 Always wake up and reuse persistent User Session
-    uclient = await ensure_user_client(user_id)
-    user_client = uclient if uclient else app
+    user_session = await db.get_session(user_id)
+    
+    api_id = await db.get_api_id(user_id) or API_ID
+    api_hash = await db.get_api_hash(user_id) or API_HASH
+
+    if user_session and user_id not in USER_CLIENTS:
+        status_msg = await message.reply("🔄 **Starting your Listener Client...**")
+        try:
+            u_api = api_id or API_ID
+            u_hash = api_hash or API_HASH
+
+            new_client = Client(
+                f"User_{user_id}",
+                session_string=user_session,
+                api_id=u_api,
+                api_hash=u_hash,
+                workers=100, # 🟢 FIX: Prevent queue overload
+                ipv6=False
+            )
+            new_client.add_handler(MessageHandler(user_watcher_handler, is_watched_chat))
+            await new_client.start()
+            USER_CLIENTS[user_id] = new_client
+            await status_msg.delete()
+        except Exception as e:
+            return await status_msg.edit(f"❌ **Session Error:** `{e}`\n\nTry /logout and /login again.")
+
+    # Use user session if available, otherwise default to the Bot!
+    user_client = USER_CLIENTS.get(user_id, app) 
     
     try:
         parsed = _parse_source_link(src_link)
         source_id = parsed["chat_id"]
         source_title = "Unknown Source"
-        peer_kind = "unknown"
-        chat = None
 
         if parsed["kind"] == "invite":
             try: await user_client.join_chat(parsed["join_target"])
-            except Exception: pass
+            except: pass
             chat = await user_client.get_chat(parsed["join_target"])
             source_id = chat.id
             source_title = chat.title or getattr(chat, "first_name", None) or str(source_id)
 
         elif parsed["kind"] == "public":
             target_ref = parsed["join_target"]
-            source_id, peer_kind = await resolve_and_cache_peer(user_client, target_ref)
+            source_id = None
+            
+            # 🟢 THE PYROFORK BYPASS: Extract numeric ID via RAW API
+            if isinstance(target_ref, str) and not str(target_ref).lstrip('-').isdigit():
+                from pyrogram.raw.functions.contacts import ResolveUsername
+                clean_user = target_ref.replace("@", "")
+                try:
+                    r = await user_client.invoke(ResolveUsername(username=clean_user))
+                    if r.chats:
+                        rid = r.chats[0].id
+                        is_chan = getattr(r.chats[0], "broadcast", False) or getattr(r.chats[0], "megagroup", False)
+                        source_id = int(f"-100{rid}") if is_chan else rid
+                    elif r.users:
+                        source_id = r.users[0].id
+                except Exception:
+                    pass
+                    
+            if not source_id:
+                source_id = target_ref
+                
             try:
                 chat = await user_client.get_chat(source_id)
                 source_id = chat.id
                 source_title = chat.title or getattr(chat, "first_name", None) or str(source_id)
-                if getattr(chat, "last_name", None):
-                    source_title += f" {chat.last_name}"
             except Exception:
-                source_title = str(target_ref)
+                source_title = str(source_id)
 
         else:
-            source_id, peer_kind = await resolve_and_cache_peer(user_client, source_id)
-            try:
-                chat = await user_client.get_chat(source_id)
-                source_id = chat.id
-                source_title = chat.title or getattr(chat, "first_name", None) or str(source_id)
-                if getattr(chat, "last_name", None):
-                    source_title += f" {chat.last_name}"
-            except Exception:
-                if isinstance(source_id, int) and source_id > 0 and peer_kind not in ("bot", "user"):
-                    alt_id = int(f"-100{source_id}")
-                    chat = await user_client.get_chat(alt_id)
-                    source_id = chat.id
-                    source_title = chat.title or getattr(chat, "first_name", None) or str(source_id)
-                else:
-                    raise
+            chat = await user_client.get_chat(source_id)
+            source_title = chat.title or getattr(chat, "first_name", None) or str(source_id)
 
-        # 🟢 Determine if source is a Bot DM or User DM
-        chat_type = getattr(chat, "type", None) if chat else None
-        is_private_source = (
-            peer_kind in ("bot", "user")
-            or str(chat_type) in ["ChatType.PRIVATE", "ChatType.BOT"]
-            or (isinstance(source_id, int) and source_id > 0)
-        )
-
-        # 🟢 Preserve specific group topic ID for Forum Supergroups
-        final_source_thread = None if is_private_source else (data.get("source_thread_id") or parsed.get("topic_id"))
-        if final_source_thread:
-            source_title += await get_topic_title(user_client, source_id, final_source_thread)
+        if parsed.get("topic_id"):
+            source_title += await get_topic_title(user_client, source_id, parsed["topic_id"])
 
     except Exception as e:
         is_pub = parsed.get("kind") == "public" if 'parsed' in locals() else False
         reason = "The public username might be incorrect/banned." if is_pub else "I am not inside this private chat."
         return await message.reply(
             f"❌ **Could not access Source.**\n\n"
+            f"You are not logged in, and I cannot read this chat directly.\n"
             f"💡 **Reason:** {reason}\n"
             f"**Fix:** Please use `/login` to route through your own account, OR add me to the source chat (**as an Admin for Channels, or a normal Member for Groups**).\n\n"
             f"**Error:** `{e}`"
@@ -1662,10 +1668,17 @@ async def finalize_watcher_setup(client, message, data, delay, user_id=None):
         async for m in user_client.get_chat_history(source_id, limit=1):
             last_msg_id = m.id
     except Exception:
-        if parsed.get("msg_id"):
-            last_msg_id = int(parsed["msg_id"])
+        try:
+            async for m in app.get_chat_history(source_id, limit=1):
+                last_msg_id = m.id
+        except: pass
 
-    wid = await db.add_watcher(
+    # 🟢 FIX: Ensure we don't accidentally save a message ID as a topic ID for Bot DMs
+    chat_type = getattr(chat, "type", None) if 'chat' in locals() and chat else None
+    is_private_source = str(chat_type) in ["ChatType.PRIVATE", "ChatType.BOT"] or (isinstance(source_id, int) and source_id > 0)
+    final_source_thread = None if is_private_source else data.get("source_thread_id")
+
+    await db.add_watcher(
         user_id=user_id,
         source_id=source_id,
         dest_id=data.get("dest_chat_id"),
@@ -1678,17 +1691,13 @@ async def finalize_watcher_setup(client, message, data, delay, user_id=None):
         allowed_types=data.get("allowed_types"),
         include_keywords=data.get("include_keywords", []),
         exclude_keywords=data.get("exclude_keywords", []),
-        cleanup_keywords=data.get("cleanup_keywords", []),
         thumb_file_id=data.get("thumb_file_id"),
         dashboard_chat=message.chat.id,
         dashboard_msg=message.id,
-        last_msg_id=last_msg_id
+        last_msg_id=last_msg_id   # 🟢 PASS THE ID HERE
     )
     
-    GLOBAL_WATCHER_SOURCES.add(source_id)
-    if "start_watcher_worker" in globals() and wid:
-        try: await start_watcher_worker(str(wid))
-        except Exception: pass
+    GLOBAL_WATCHER_SOURCES.add(source_id) # 🟢 UPDATE CACHE
 
     initial_text = (
         f"📡 **Live Watcher Started!**\n\n"
@@ -1703,11 +1712,12 @@ async def finalize_watcher_setup(client, message, data, delay, user_id=None):
             await message.edit_text(initial_text)
         else:
             new_msg = await message.reply(initial_text)
+            # Failsafe if it couldn't edit
             await db.db.watchers.update_one(
                 {
                     "user_id": user_id, 
                     "source_id": source_id, 
-                    "source_thread": final_source_thread,
+                    "source_thread": data.get("source_thread_id"),
                     "dest_id": data.get("dest_chat_id"),
                     "dest_thread": data.get("dest_thread_id")
                 },
