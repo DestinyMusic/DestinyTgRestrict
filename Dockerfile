@@ -64,10 +64,6 @@ USER user
 
 # Web server port
 ENV PORT=8080
-
-# Ping the internal web server to detect if Python is frozen
-HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD curl -f http://localhost:$PORT/health || exit 1
     
 EXPOSE 8080
 
