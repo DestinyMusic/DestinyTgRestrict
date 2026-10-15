@@ -430,7 +430,7 @@ import traceback
 from pyrogram.raw.functions.contacts import ResolveUsername
 
 async def check_link_restriction(user_id, link, is_watcher=False):
-    """Accurately checks link restrictions with boolean safety and fallback handling."""
+    """Accurately checks link restrictions with boolean safety and beautiful logging."""
     logger.info("========== DEBUG: LINK VALIDATION START ==========")
     logger.info(f"Target Link: {link} (is_watcher={is_watcher})")
 
@@ -455,24 +455,59 @@ async def check_link_restriction(user_id, link, is_watcher=False):
 
         is_dm_source = peer_kind in ("bot", "user") or (isinstance(chat_id, int) and chat_id > 0)
         
+        # --- Pretty Logging Metadata ---
+        nice_type = "UNKNOWN"
+        chat_title = str(chat_id)
+        chat_obj = None
+        
+        try:
+            chat_obj = await primary_client.get_chat(chat_id)
+            chat_title = chat_obj.title or getattr(chat_obj, "first_name", None) or str(chat_id)
+            chat_type_str = str(getattr(chat_obj, "type", "")).upper()
+            
+            if is_dm_source:
+                nice_type = "🤖 BOT DM" if peer_kind == "bot" or "BOT" in chat_type_str else "👤 USER DM"
+            elif "CHANNEL" in chat_type_str:
+                nice_type = "📢 PUBLIC CHANNEL" if getattr(chat_obj, "username", None) else "🔒 PRIVATE CHANNEL"
+            elif "GROUP" in chat_type_str:
+                nice_type = "👥 PUBLIC GROUP" if getattr(chat_obj, "username", None) else "🔐 PRIVATE GROUP"
+            else:
+                nice_type = f"💬 {chat_type_str.replace('CHATTYPE.', '')}"
+        except Exception:
+            nice_type = "🤖 BOT DM" if peer_kind == "bot" else "👤 USER DM" if peer_kind == "user" else "📢 CHANNEL/GROUP"
+
+        topic_info = f" (Topic: {parsed.get('topic_id')})" if parsed.get("topic_id") else ""
+        
+        def log_result(is_prot):
+            restriction_status = "🔒 RESTRICTED (Downloads Only)" if is_prot else "🔓 UNRESTRICTED (Fast Forward)"
+            logger.info(f"📌 Chat Type: {nice_type}{topic_info}")
+            logger.info(f"📌 Chat Name: {chat_title}")
+            logger.info(f"📌 Security : {restriction_status}")
+            logger.info("========== DEBUG: VALIDATION SUCCESS ==========")
+            return is_prot, "🔒 **Restricted Content**" if is_prot else "🔓 **Unrestricted Content**"
+        # ------------------------------
+        
         # 1. Handling Bot DMs / User DMs
         if is_dm_source:
             if not uclient:
                 return None, "⚠️ **Bot/Private DM:** Please connect your Telegram Session in Settings so I can read messages from your private/bot chat."
 
-            if is_watcher or is_range:
-                chat_obj = await uclient.get_chat(chat_id)
-                is_prot = bool(getattr(chat_obj, "has_protected_content", False))
-                return is_prot, "🔒 **Restricted Content**" if is_prot else "🔓 **Unrestricted Content**"
+            if is_watcher:
+                is_prot = bool(getattr(chat_obj, "has_protected_content", False)) if chat_obj else False
+                return log_result(is_prot)
 
             if msg_id:
                 try:
                     msg = await uclient.get_messages(chat_id, msg_id)
                     if msg and not getattr(msg, "empty", True):
                         is_prot = bool(getattr(msg, "has_protected_content", False)) or bool(getattr(getattr(msg, "chat", None), "has_protected_content", False))
-                        return is_prot, "🔒 **Restricted Content**" if is_prot else "🔓 **Unrestricted Content**"
+                        return log_result(is_prot)
                 except Exception:
                     pass
+
+            if is_range:
+                is_prot = bool(getattr(chat_obj, "has_protected_content", False)) if chat_obj else False
+                return log_result(is_prot)
 
             return None, "Message is missing, deleted, or inaccessible in this Bot/User DM."
 
@@ -508,24 +543,14 @@ async def check_link_restriction(user_id, link, is_watcher=False):
         if not msg and primary_client != app:
             msg, chat_id, _ = await _fetch(app, chat_id)
 
-        # 🟢 CRITICAL FIX: Explicit boolean casting prevents 'None' from triggering false error returns
         if msg and not getattr(msg, "empty", True):
             is_prot = bool(getattr(msg, "has_protected_content", False)) or bool(getattr(getattr(msg, "chat", None), "has_protected_content", False))
-            return is_prot, "🔒 **Restricted Content**" if is_prot else "🔓 **Unrestricted Content**"
+            return log_result(is_prot)
 
         # Deleted sample message fallback for Watchers & Batch Ranges
         if is_watcher or is_range:
-            chat_obj = None
-            for c in ([uclient, app] if uclient else [app]):
-                try:
-                    chat_obj = await c.get_chat(chat_id)
-                    if chat_obj:
-                        break
-                except Exception:
-                    continue
-            if chat_obj:
-                is_prot = bool(getattr(chat_obj, "has_protected_content", False))
-                return is_prot, "🔒 **Restricted Content**" if is_prot else "🔓 **Unrestricted Content**"
+            is_prot = bool(getattr(chat_obj, "has_protected_content", False)) if chat_obj else False
+            return log_result(is_prot)
 
         if err:
             raise err
