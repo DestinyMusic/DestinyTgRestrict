@@ -377,7 +377,7 @@ async def ensure_user_client(user_id: int):
                 )
                 if "user_watcher_handler" in globals() and "is_watched_chat" in globals():
                     uclient.add_handler(MessageHandler(user_watcher_handler, is_watched_chat))
-                await uclient.start()
+                await asyncio.wait_for(uclient.start(), timeout=20.0)
                 USER_CLIENTS[user_id] = uclient
                 logger.info(f"✅ Woke up persistent User Session for user {user_id}")
                 return uclient
