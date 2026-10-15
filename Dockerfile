@@ -2,7 +2,7 @@
 # DestinyRestrict Dockerfile
 # ==============================================================================
 
-FROM python:3.11-slim
+FROM python:3.15-slim
 
 ENV PYTHONUNBUFFERED=1
 ENV DEBIAN_FRONTEND=noninteractive
