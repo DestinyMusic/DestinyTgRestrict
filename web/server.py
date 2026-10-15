@@ -1007,7 +1007,10 @@ async def _save_qr_login(qr_key, client, user_id, tg_user):
     await db.set_api_id(user_id, API_ID)
     await db.set_api_hash(user_id, API_HASH)
     
-    await client.disconnect()
+    try:
+        await client.disconnect()
+    except Exception:
+        pass
     TG_QR_LOGIN_SESSIONS.pop(qr_key, None)
     
     await ensure_user_client(user_id)
@@ -1203,7 +1206,10 @@ async def _api_tg_verify_code(request):
             return web.json_response({"status": "error", "message": f"⚠️ ID Mismatch! You logged into the Web UI as {uid}, but this phone number belongs to {me.id}. Please use your own Telegram account."})
             
         session_str = await client.export_session_string()
-        await client.disconnect()
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
         del WEB_AUTH_CACHE[uid]
         
         await db.set_session(uid, session_str)
@@ -1237,7 +1243,10 @@ async def _api_tg_verify_2fa(request):
             return web.json_response({"status": "error", "message": f"⚠️ ID Mismatch! You logged into the Web UI as {uid}, but this phone number belongs to {me.id}. Please use your own Telegram account."})
             
         session_str = await client.export_session_string()
-        await client.disconnect()
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
         del WEB_AUTH_CACHE[uid]
         
         await db.set_session(uid, session_str)
