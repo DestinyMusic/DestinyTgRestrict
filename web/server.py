@@ -1112,7 +1112,11 @@ async def _api_tg_qr_verify_2fa(request):
 async def _api_tg_send_code(request):
     data = await request.json()
     uid = int(data.get("user_id"))
-    phone = str(data.get("phone") or "").replace(" ", "").replace("-", "").strip()
+    phone = str(data.get("phone") or "").strip()
+    phone_digits = re.sub(r"\D", "", phone)
+    if phone_digits.startswith("00"):
+        phone_digits = phone_digits[2:]
+    phone = f"+{phone_digits}"
     if not re.fullmatch(r"\+\d{8,15}", phone):
         return web.json_response({
             "status": "error",
