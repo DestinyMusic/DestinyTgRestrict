@@ -211,6 +211,20 @@ async def _execute_unrestricted_copy(client, acc, chat_id, msgid, dest_chat_id, 
         ACTIVE_PROCESSES[user_id][task_uuid]["fetcher"] = _get_client_label(acc if acc else client)
         ACTIVE_PROCESSES[user_id][task_uuid]["uploader"] = _get_client_label(upload_client)
 
+    from bot.utils import resolve_and_cache_peer
+    
+    # 🟢 PRE-FLIGHT CACHE WARMUP: Prevents Pyrogram from throwing PeerIdInvalid 
+    # which causes the task to mistakenly think forwards are restricted and fallback to downloading!
+    for cache_client in ([upload_client, acc] if acc else [upload_client]):
+        try:
+            await resolve_and_cache_peer(cache_client, chat_id)
+            await cache_client.get_chat(chat_id)
+        except Exception: pass
+        try:
+            await resolve_and_cache_peer(cache_client, dest_chat_id)
+            await cache_client.get_chat(dest_chat_id)
+        except Exception: pass
+
     if msg_type == "Text":
         try:
             await safe_send(upload_client, user_id, dest_chat_id, task_uuid, True, upload_client.send_message, chat_id=dest_chat_id, text=msg.text, entities=msg.entities, message_thread_id=dest_thread_id)
@@ -297,6 +311,19 @@ async def _execute_public_live_unrestricted_copy(client, acc, chat_id, msgid, de
     if task_uuid and user_id in ACTIVE_PROCESSES and task_uuid in ACTIVE_PROCESSES[user_id]:
         ACTIVE_PROCESSES[user_id][task_uuid]["fetcher"] = _get_client_label(acc if acc else client)
         ACTIVE_PROCESSES[user_id][task_uuid]["uploader"] = _get_client_label(upload_client)
+
+    from bot.utils import resolve_and_cache_peer
+    
+    # 🟢 PRE-FLIGHT CACHE WARMUP: Ensures destination is cached for Worker Bots / User Session
+    for cache_client in ([upload_client, acc] if acc else [upload_client]):
+        try:
+            await resolve_and_cache_peer(cache_client, chat_id)
+            await cache_client.get_chat(chat_id)
+        except Exception: pass
+        try:
+            await resolve_and_cache_peer(cache_client, dest_chat_id)
+            await cache_client.get_chat(dest_chat_id)
+        except Exception: pass
 
     if msg_type == "Text":
         try:
