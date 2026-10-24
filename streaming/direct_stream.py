@@ -46,7 +46,9 @@ async def _get_direct_http_session():
         return DIRECT_HTTP_SESSION
     async with DIRECT_HTTP_SESSION_LOCK:
         if DIRECT_HTTP_SESSION is None or DIRECT_HTTP_SESSION.closed:
+            import socket # 🟢 FIX: Import socket to access AF_INET
             connector = aiohttp.TCPConnector(
+                family=socket.AF_INET, # 🟢 CRITICAL FIX: Force IPv4 to prevent 90-second timeouts on Cloudflare Workers!
                 limit=100,          
                 limit_per_host=20, 
                 ttl_dns_cache=60, 
