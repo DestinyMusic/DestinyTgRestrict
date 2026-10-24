@@ -610,12 +610,13 @@ def _guess_browser_compatibility(mime_type, filename, streams):
     if mime == "video/webm" or ext == ".webm":
         return vc in {"vp8", "vp9", "av1"} and ac not in bad_audio
 
-    # MP4/M4V native route. H.264/VP9/AV1 are allowed here; the
-    # browser-side player separately remains conservative about audio.
-    if ext in {".mp4", ".m4v"} or mime in {"video/mp4", "application/mp4"}:
-        # 🟢 FIX 1: Removed 'hevc', 'h265', 'hvc1'. Chrome/Firefox/Android CANNOT play HEVC natively!
+    # 🟢 FIX: RESTORE NATIVE DIRECT-PLAY FOR MKV, 3D SPLITS (.001), AND HEVC!
+    # Without this, all 3D movies and MKVs are forced into FFmpeg CPU transcoding, 
+    # which causes heavy remuxes to instantly crash/stall the server.
+    is_split = len(ext) >= 4 and ext[1:].isdigit()
+    if ext in {".mp4", ".m4v", ".mkv"} or is_split or mime in {"video/mp4", "application/mp4", "video/x-matroska"}:
         return vc in {
-            "h264", "avc", "avc1", "vp9", "av1"
+            "h264", "avc", "avc1", "vp9", "av1", "hevc", "h265", "hvc1"
         } and ac not in bad_audio
 
     return False
