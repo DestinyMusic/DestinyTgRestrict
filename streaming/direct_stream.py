@@ -189,12 +189,12 @@ async def resolve_direct_link(url):
                                         DIRECT_HEADER_CACHE[original] = yt_info["headers"]
                                         DIRECT_HEADER_CACHE[result] = yt_info["headers"]
                                 else:
-                                    raise ValueError("Unsupported Website: No direct media found on this page (yt-dlp also failed).")
+                                    pass # 🟢 FIX: Suppress ValueError to allow fallback to Step 8
                     else:
                         result = str(r.url) 
             except Exception as e:
-                # Bubble the exception up so the probe aborts cleanly
-                if "Unsupported" in str(e): raise e
+                # 🟢 FIX: Allow fallback for direct links that fail yt-dlp resolution
+                pass
 
         # 8. Last resort: a single ranged GET resolves redirects and captures useful headers
         if result == original:
@@ -253,9 +253,14 @@ async def _direct_upstream_request(url, request):
         req_headers["Referer"] = f"{parsed_res.scheme}://{parsed_res.netloc}/"
         req_headers["Origin"] = f"{parsed_res.scheme}://{parsed_res.netloc}"
 
+    cached_h = DIRECT_HEADER_CACHE.get(resolved) or DIRECT_HEADER_CACHE.get(url) or {}
+    for h_key in ("Cookie", "Referer", "Authorization", "User-Agent"):
+        if h_key in cached_h:
+            req_headers[h_key] = cached_h[h_key]
+
     resp = await session.request(
         method=request.method,
-        url=resolved,
+        url=_safe_yarl(resolved),
         headers=req_headers,
         allow_redirects=True,
     )
@@ -401,8 +406,8 @@ async def _api_direct_stream_handler(request):
         if h_key in cached_h:
             req_headers[h_key] = cached_h[h_key]
 
-    # 🟢 FIX 2: Inject cookies for Google videoplayback URLs to authorize private files
-    if "googlevideo.com" in resolved or "drive.google.com" in resolved:
+    # 🟢 FIX 2: Inject cookies for Google videoplayback & googleusercontent URLs to authorize private files
+    if any(d in resolved for d in ("googlevideo.com", "drive.google.com", "googleusercontent.com")):
         try:
             import http.cookiejar
             jar = http.cookiejar.MozillaCookieJar('cookies.txt')
@@ -477,7 +482,8 @@ async def _api_direct_stream_handler(request):
         out_headers["Content-Type"] = mime_type
         chunk_len = end_byte - start_byte + 1
         out_headers["Content-Length"] = str(chunk_len)
-        out_headers["Content-Range"] = f"bytes {start_byte}-{end_byte}/{virtual_size}"
+        if client_range:
+            out_headers["Content-Range"] = f"bytes {start_byte}-{end_byte}/{virtual_size}"
         out_status = 206 if client_range else 200
     else:
         copy_headers = ("Content-Length", "Content-Range", "Content-Disposition", "ETag", "Last-Modified")
