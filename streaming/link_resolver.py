@@ -67,8 +67,6 @@ async def resolve_universal_link(url: str):
         return raw_url, headers
         
     except Exception as exc:
-        # Fallback to yt-dlp before returning the raw URL
-        yt_res = await resolve_yt_dlp_stream(url)
-        if yt_res and yt_res.get("stream_url"):
-            return yt_res["stream_url"], yt_res.get("headers", {})
+        # 🟢 FIX: Return raw URL immediately so direct_stream.py can check Content-Type first
+        # before wasting 10+ seconds running yt-dlp on direct CDN streams!
         return url, {}
