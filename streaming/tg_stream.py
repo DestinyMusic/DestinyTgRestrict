@@ -89,6 +89,10 @@ async def fetch_single_chunk(client, chat_id, msg_id, offset, limit):
             logger.debug(f"Chunk timeout on {getattr(client, 'name', 'bot')}, retrying...")
             await asyncio.sleep(0.5)
         except Exception as e:
+            err_str = str(e).upper()
+            # 🟢 FIX: Do not retry 6 times (15s delay) if a worker bot lacks channel access!
+            if isinstance(e, ValueError) or any(x in err_str for x in ("CHANNEL_PRIVATE", "CHANNEL_INVALID", "PEER_ID_INVALID", "USER_NOT_PARTICIPANT", "AUTH_KEY")):
+                raise e
             if "Connection closed" in str(e):
                 logger.debug(f"Connection dropped by Telegram. Retrying...")
             if attempt == 5: raise e
@@ -96,7 +100,7 @@ async def fetch_single_chunk(client, chat_id, msg_id, offset, limit):
             
     raise TimeoutError("Exceeded max retries for chunk")
 
-async def parallel_stream_generator(fallback_client, chat_id, msg_parts, start_byte, total_length, chunk_size=1 * 1024 * 1024, concurrency=None):
+async def parallel_stream_generator(fallback_client, chat_id, msg_parts, start_byte, total_length, chunk_size=1 * 1024 * 1024, concurrency=None, valid_pool=None):
     """Fast Telegram range generator with 1MB sweet-spot chunks to prevent server drops."""
     if total_length <= 0:
         return
@@ -108,20 +112,29 @@ async def parallel_stream_generator(fallback_client, chat_id, msg_parts, start_b
             if candidate is fallback_client:
                 user_id = uid; break
 
-    # 🟢 FIX: Updated to match your new Split Worker Bot architecture
-    user_worker_bots = list(USER_STREAM_BOTS.get(user_id, []))
-    for c in user_worker_bots:
-        try:
-            if getattr(c, "is_connected", False): working_pool.append(c)
-        except Exception: pass
-            
-    if fallback_client:
-        try:
-            if getattr(fallback_client, "is_connected", False): working_pool.append(fallback_client)
-        except Exception: pass
+    # 🟢 FIX: Use the pre-validated pool from _get_working_tg_pool so unauthorized bots aren't used on private channels!
+    if valid_pool:
+        for c in valid_pool:
+            try:
+                if getattr(c, "is_connected", False) and c not in working_pool:
+                    working_pool.append(c)
+            except Exception:
+                pass
+    else:
+        user_worker_bots = list(USER_STREAM_BOTS.get(user_id, []))
+        for c in user_worker_bots:
+            try:
+                if getattr(c, "is_connected", False): working_pool.append(c)
+            except Exception: pass
+                
+        if fallback_client:
+            try:
+                if getattr(fallback_client, "is_connected", False) and fallback_client not in working_pool:
+                    working_pool.append(fallback_client)
+            except Exception: pass
 
     if not working_pool:
-        working_pool = [app]
+        working_pool = [fallback_client] if fallback_client else [app]
     
     safe_concurrency = len(working_pool)
     if concurrency is not None:
@@ -299,7 +312,7 @@ async def _api_tg_stream_handler(request):
         if is_zip:
             async def zip_read(off, length):
                 buf = bytearray()
-                async for chunk in parallel_stream_generator(primary_client, chat_id, parts_map, off, length):
+                async for chunk in parallel_stream_generator(primary_client, chat_id, parts_map, off, length, valid_pool=working_pool):
                     buf.extend(chunk)
                     if len(buf) >= length:
                         break
@@ -388,11 +401,12 @@ async def _api_tg_stream_handler(request):
             "Accept-Ranges": "bytes",
             "Content-Length": str(chunk_len),
             "Content-Type": mime_type,
-            "Content-Range": f"bytes {start_byte}-{end_byte}/{virtual_size}",
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Expose-Headers": "Content-Length, Content-Range, Accept-Ranges, Content-Type",
             "Cache-Control": "no-store",
         }
+        if range_header:
+            headers["Content-Range"] = f"bytes {start_byte}-{end_byte}/{virtual_size}"
 
         if request.method == "HEAD":
             return web.Response(status=206 if range_header else 200, headers=headers)
@@ -401,8 +415,8 @@ async def _api_tg_stream_handler(request):
         response = web.StreamResponse(status=206 if range_header else 200, headers=headers)
         
         adjusted_start = start_byte + virtual_data_offset
-        gen = parallel_stream_generator(primary_client, chat_id, parts_map, adjusted_start, chunk_len)
-        
+        gen = parallel_stream_generator(primary_client, chat_id, parts_map, adjusted_start, chunk_len, valid_pool=working_pool)
+
         sid = _track_stream(request, filename, user_id)
         try:
             await response.prepare(request)
