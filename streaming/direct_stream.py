@@ -46,15 +46,23 @@ async def _get_direct_http_session():
         return DIRECT_HTTP_SESSION
     async with DIRECT_HTTP_SESSION_LOCK:
         if DIRECT_HTTP_SESSION is None or DIRECT_HTTP_SESSION.closed:
-            import socket # 🟢 FIX: Import socket to access AF_INET
+            import socket
+            import ssl
+            
+            # 🟢 CRITICAL FIX: Create a permissive SSL context instead of 'ssl=False'. 
+            # This ignores strict cert errors but preserves the SNI handshake that Cloudflare requires!
+            ssl_ctx = ssl.create_default_context()
+            ssl_ctx.check_hostname = False
+            ssl_ctx.verify_mode = ssl.CERT_NONE
+            
             connector = aiohttp.TCPConnector(
-                family=socket.AF_INET, # 🟢 CRITICAL FIX: Force IPv4 to prevent 90-second timeouts on Cloudflare Workers!
+                family=socket.AF_INET, 
                 limit=100,          
                 limit_per_host=20, 
                 ttl_dns_cache=60, 
                 keepalive_timeout=30, 
                 enable_cleanup_closed=True,
-                ssl=False # 🟢 FIX: Bypasses strict SSL handshakes on sketchy CDNs and Cloudflare Workers
+                ssl=ssl_ctx # 🟢 Apply robust SSL context here
             )
             # 🟢 FIX: Increased connect timeouts from 15s to 45s. Cloudflare Workers take ~20-25s to wake up!
             timeout = aiohttp.ClientTimeout(total=None, connect=45, sock_connect=45, sock_read=120)
