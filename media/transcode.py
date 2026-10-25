@@ -96,19 +96,25 @@ async def _api_stream_handler(request):
             if re.search(r'\.(7z|rar|tar|gz|iso|bin)(\.\d{3})?$', filename) or re.search(r'\.(part\d+|z\d+|r\d\d)$', filename):
                 return web.Response(status=400, text="Compressed solid archives cannot be streamed.")
 
-            # Loopback URL for FFmpeg to guarantee auth cookies and range compliance
-            # 🟢 CRITICAL FIX: Pass 'resolved_cdn' instead of 'link' to skip the HTML page and strip trailing garbage!
-            stream_params = {"url": resolved_cdn}
             if zip_idx:
-                stream_params["zip_idx"] = zip_idx
-            signed_path = _build_signed_stream_url(
-                "/api/direct_stream",
-                stream_params,
-                user_id,
-                request["web_session_id"],
-            )
-            actual_url = f"http://127.0.0.1:{PORT}{signed_path}"
-            direct_stream_url = actual_url
+                stream_params = {"url": resolved_cdn, "zip_idx": zip_idx}
+                signed_path = _build_signed_stream_url("/api/direct_stream", stream_params, user_id, request["web_session_id"])
+                actual_url = f"http://127.0.0.1:{PORT}{signed_path}"
+                direct_stream_url = actual_url
+            else:
+                # 🟢 FIX: Feed Cloudflare URLs directly to FFmpeg to bypass the 30s Python socket crash!
+                actual_url = resolved_cdn
+                
+                cached_h = DIRECT_HEADER_CACHE.get(link) or DIRECT_HEADER_CACHE.get(resolved_cdn) or {}
+                if "Cookie" in cached_h or "terabox" in resolved_cdn:
+                    # Keep proxy ONLY if host explicitly requires cookies
+                    stream_params = {"url": resolved_cdn}
+                    signed_path = _build_signed_stream_url("/api/direct_stream", stream_params, user_id, request["web_session_id"])
+                    direct_stream_url = f"http://127.0.0.1:{PORT}{signed_path}"
+                else:
+                    # 🟢 FIX: 302 Redirect directly to Cloudflare for native playback! 
+                    # Android WebViews have flawless networking and will load the stream instantly.
+                    direct_stream_url = resolved_cdn
     except Exception as exc:
         return web.Response(status=502, text=f"Source resolution error: {exc}")
 
@@ -203,6 +209,14 @@ async def _api_stream_handler(request):
                 cmd += ["-ss", f"{start_f:.3f}"]
         except Exception:
             pass
+
+    # 🟢 FIX: Inject necessary Auth Cookies/Referers directly into FFmpeg
+    if not is_tg and not zip_idx:
+        cached_h = DIRECT_HEADER_CACHE.get(link) or DIRECT_HEADER_CACHE.get(actual_url) or {}
+        h_str = ""
+        if "Cookie" in cached_h: h_str += f"Cookie: {cached_h['Cookie']}\r\n"
+        if "Referer" in cached_h: h_str += f"Referer: {cached_h['Referer']}\r\n"
+        if h_str: cmd += ["-headers", h_str]
 
     cmd += ["-i", actual_url]
 
