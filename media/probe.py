@@ -43,7 +43,7 @@ async def partial_download_tg(client, message, file_path, limit_mb=15):
                 async for chunk in client.stream_media(message, offset=offset_chunk, limit=tail_limit):
                     f.write(chunk)
 
-async def _run_ffprobe_json(input_url, fast=True, extract_tags=False):
+async def _run_ffprobe_json(input_url, fast=True, extract_tags=False, req_headers=""):
     """Fast probe first; retry with a larger probe only when the small probe fails."""
     # 🟢 BYPASS: FFprobe cannot read raw split binaries (prevents "Invalid data found" crashes)
     if str(input_url).lower().endswith(('.001', '.002', '.003', '.004', '.005')):
@@ -62,11 +62,16 @@ async def _run_ffprobe_json(input_url, fast=True, extract_tags=False):
             "-rw_timeout", "120000000", 
             "-probesize", str(probesize),
             "-analyzeduration", str(analyzeduration),
+        ]
+        if req_headers:
+            cmd.extend(["-headers", req_headers])
+            
+        cmd.extend([
             "-show_entries",
             f"{format_str}:stream=index,codec_type,codec_name,width,height,channels,channel_layout:"
             "stream_tags=language,title,handler_name:stream_disposition=default,forced",
             "-of", "json", input_url,
-        ]
+        ])
         try:
             proc = await asyncio.create_subprocess_exec(
                 cmd[0], *cmd[1:],
@@ -330,13 +335,17 @@ async def _api_media_probe_handler(request):
                                 real_file_name = unquote(m.group(1).strip())
 
             probe_input = actual_url
+            ffprobe_headers = ""
             if not is_tg:
-                # 🟢 Restoring Loopback for Direct Links
-                probe_input = f"http://127.0.0.1:{PORT}/api/direct_stream?user_id={user_id}&url={quote(actual_url, safe='')}"
-            
-            # 🟢 CRITICAL FIX: Pass the zip_idx to the FFprobe loopback so it extracts the file!
-            if zip_idx:
-                probe_input += f"&zip_idx={zip_idx}"
+                # 🟢 FIX: Bypass Python loopback for standard URLs. 
+                # FFprobe's C-network stack ignores the IPv6 blackhole that crashes Python aiohttp on Cloudflare!
+                if zip_idx:
+                    probe_input = f"http://127.0.0.1:{PORT}/api/direct_stream?user_id={user_id}&url={quote(actual_url, safe='')}&zip_idx={zip_idx}"
+                else:
+                    probe_input = actual_url
+                    cached_h = DIRECT_HEADER_CACHE.get(link) or DIRECT_HEADER_CACHE.get(actual_url) or {}
+                    if "Cookie" in cached_h: ffprobe_headers += f"Cookie: {cached_h['Cookie']}\r\n"
+                    if "Referer" in cached_h: ffprobe_headers += f"Referer: {cached_h['Referer']}\r\n"
 
             tg_duration = 0.0
             if is_tg and 'media' in locals() and media:
@@ -346,7 +355,7 @@ async def _api_media_probe_handler(request):
                     logger.info(f"🔎 [PROBE TG] Found Telegram native duration: {duration_val}s")
 
             try:
-                pdata = await _run_ffprobe_json(probe_input, fast=True, extract_tags=extract_tags_flag)
+                pdata = await _run_ffprobe_json(probe_input, fast=True, extract_tags=extract_tags_flag, req_headers=ffprobe_headers if not is_tg else "")
                 streams = pdata.get("streams", []) or []
                 if duration_val <= 0:
                     try:
