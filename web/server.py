@@ -39,6 +39,16 @@ API_SUCCESS_LOG_PATHS = {
     "/api/cookies/upload", "/api/cookies/delete", "/api/topics", "/api/chats",
 }
 
+# 🟢 CRITICAL IMPORTS ADDED HERE TO PREVENT CRASHES
+import builtins
+import asyncio
+import time
+import os
+import uuid
+from pyrogram import Client, enums, raw
+from pyrogram.handlers import MessageHandler, RawUpdateHandler
+from pyrogram.errors import SessionPasswordNeeded, PasswordHashInvalid, PeerIdInvalid, FloodWait
+
 async def ensure_user_client(user_id):
     """Helper to wake up a user session dynamically."""
     uclient = USER_CLIENTS.get(user_id)
@@ -51,9 +61,6 @@ async def ensure_user_client(user_id):
 
     api_id = await db.get_api_id(user_id) or API_ID
     api_hash = await db.get_api_hash(user_id) or API_HASH
-
-    from pyrogram import Client
-    from pyrogram.handlers import MessageHandler
 
     uclient = Client(
          f"User_{user_id}", 
@@ -73,6 +80,9 @@ async def ensure_user_client(user_id):
     await uclient.start()
     USER_CLIENTS[user_id] = uclient
     return uclient
+
+# 🟢 INJECT GLOBALLY TO PREVENT "ensure_user_client is not defined" ERROR
+builtins.ensure_user_client = ensure_user_client
     
 def _diagnostic_safe_reason(value):
     text = str(value or "")
@@ -409,11 +419,18 @@ async def _api_forgot_password_handler(request):
         data = await request.json()
         user_id = int(data.get("user_id"))
         now = time.monotonic()
-        eligible = now - PASSWORD_RESET_REQUESTS.get(user_id, 0) >= 60
+        
+        # 1. Intelligent Resume: If requested within 60s, advance UI without resending
+        if now - PASSWORD_RESET_REQUESTS.get(user_id, 0) < 60:
+            return web.json_response({
+                "status": "success", 
+                "message": "A reset token was recently sent! Please paste it below."
+            })
+            
         PASSWORD_RESET_REQUESTS[user_id] = now
 
         user = await db.col.find_one({"id": user_id})
-        if eligible and user and await db.is_user_approved(user_id):
+        if user and await db.is_user_approved(user_id):
             reset_token = secrets.token_urlsafe(32)
             await db.col.update_one(
                 {"id": user_id},
@@ -422,24 +439,34 @@ async def _api_forgot_password_handler(request):
                     "web_password_reset_expires": time.time() + 600,
                 }},
             )
+            
+            # 2. Attempt Delivery
             try:
                 await app.send_message(
                     chat_id=user_id,
                     text=f"Web dashboard password reset token (valid for 10 minutes): {reset_token}",
                 )
-            except Exception:
+            except Exception as e:
+                # Revert database changes
                 await db.col.update_one(
                     {"id": user_id},
                     {"$unset": {"web_password_reset_hash": "", "web_password_reset_expires": ""}},
                 )
+                
+                # 3. STOP AND ALERT UI: Force the red error box with instructions
+                return web.json_response({
+                    "status": "error", 
+                    "message": "Cannot send message! Please open the bot on Telegram, send /start (or unblock it), and try again."
+                }, status=400)
 
+        # 4. Success UI
         return web.json_response({
             "status": "success",
-            "message": "If the account is eligible, password reset instructions will arrive in Telegram.",
+            "message": "If the account is eligible, password reset instructions have been sent to Telegram.",
         })
+        
     except Exception as e:
         return web.json_response({"status": "error", "message": str(e)}, status=400)
-
 
 async def _api_reset_password_handler(request):
     try:
@@ -1017,9 +1044,8 @@ TG_QR_LOGIN_SESSIONS = {}
 WEB_AUTH_CACHE = {}
 
 # ==============================================================================
-# --- FIXED: TELEGRAM QR CODE LOGIN ENGINE (NO SELF-INVALIDATION & DC MIGRATION) ---
+# --- FIXED: TELEGRAM QR & OTP LOGIN ENGINE ---
 # ==============================================================================
-from pyrogram.handlers import RawUpdateHandler
 
 async def _api_tg_qr_start(request):
     try:
@@ -1081,14 +1107,13 @@ async def _api_tg_qr_check(request):
     temp_client = session_data["client"]
     user_id = session_data["user_id"]
     
-    # 🟢 1. Do NOT touch Telegram servers until phone actually scans the QR
     if not session_data["scanned_event"].is_set():
         return web.json_response({"status": "pending"})
         
     try:
         res = await temp_client.invoke(raw.functions.auth.ExportLoginToken(api_id=API_ID, api_hash=API_HASH, except_ids=[]))
         
-        # 🟢 Case 1: Account is on DC 2 without 2FA
+        # Case 1: Account is on current DC without 2FA
         if isinstance(res, raw.types.auth.LoginTokenSuccess):
             auth_user = res.authorization.user
             if callable(getattr(temp_client.storage, "user_id", None)):
@@ -1104,7 +1129,7 @@ async def _api_tg_qr_check(request):
             TG_QR_LOGIN_SESSIONS.pop(qr_key, None)
             return web.json_response({"status": "authorized", "message": "Telegram session connected successfully!"})
             
-        # 🟢 Case 2: Account is on DC 5 (India) / DC 4 / DC 1 -> Auto-Migrate!
+        # Case 2: Account is on a different DC -> Auto-Migrate!
         elif isinstance(res, raw.types.auth.LoginTokenMigrateTo):
             target_dc = res.dc_id
             transfer_token = res.token
@@ -1148,7 +1173,6 @@ async def _api_tg_qr_check(request):
                 err_text = str(import_err).lower()
                 if "session_password_needed" in err_text or isinstance(import_err, SessionPasswordNeeded):
                     return web.json_response({"status": "2fa_required", "message": "Two-Step Verification password required."})
-                logger.error(f"[QR IMPORT ERROR] {import_err}", exc_info=True)
                 return web.json_response({"status": "error", "message": str(import_err)})
 
         return web.json_response({"status": "pending"})
@@ -1156,11 +1180,9 @@ async def _api_tg_qr_check(request):
         err_text = str(e).lower()
         if "session_password_needed" in err_text or isinstance(e, SessionPasswordNeeded):
             return web.json_response({"status": "2fa_required", "message": "Two-Step Verification password required."})
-        logger.error(f"[QR CHECK ERROR] {e}", exc_info=True)
         return web.json_response({"status": "pending"})
 
 async def _api_tg_qr_verify_2fa(request):
-    """Verifies the Telegram Cloud Password for a QR login session."""
     data = await request.json()
     qr_key = data.get("qr_key", "").strip()
     pwd = data.get("password", "")
@@ -1183,7 +1205,7 @@ async def _api_tg_qr_verify_2fa(request):
         await db.set_api_id(user_id, API_ID)
         await db.set_api_hash(user_id, API_HASH)
         
-        await ensure_user_client(user_id) # 🟢 Wakes up the session in memory
+        await ensure_user_client(user_id) 
         
         return web.json_response({"status": "success", "message": "Logged in successfully!"})
     except (PasswordHashInvalid, SessionPasswordNeeded):
@@ -1201,7 +1223,7 @@ async def _api_tg_send_code(request):
         in_memory=True, 
         api_id=API_ID, 
         api_hash=API_HASH,
-        no_updates=True,  # 🟢 FIX: Disables background update listening during auth handshake
+        no_updates=True, 
         ipv6=False,
         device_model="DestinyTgRestrict",
         app_version="DestinyTgRestrict 1.0",
@@ -1228,12 +1250,11 @@ async def _api_tg_verify_code(request):
     try:
         await client.sign_in(cache["phone"], cache["hash"], code)
         
-        # 🟢 ENFORCE ID MATCH: Prevent cross-account chat leaks!
         me = await client.get_me()
         if me.id != uid:
             await client.disconnect()
             del WEB_AUTH_CACHE[uid]
-            return web.json_response({"status": "error", "message": f"⚠️ ID Mismatch! You logged into the Web UI as {uid}, but this phone number belongs to {me.id}. Please use your own Telegram account."})
+            return web.json_response({"status": "error", "message": f"⚠️ ID Mismatch! You logged into the Web UI as {uid}, but this phone number belongs to {me.id}."})
             
         session_str = await client.export_session_string()
         await client.disconnect()
@@ -1243,7 +1264,7 @@ async def _api_tg_verify_code(request):
         await db.set_api_id(uid, API_ID)
         await db.set_api_hash(uid, API_HASH)
         
-        await ensure_user_client(uid) # 🟢 Wakes up the session in memory
+        await ensure_user_client(uid)
         
         return web.json_response({"status": "success"})
         
@@ -1264,12 +1285,11 @@ async def _api_tg_verify_2fa(request):
     try:
         await client.check_password(pwd)
         
-        # 🟢 ENFORCE ID MATCH: Prevent cross-account chat leaks!
         me = await client.get_me()
         if me.id != uid:
             await client.disconnect()
             del WEB_AUTH_CACHE[uid]
-            return web.json_response({"status": "error", "message": f"⚠️ ID Mismatch! You logged into the Web UI as {uid}, but this phone number belongs to {me.id}. Please use your own Telegram account."})
+            return web.json_response({"status": "error", "message": f"⚠️ ID Mismatch! You logged into the Web UI as {uid}, but this phone number belongs to {me.id}."})
             
         session_str = await client.export_session_string()
         await client.disconnect()
@@ -1279,7 +1299,7 @@ async def _api_tg_verify_2fa(request):
         await db.set_api_id(uid, API_ID)
         await db.set_api_hash(uid, API_HASH)
         
-        await ensure_user_client(uid) # 🟢 Wakes up the session in memory
+        await ensure_user_client(uid)
         
         return web.json_response({"status": "success"})
     except Exception as e:
@@ -2294,18 +2314,7 @@ async def _api_editor_active_tasks(request):
                 "uploader": state.get("uploader", "🤖 Pending")
             }
     return web.json_response({"status": "success", "tasks": active})
-    uid = int(request.query.get("user_id", 0))
-    active = {}
-    for t_uuid, t_info in list(EDITOR_ACTIVE_TASKS.items()):
-        if t_info.get("user_id") == uid:
-            state = EDITOR_UI_STATE.get(t_uuid, {})
-            active[t_uuid] = {
-                "file_name": state.get("file_name", "Media Task"),
-                "fetcher": state.get("fetcher", "🤖 Pending"),
-                "uploader": state.get("uploader", "🤖 Pending")
-            }
-    return web.json_response({"status": "success", "tasks": active})          
-    
+
 async def _api_edit_media_handler(request):
     data = await request.json()
     uid = int(data.get("user_id", 0))
